@@ -86,7 +86,9 @@ const orderToFirestore = (order: Order) => ({
   servedAt: order.servedAt ? Timestamp.fromMillis(order.servedAt) : null,
   cafeteriaId: order.cafeteriaId,
   confirmedBy: order.confirmedBy || null,
-  confirmedAt: order.confirmedAt ? Timestamp.fromMillis(order.confirmedAt) : null
+  confirmedAt: order.confirmedAt ? Timestamp.fromMillis(order.confirmedAt) : null,
+  rejectedBy: order.rejectedBy || null,
+  rejectedAt: order.rejectedAt ? Timestamp.fromMillis(order.rejectedAt) : null
 });
 
 const firestoreToOrder = (id: string, data: any): Order => {
@@ -123,7 +125,9 @@ const firestoreToOrder = (id: string, data: any): Order => {
     servedAt: toMillis(data.servedAt),
     cafeteriaId: data.cafeteriaId,
     confirmedBy: data.confirmedBy,
-    confirmedAt: toMillis(data.confirmedAt)
+    confirmedAt: toMillis(data.confirmedAt),
+    rejectedBy: data.rejectedBy,
+    rejectedAt: toMillis(data.rejectedAt)
   };
 };
 

@@ -38,7 +38,7 @@ export interface Order {
   items: CartItem[];
   totalAmount: number;
   paymentType: 'UPI' | 'CARD' | 'CASH' | 'NET';
-  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED';
+  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
   qr?: {
@@ -52,6 +52,8 @@ export interface Order {
   cafeteriaId: string;
   confirmedBy?: string;
   confirmedAt?: number;
+  rejectedBy?: string;
+  rejectedAt?: number;
 }
 
 export interface QRData {

@@ -64,7 +64,7 @@ service cloud.firestore {
       // Cashiers can update payment status, servers can update serving status
       allow update: if isAuthenticated() && (
         hasRole('admin') ||
-        (hasRole('cashier') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'qrStatus', 'confirmedBy', 'confirmedAt'])) ||
+        (hasRole('cashier') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'qrStatus', 'confirmedBy', 'confirmedAt', 'qr', 'orderStatus', 'rejectedAt', 'rejectedBy'])) ||
         (hasRole('server') && request.resource.data.diff(resource.data).affectedKeys().hasAny(['orderStatus', 'scannedAt', 'servedAt', 'items']))
       );
       
