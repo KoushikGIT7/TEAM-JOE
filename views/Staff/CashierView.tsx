@@ -43,10 +43,6 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       listenToPendingCashOrders((data) => {
         setPendingOrders(data);
         setLoading(false);
-        // Auto-switch to Cash Requests tab when new order arrives
-        if (data.length > 0 && activeTab !== 'CashRequests') {
-          setActiveTab('CashRequests');
-        }
         // Record ping for offline detector
         offlineDetector.recordPing();
       }),
@@ -56,7 +52,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       })
     ];
     return () => unsubs.forEach(fn => fn());
-  }, [activeTab]);
+  }, []);
 
   useEffect(() => {
     const loadReport = async () => {
