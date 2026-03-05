@@ -704,6 +704,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     { id: 'Settings', icon: Settings },
   ] as const;
 
+  // Log nav items on mount
+  useEffect(() => {
+    console.log('📋 NavItems available:', navItems.map(n => n.id));
+  }, []);
+
   const handleTabChange = (tab: CashierTab) => {
     console.log('🔄 Switching tab from', activeTab, 'to', tab);
     setActiveTab(tab);
