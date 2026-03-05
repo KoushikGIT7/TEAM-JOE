@@ -708,30 +708,64 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex relative">
-      {/* Mobile Overlay */}
+    <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row relative">
+      {/* Mobile Menu Modal */}
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
+        <>
+          {/* Overlay */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+          {/* Mobile Sidebar */}
+          <div className="fixed inset-y-0 left-0 w-64 bg-white z-50 lg:hidden flex flex-col shadow-xl">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <Logo size="md" />
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-textSecondary" />
+              </button>
+            </div>
+            
+            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+              {navItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleTabChange(item.id as CashierTab)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm uppercase tracking-wider ${
+                    activeTab === item.id
+                      ? 'bg-primary text-white shadow-lg'
+                      : 'text-textSecondary hover:bg-gray-100'
+                  }`}
+                >
+                  <item.icon className="w-5 h-5 shrink-0" />
+                  <span className="truncate">{item.id === 'CashRequests' ? 'Cash Requests' : item.id}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="p-4 border-t border-gray-200">
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-wider"
+              >
+                <LogOut className="w-5 h-5 shrink-0" />
+                <span className="truncate">Logout</span>
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Left Sidebar */}
+      {/* Desktop Sidebar - Always visible on lg and above */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
         w-64 bg-white border-r border-gray-200 flex flex-col shrink-0
-        transform transition-transform duration-300 ease-in-out
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        hidden lg:flex
       `}>
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-200">
           <Logo size="md" />
-          <button
-            onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-textSecondary" />
-          </button>
         </div>
         
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
