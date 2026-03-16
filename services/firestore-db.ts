@@ -1253,7 +1253,7 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
       cafeteriaId = orderData.cafeteriaId;
       secureHash = 'MANUAL_OVERRIDE'; // Skips verification if staff is trusted
     } else {
-      const payload = parseQRPayload(qrData);
+      const payload = await parseQRPayload(qrData);
       if (!payload?.orderId) {
         throw new Error("INVALID_TOKEN_FORMAT - This does not look like a JOE Meal Token.");
       }
@@ -1366,7 +1366,12 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
 
       // Read inventory BEFORE any writes
       const invRef = doc(db, "inventory", itemId);
-      const invSnap = await tx.get(invRef);
+      const metaRef = doc(db, "inventory_meta", itemId);
+      
+      const [invSnap, metaSnap] = await Promise.all([
+        tx.get(invRef),
+        tx.get(metaRef)
+      ]);
 
       // ===== NOW ALL WRITES CAN HAPPEN =====
       // Update item
@@ -1420,11 +1425,12 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
       }
 
       // Update inventory_meta (for real-time student view)
-      const metaRef = doc(db, "inventory_meta", itemId);
-      tx.update(metaRef, {
-        consumed: increment(1),
-        lastUpdated: serverTimestamp()
-      });
+      if (metaSnap.exists()) {
+        tx.update(metaRef, {
+          consumed: increment(1),
+          lastUpdated: serverTimestamp()
+        });
+      }
     });
 
     console.log('✅ Item served:', { orderId, itemId, servedBy });
@@ -1444,6 +1450,8 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
     let userId: string;
     let cafeteriaId: string;
     let secureHash: string;
+    let payloadExpiresAt: number | undefined;
+    let payloadCreatedAt: number | undefined;
 
     if (qrDataRaw.startsWith('order_')) {
       orderId = qrDataRaw;
@@ -1454,9 +1462,9 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
       cafeteriaId = orderData.cafeteriaId;
       secureHash = 'MANUAL_OVERRIDE';
     } else {
-      const payload = parseQRPayload(qrDataRaw);
+      const payload = await parseQRPayload(qrDataRaw);
       if (!payload) throw new Error("Invalid Token Format");
-      ({ orderId, userId, cafeteriaId, secureHash } = payload);
+      ({ orderId, userId, cafeteriaId, secureHash, expiresAt: payloadExpiresAt, createdAt: payloadCreatedAt } = payload);
     }
 
     const orderDoc = await getDoc(doc(db, "orders", orderId));
@@ -1467,8 +1475,9 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
     const order = firestoreToOrder(orderDoc.id, orderDoc.data());
 
     if (secureHash !== 'MANUAL_OVERRIDE') {
-      const qrExpiresAt = order.createdAt + 24 * 60 * 60 * 1000;
-      const isValid = await verifySecureHash(orderId, userId, cafeteriaId, order.createdAt, qrExpiresAt, secureHash);
+      const verifCreatedAt = payloadCreatedAt || order.createdAt;
+      const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
+      const isValid = await verifySecureHash(orderId, userId, cafeteriaId, order.createdAt, verifExpiresAt, secureHash);
       if (!isValid) {
         throw new Error("Invalid Token Signature");
       }

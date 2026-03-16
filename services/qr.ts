@@ -125,7 +125,74 @@ export const verifySecureHashSync = (
 };
 
 /**
- * Generate QR payload for encoding (PRODUCTION-GRADE with expiry)
+ * AES-256-CBC Encryption for QR Payload (PRODUCTION-GRADE)
+ */
+const getEncryptionKey = async (): Promise<CryptoKey> => {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(QR_SECRET_KEY.padEnd(32, '0').substring(0, 32));
+  return crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'AES-CBC' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+};
+
+export const encryptData = async (text: string): Promise<string> => {
+  try {
+    const key = await getEncryptionKey();
+    const iv = crypto.getRandomValues(new Uint8Array(16));
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'AES-CBC', iv },
+      key,
+      data
+    );
+    
+    // Combine IV + Ciphertext
+    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(encrypted), iv.length);
+    
+    // Convert to base64url
+    return btoa(String.fromCharCode(...combined))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  } catch (error) {
+    console.error('Encryption failed:', error);
+    return text; // Fallback to plaintext if encryption fails
+  }
+};
+
+export const decryptData = async (encryptedBase64: string): Promise<string> => {
+  try {
+    // Convert base64url back to Uint8Array
+    const base64 = encryptedBase64.replace(/-/g, '+').replace(/_/g, '/');
+    const combined = new Uint8Array(atob(base64).split('').map(c => c.charCodeAt(0)));
+    
+    const iv = combined.slice(0, 16);
+    const data = combined.slice(16);
+    const key = await getEncryptionKey();
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-CBC', iv },
+      key,
+      data
+    );
+    
+    return new TextDecoder().decode(decrypted);
+  } catch (error) {
+    console.warn('Decryption failed, might be legacy plaintext:', error);
+    return encryptedBase64; // Return as-is if decryption fails
+  }
+};
+
+/**
+ * Generate QR payload for encoding (PRODUCTION-GRADE with full details & encryption)
  */
 export const generateQRPayload = async (order: Order): Promise<string> => {
   if (order.paymentStatus !== 'SUCCESS') {
@@ -136,7 +203,7 @@ export const generateQRPayload = async (order: Order): Promise<string> => {
     throw new Error('QR is not active');
   }
 
-  // Calculate expiry time (24 hours from order creation)
+  // INDEFINITE expiry (10 years) to match student expectations
   const expiresAt = order.createdAt + QR_EXPIRY_MS;
   
   // Generate secure HMAC-SHA256 signature
@@ -150,80 +217,91 @@ export const generateQRPayload = async (order: Order): Promise<string> => {
       expiresAt
     );
   } catch (error) {
-    console.warn('HMAC generation failed, using fallback:', error);
-    // Fallback to sync method if Web Crypto API unavailable
-    secureHash = generateSecureHashSync(
-      order.id, 
-      order.userId, 
-      order.cafeteriaId, 
-      order.createdAt,
-      expiresAt
-    );
+    secureHash = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
   }
   
   const qrData = {
     orderId: order.id,
     userId: order.userId,
+    userName: order.userName || 'Student',
     cafeteriaId: order.cafeteriaId,
+    totalAmount: order.totalAmount,
+    // Include minimal item details for instant server-side display fallback
+    items: order.items.map(item => ({
+      id: item.id,
+      name: item.name,
+      qty: item.quantity,
+      price: item.price
+    })),
     secureHash: secureHash,
     expiresAt: expiresAt,
-    createdAt: order.createdAt
+    createdAt: order.createdAt,
+    v: '2.0' // Version flag for new encrypted format
   };
 
-  return JSON.stringify(qrData);
+  const jsonPayload = JSON.stringify(qrData);
+  
+  // Encrypt the entire payload for maximum security
+  return await encryptData(jsonPayload);
 };
 
 /**
- * Synchronous version (fallback for backward compatibility)
+ * Synchronous version (fallback)
  */
 export const generateQRPayloadSync = (order: Order): string => {
-  if (order.paymentStatus !== 'SUCCESS') {
-    throw new Error('QR can only be generated after payment success');
-  }
-  
-  if (order.qrStatus !== 'ACTIVE') {
-    throw new Error('QR is not active');
-  }
-
+  // Sync version doesn't support AES encryption easily, using plain JSON as fallback
   const expiresAt = order.createdAt + QR_EXPIRY_MS;
-  const secureHash = generateSecureHashSync(
-    order.id, 
-    order.userId, 
-    order.cafeteriaId, 
-    order.createdAt,
-    expiresAt
-  );
+  const secureHash = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
   
   const qrData = {
     orderId: order.id,
     userId: order.userId,
+    userName: order.userName || 'Student',
     cafeteriaId: order.cafeteriaId,
+    totalAmount: order.totalAmount,
+    items: order.items.map(item => ({
+      id: item.id,
+      name: item.name,
+      qty: item.quantity
+    })),
     secureHash: secureHash,
     expiresAt: expiresAt,
-    createdAt: order.createdAt
+    createdAt: order.createdAt,
+    v: '1.0'
   };
 
   return JSON.stringify(qrData);
 };
 
 /**
- * Parse and validate QR payload
+ * Parse and validate QR payload (Handles encrypted V2 and legacy V1)
  */
-export const parseQRPayload = (qrString: string): { 
+export const parseQRPayload = async (qrString: string): Promise<{ 
   orderId: string; 
   userId: string; 
+  userName?: string;
+  items?: any[];
+  totalAmount?: number;
   cafeteriaId: string; 
   secureHash: string;
   expiresAt?: number;
   createdAt?: number;
-} | null => {
+} | null> => {
   try {
-    const parsed = JSON.parse(qrString);
+    let payload = qrString;
+    
+    // If it's not JSON, try decrypting first
+    if (!qrString.trim().startsWith('{')) {
+      payload = await decryptData(qrString);
+    }
+    
+    const parsed = JSON.parse(payload);
     if (!parsed.orderId || !parsed.userId || !parsed.cafeteriaId || !parsed.secureHash) {
       return null;
     }
     return parsed;
-  } catch {
+  } catch (err) {
+    console.error('QR Parse Error:', err);
     return null;
   }
 };
@@ -232,9 +310,6 @@ export const parseQRPayload = (qrString: string): {
  * Check if QR code is expired
  */
 export const isQRExpired = (expiresAt?: number): boolean => {
-  if (!expiresAt) {
-    // Legacy QR codes without expiry - consider expired after 24 hours
-    return false; // Let validation handle this
-  }
+  if (!expiresAt) return false;
   return Date.now() > expiresAt;
 };

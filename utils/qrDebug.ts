@@ -10,9 +10,9 @@ import { Order } from '../types';
 declare global {
   interface Window {
     joeQRDebug: {
-      createTestOrder: () => { order: Order; qrCode: string };
-      validateQR: (qrData: string) => void;
-      generateQR: (orderId: string) => string | null;
+      createTestOrder: () => Promise<{ order: Order; qrCode: string }>;
+      validateQR: (qrData: string) => Promise<void>;
+      generateQR: (orderId: string) => Promise<string | null>;
       listOrders: () => Order[];
     };
   }
@@ -21,7 +21,7 @@ declare global {
 /**
  * Create a test order with valid QR code
  */
-function createTestOrder(): { order: Order; qrCode: string } {
+async function createTestOrder(): Promise<{ order: Order; qrCode: string }> {
   const orderId = 'order_' + Math.random().toString(36).substr(2, 9);
   const userId = 'student_' + Math.random().toString(36).substr(2, 9);
   const createdAt = Date.now();
@@ -53,7 +53,7 @@ function createTestOrder(): { order: Order; qrCode: string } {
     cafeteriaId: 'MAIN_CAFE'
   };
 
-  const qrCode = generateQRPayload(order);
+  const qrCode = await generateQRPayload(order);
 
   // Save to localStorage
   const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
@@ -71,9 +71,9 @@ function createTestOrder(): { order: Order; qrCode: string } {
 /**
  * Validate a QR code
  */
-function validateQR(qrData: string): void {
+async function validateQR(qrData: string): Promise<void> {
   try {
-    const payload = parseQRPayload(qrData);
+    const payload = await parseQRPayload(qrData);
     if (!payload) {
       console.error('❌ Invalid QR format');
       return;
@@ -92,11 +92,14 @@ function validateQR(qrData: string): void {
 
     console.log('✅ Order found:', order.id);
 
-    const isValid = verifySecureHash(
+    const expiresAt = (payload as any).expiresAt || (order.createdAt + 24 * 60 * 60 * 1000);
+
+    const isValid = await verifySecureHash(
       payload.orderId,
       payload.userId,
       payload.cafeteriaId,
       order.createdAt,
+      expiresAt,
       payload.secureHash
     );
 
@@ -105,12 +108,14 @@ function validateQR(qrData: string): void {
       console.log('✅ QR code is valid');
     } else {
       console.error('❌ Hash verification: FAILED');
-      console.log('Expected hash for order:', generateSecureHash(
+      const expectedHash = await generateSecureHash(
         order.id,
         order.userId,
         order.cafeteriaId,
-        order.createdAt
-      ));
+        order.createdAt,
+        expiresAt
+      );
+      console.log('Expected hash for order:', expectedHash);
     }
   } catch (err: any) {
     console.error('❌ Validation error:', err.message);
@@ -120,7 +125,7 @@ function validateQR(qrData: string): void {
 /**
  * Generate QR code for existing order
  */
-function generateQR(orderId: string): string | null {
+async function generateQR(orderId: string): Promise<string | null> {
   try {
     const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
     const order = orders.find((o: Order) => o.id === orderId);
@@ -140,7 +145,7 @@ function generateQR(orderId: string): string | null {
       return null;
     }
 
-    const qrCode = generateQRPayload(order);
+    const qrCode = await generateQRPayload(order);
     console.log('✅ QR Code generated:', qrCode);
     return qrCode;
   } catch (err: any) {

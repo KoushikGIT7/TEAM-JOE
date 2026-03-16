@@ -230,7 +230,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
             console.error('   Raw data:', trimmed);
             // Try parseQRPayload as fallback from qr module
             const qrModule = await import('../../services/qr');
-            const parsed = qrModule.parseQRPayload(trimmed);
+            const parsed = await qrModule.parseQRPayload(trimmed);
             if (parsed) {
               qrPayload = parsed;
               console.log('✅ Parsed using parseQRPayload:', qrPayload);
@@ -246,7 +246,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
               } else {
                 // Try parseQRPayload from qr module for other legacy formats
                 const { parseQRPayload } = await import('../../services/qr');
-                const parsed = parseQRPayload(trimmed);
+                const parsed = await parseQRPayload(trimmed);
                 if (parsed) {
                   qrPayload = parsed;
                   console.log('✅ Parsed using parseQRPayload:', qrPayload);
