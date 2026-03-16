@@ -69,5 +69,6 @@ export const updateServeFlowStatusCallable = httpsCallable<
 >(functions, "updateServeFlowStatus");
 
 export function useCallables(): boolean {
-  return import.meta.env.VITE_USE_CALLABLES !== "false";
+  // Default to false for Spark (Free) plan. Explicitly set to "true" in production env if using Blaze.
+  return import.meta.env.VITE_USE_CALLABLES === "true";
 }

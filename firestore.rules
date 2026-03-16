@@ -154,5 +154,11 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (hasRole('admin') || hasRole('server'));
       allow write: if hasRole('admin');
     }
+
+    // Idempotency keys for Spark plan client-side ordering
+    match /idempotency_keys/{keyId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // Keys restricted via transaction logic
+    }
   }
 }

@@ -24,6 +24,7 @@ import {
   increment
 } from "firebase/firestore";
 import { db } from "../firebase";
+
 import {
   UserProfile,
   Order,
@@ -838,16 +839,12 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
 
     // Perform atomic transaction on the client side
     const result = await runTransaction(db, async (transaction) => {
-      // 1. Idempotency check
+      // 1. Idempotency check (Document-based for transaction compatibility)
       if (orderData.idempotencyKey) {
-        const idempQuery = query(
-          collection(db, "orders"),
-          where("idempotencyKey", "==", orderData.idempotencyKey),
-          limit(1)
-        );
-        const idempSnap = await getDocs(idempQuery);
-        if (!idempSnap.empty) {
-          return idempSnap.docs[0].id;
+        const idempRef = doc(db, "idempotency_keys", orderData.idempotencyKey);
+        const idempSnap = await transaction.get(idempRef);
+        if (idempSnap.exists()) {
+          return idempSnap.data().orderId;
         }
       }
 
@@ -889,7 +886,15 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         }, { merge: true });
       }
 
-      // 5. Write order
+      // 5. Register idempotency key
+      if (orderData.idempotencyKey) {
+        transaction.set(doc(db, "idempotency_keys", orderData.idempotencyKey), {
+          orderId: id,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      // 6. Write order
       transaction.set(doc(db, "orders", id), orderToFirestore(newOrder));
       return id;
     });
