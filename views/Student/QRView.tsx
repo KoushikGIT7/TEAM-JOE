@@ -25,6 +25,14 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
   const { visible: loadingHeadlineVisible, headline: loadingHeadline } = useMotivationalHeadline(loading);
   const [orderCount, setOrderCount] = useState<number>(1);
 
+  // Auto-redirect on rejection
+  useEffect(() => {
+    if (order?.orderStatus === 'REJECTED') {
+      const timer = setTimeout(onBack, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [order?.orderStatus, onBack]);
+
   // Initialize or increment standard orderCount simulator since we don't have this in the DB yet
   useEffect(() => {
     if (!orderId) return;
@@ -124,6 +132,36 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
   const uiState = getOrderUIState(order);
   const qrIsVisible = shouldShowQR(order) && qrString !== null;
   const isScanned = uiState === 'SCANNED';
+
+  // 📍 Real-time status check: if order was rejected
+  if (order.orderStatus === 'REJECTED') {
+    return (
+      <div className="h-screen w-full flex flex-col bg-background max-w-md mx-auto">
+        <div className="p-4 bg-white flex items-center gap-4 border-b">
+          <button onClick={onBack} className="p-2 -ml-2 text-textMain"><ChevronLeft className="w-6 h-6" /></button>
+          <h2 className="text-xl font-bold text-textMain">Order Rejected</h2>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
+            <AlertCircle className="w-12 h-12 text-red-600" />
+          </div>
+          <h3 className="text-2xl font-black text-gray-900 mb-2">Order Rejected</h3>
+          <p className="text-gray-600 mb-8 font-medium">Please contact the cashier for assistance.</p>
+          
+          <div className="w-full bg-gray-50 rounded-2xl p-4 border border-gray-100 text-sm text-gray-500 mb-8">
+            Redirecting to home in 3 seconds...
+          </div>
+
+          <button 
+            onClick={onBack}
+            className="w-full bg-primary text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all"
+          >
+            Go Home Now
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // 📍 Real-time status check: if QR was scanned, show confirmation
   if (isScanned) {

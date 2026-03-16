@@ -30,7 +30,7 @@ export interface CartItem extends MenuItem {
   remainingQty?: number;
 }
 
-export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED';
+export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED';
 export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED' | 'DESTROYED';
 
 /** Zero-wait: FAST_ITEM = instant serve at counter; PREPARATION_ITEM = kitchen flow + pickup window */

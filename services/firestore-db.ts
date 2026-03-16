@@ -1180,7 +1180,7 @@ export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() =
     query(
       collection(db, "orders"),
       where("qrState", "==", "SCANNED"),
-      orderBy("scannedAt", "desc")
+      orderBy("createdAt", "asc")
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
@@ -1198,7 +1198,7 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
     query(
       collection(db, "orders"),
       where("qrState", "==", "SCANNED"),
-      orderBy("scannedAt", "desc")
+      orderBy("createdAt", "asc")
     ),
     (snapshot) => {
       const pendingItems: PendingItem[] = [];
@@ -1309,6 +1309,87 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
   }
 };
 
+// Batch serve multiple quantities of an item
+export const serveItemBatch = async (orderId: string, itemId: string, quantity: number, servedBy: string): Promise<void> => {
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    const serveLogsRef = collection(db, "serveLogs");
+
+    await runTransaction(db, async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists()) throw new Error("Order not found");
+
+      const orderData = orderSnap.data();
+      const order = firestoreToOrder(orderSnap.id, orderData);
+
+      if (order.orderStatus === 'SERVED') throw new Error("Order already served");
+      if (order.paymentStatus !== 'SUCCESS') throw new Error("Payment not verified");
+
+      const itemIndex = order.items.findIndex(i => i.id === itemId);
+      if (itemIndex === -1) throw new Error("Item not found in order");
+
+      const item = order.items[itemIndex];
+      if (item.remainingQty < quantity) throw new Error("Not enough remaining quantity");
+
+      // Update item quantities
+      const updatedItems = [...order.items];
+      updatedItems[itemIndex] = {
+        ...item,
+        servedQty: (item.servedQty || 0) + quantity,
+        remainingQty: item.remainingQty - quantity
+      };
+
+      // Check if all items are completed
+      const allItemsServed = updatedItems.every(i => i.remainingQty <= 0);
+      const newOrderStatus = allItemsServed ? 'SERVED' : order.orderStatus;
+
+      // Update order
+      tx.update(orderRef, {
+        items: updatedItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          costPrice: item.costPrice,
+          category: item.category,
+          imageUrl: item.imageUrl,
+          quantity: item.quantity,
+          servedQty: item.servedQty || 0,
+          remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity
+        })),
+        orderStatus: newOrderStatus,
+        qrStatus: allItemsServed ? 'DESTROYED' : order.qrStatus,
+        qrState: allItemsServed ? 'SERVED' : 'SCANNED',
+        servedAt: allItemsServed ? serverTimestamp() : order.servedAt ? Timestamp.fromMillis(order.servedAt) : null
+      });
+
+      // Create serve log
+      const serveLogRef = doc(serveLogsRef);
+      tx.set(serveLogRef, {
+        orderId,
+        itemId,
+        itemName: item.name,
+        quantityServed: quantity,
+        servedBy,
+        servedAt: serverTimestamp()
+      });
+
+      // Update inventory shards for the batch
+      const shardId = `shard_${Math.floor(Math.random() * INVENTORY_SHARD_COUNT)}`;
+      const shardRef = doc(db, "inventory_shards", itemId, "shards", shardId);
+      
+      tx.set(shardRef, { 
+        count: increment(quantity),
+        lastUpdated: serverTimestamp() 
+      }, { merge: true });
+    });
+
+    console.log('✅ Batch items served:', { orderId, itemId, quantity, servedBy });
+  } catch (error) {
+    console.error("Error batch serving items:", error);
+    throw error;
+  }
+};
+
 export const serveItem = async (orderId: string, itemId: string, servedBy: string): Promise<void> => {
   if (useCallables()) {
     try {
@@ -1334,8 +1415,8 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
       const orderData = orderSnap.data();
       const order = firestoreToOrder(orderSnap.id, orderData);
 
-      if (order.orderStatus === 'COMPLETED') {
-        throw new Error("Order already completed");
+      if (order.orderStatus === 'SERVED') {
+        throw new Error("Order already served");
       }
 
       if (order.paymentStatus !== 'SUCCESS') {
@@ -1372,7 +1453,7 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
 
       // Check if all items are completed
       const allItemsServed = updatedItems.every(i => i.remainingQty <= 0);
-      const newOrderStatus = allItemsServed ? 'COMPLETED' : order.orderStatus;
+      const newOrderStatus = allItemsServed ? 'SERVED' : order.orderStatus;
 
       // Update order
       tx.update(orderRef, {
@@ -1432,9 +1513,9 @@ export const rejectOrderFromCounter = async (orderId: string, rejectedBy: string
     await updateDoc(orderRef, {
       orderStatus: 'REJECTED',
       qrStatus: 'DESTROYED',
-      qrState: 'DESTROYED',
+      qrState: 'REJECTED',
       rejectedBy,
-      rejectedAt: Date.now()
+      rejectedAt: serverTimestamp()
     });
     console.log('🚫 Order rejected from counter:', orderId);
   } catch (error) {

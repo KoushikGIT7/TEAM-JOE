@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle, AlertCircle, Scan, Search, LogOut, RefreshCw, Gamepad2, Zap } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
-import { listenToActiveOrders, listenToPendingItems, serveItem, validateQRForServing, PendingItem, scanAndServeOrder, rejectOrderFromCounter } from '../../services/firestore-db';
+import { listenToActiveOrders, listenToPendingItems, serveItem, serveItemBatch, validateQRForServing, PendingItem, scanAndServeOrder, rejectOrderFromCounter } from '../../services/firestore-db';
 import { initializeScanner, getScanner } from '../../services/scanner';
 import { offlineDetector } from '../../utils/offlineDetector';
 import SyncStatus from '../../components/SyncStatus';
@@ -23,6 +23,7 @@ interface ReadyItem {
   remainingQty: number;
   orderedQty: number;
   servedQty: number;
+  userName: string;
 }
 
 const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogout, onOpenKitchen }) => {
@@ -156,7 +157,8 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                 imageUrl: item.imageUrl,
                 remainingQty,
                 orderedQty: item.quantity,
-                servedQty: item.servedQty || 0
+                servedQty: item.servedQty || 0,
+                userName: order.userName || 'Guest'
               });
             }
           });
@@ -299,16 +301,47 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     }
   };
 
-  const handleServeReadyItem = async (item: ReadyItem) => {
+  const handleServeReadyItem = async (item: ReadyItem, isBatch: boolean = false) => {
     if (servingKey) return;
 
-    const key = `${item.orderId}_${item.itemId}`;
+    const key = `${item.orderId}_${item.itemId}${isBatch ? '_batch' : ''}`;
     setServingKey(key);
     
     try {
-      await serveItem(item.orderId, item.itemId, profile.uid);
+      if (isBatch && item.remainingQty > 1) {
+        await serveItemBatch(item.orderId, item.itemId, item.remainingQty, profile.uid);
+      } else {
+        await serveItem(item.orderId, item.itemId, profile.uid);
+      }
       
       // Refocus scanner for next action
+      const scanner = getScanner();
+      if (scanner) {
+        setTimeout(() => scanner.focus(), 100);
+      }
+    } catch (err: any) {
+      setError({ type: 'ERROR', message: err.message || 'Failed to serve item' });
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setServingKey(null);
+    }
+  };
+
+  const handleServePendingBatch = async (pendingItem: PendingItem) => {
+    if (servingKey) return;
+
+    const key = `${pendingItem.orderId}_${pendingItem.itemId}_batch`;
+    setServingKey(key);
+    
+    try {
+      await serveItemBatch(pendingItem.orderId, pendingItem.itemId, pendingItem.remainingQty, profile.uid);
+      
+      // Clear search if item was from search results
+      if (searchResults.some(r => r.orderId === pendingItem.orderId && r.itemId === pendingItem.itemId)) {
+        setOrderSearch('');
+      }
+      
+      // Refocus scanner
       const scanner = getScanner();
       if (scanner) {
         setTimeout(() => scanner.focus(), 100);
@@ -548,20 +581,17 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
             ) : (
               (() => {
                 // Group items by order number and sort by scanned length or creation
-                const groupedByOrder = readyItems.reduce((acc, item) => {
-                  if (!acc[item.orderId]) {
-                    acc[item.orderId] = {
-                      orderId: item.orderId,
-                      orderNumber: item.orderNumber,
-                      userName: item.userName,
-                      items: []
-                    };
-                  }
-                  acc[item.orderId].items.push(item);
-                  return acc;
-                }, {} as Record<string, { orderId: string, orderNumber: string, userName: string, items: ReadyItem[] }>);
-
-                const sortedOrders: Array<{ orderId: string, orderNumber: string, userName: string, items: ReadyItem[] }> = Object.values(groupedByOrder);
+                const orderIdsInOrder = Array.from(new Set(readyItems.map(item => item.orderId)));
+                const sortedOrders = orderIdsInOrder.map(orderId => {
+                  const itemsForOrder = readyItems.filter(item => item.orderId === orderId);
+                  return {
+                    orderId,
+                    orderNumber: itemsForOrder[0].orderNumber,
+                    userName: itemsForOrder[0].userName,
+                    items: itemsForOrder
+                  };
+                });
+                
                 const nowServing = sortedOrders[0];
                 const queue = sortedOrders.slice(1);
 
@@ -604,18 +634,27 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                                   </div>
                                 </div>
                                 <div className="flex flex-col gap-3 w-full lg:w-auto">
+                                  {item.remainingQty > 1 && (
+                                    <button
+                                      onClick={() => handleServeReadyItem(item, true)}
+                                      disabled={isServing}
+                                      className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-4 rounded-2xl text-xl font-black uppercase tracking-widest shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                    >
+                                      {servingKey === `${item.orderId}_${item.itemId}_batch` ? <RefreshCw className="w-6 h-6 animate-spin" /> : <><Zap className="w-6 h-6" /> SERVE ALL ({item.remainingQty})</>}
+                                    </button>
+                                  )}
                                   <button
-                                    onClick={() => handleServeReadyItem(item)}
+                                    onClick={() => handleServeReadyItem(item, false)}
                                     disabled={isServing}
-                                    className="bg-green-500 hover:bg-green-600 text-white px-10 py-6 rounded-3xl text-2xl font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                    className="bg-green-500 hover:bg-green-600 text-white px-10 py-5 rounded-2xl text-xl font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
                                   >
-                                    {isServing ? <RefreshCw className="w-8 h-8 animate-spin" /> : <><CheckCircle className="w-8 h-8" /> SERVE</>}
+                                    {servingKey === `${item.orderId}_${item.itemId}` ? <RefreshCw className="w-8 h-8 animate-spin" /> : <><CheckCircle className="w-8 h-8" /> {item.remainingQty > 1 ? 'SERVE ONE' : 'SERVE'}</>}
                                   </button>
                                   <button
                                     onClick={() => handleRejectOrderAction(item.orderId)}
                                     className="bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
                                   >
-                                    <AlertCircle className="w-4 h-4" /> REJECT
+                                    <AlertCircle className="w-4 h-4" /> REJECT ORDER
                                   </button>
                                 </div>
                               </div>
@@ -704,15 +743,25 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                         <p className="text-sm sm:text-base lg:text-lg font-black text-gray-600">Order #{pendingItem.orderNumber}</p>
                         <p className="text-base sm:text-lg lg:text-xl font-black text-amber-600">Left: {pendingItem.remainingQty}</p>
                       </div>
-                      <button
-                        onClick={() => handleServePending(pendingItem)}
-                        disabled={isServing}
-                        className="min-h-[48px] bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white px-4 sm:px-5 py-3 rounded-xl text-sm sm:text-base font-black uppercase tracking-wider shadow-lg transition-transform disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2 w-full sm:w-auto sm:min-w-[120px] touch-manipulation"
-                        aria-label={isServing ? 'Serving' : `Serve ${pendingItem.itemName}`}
-                      >
-                        {isServing ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
-                        {isServing ? 'Serving' : 'Serve'}
-                      </button>
+                      <div className="flex flex-col gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={() => handleServePending(pendingItem)}
+                          disabled={isServing}
+                          className="min-h-[48px] bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white px-4 sm:px-5 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-md transition-transform disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2 w-full touch-manipulation"
+                        >
+                          {isServing ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                          {isServing ? 'Serving' : 'Serve One'}
+                        </button>
+                        {pendingItem.remainingQty > 1 && (
+                          <button
+                            onClick={() => handleServePendingBatch(pendingItem)}
+                            disabled={isServing}
+                            className="min-h-[48px] bg-green-600 hover:bg-green-700 active:scale-[0.98] text-white px-4 sm:px-5 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-md transition-transform disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2 w-full touch-manipulation"
+                          >
+                            <Zap className="w-4 h-4" /> Serve All
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -754,15 +803,25 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                       <p className="text-sm sm:text-base lg:text-lg font-black text-gray-600">Order #{pendingItem.orderNumber}</p>
                       <p className="text-base sm:text-lg lg:text-xl font-black text-amber-600">Left: {pendingItem.remainingQty}</p>
                     </div>
-                    <button
-                      onClick={() => handleServePending(pendingItem)}
-                      disabled={isServing}
-                      className="min-h-[48px] bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white px-4 sm:px-5 py-3 rounded-xl text-sm sm:text-base font-black uppercase tracking-wider shadow-lg transition-transform disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2 w-full sm:w-auto sm:min-w-[120px] touch-manipulation"
-                      aria-label={isServing ? 'Serving' : `Serve ${pendingItem.itemName}`}
-                    >
-                      {isServing ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
-                      {isServing ? 'Serving' : 'Serve'}
-                    </button>
+                    <div className="flex flex-col gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={() => handleServePending(pendingItem)}
+                        disabled={isServing}
+                        className="min-h-[48px] bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white px-4 sm:px-5 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-md transition-transform disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2 w-full touch-manipulation"
+                      >
+                        {isServing ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                        {isServing ? 'Serving' : 'Serve One'}
+                      </button>
+                      {pendingItem.remainingQty > 1 && (
+                        <button
+                          onClick={() => handleServePendingBatch(pendingItem)}
+                          disabled={isServing}
+                          className="min-h-[48px] bg-green-600 hover:bg-green-700 active:scale-[0.98] text-white px-4 sm:px-5 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-md transition-transform disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2 w-full touch-manipulation"
+                        >
+                          <Zap className="w-4 h-4" /> Serve All
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })
