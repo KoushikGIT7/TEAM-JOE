@@ -83,17 +83,24 @@ export const verifySecureHash = async (
   try {
     // Check expiry first (fail fast)
     if (Date.now() > expiresAt) {
+      console.warn('QR Token expired:', { now: Date.now(), expiresAt });
       return false;
     }
     
-    // Generate expected hash
-    const expectedHash = await generateSecureHash(orderId, userId, cafeteriaId, createdAt, expiresAt);
-    return providedHash === expectedHash;
+    // 1. Try modern HMAC verification first
+    try {
+      const expectedHash = await generateSecureHash(orderId, userId, cafeteriaId, createdAt, expiresAt);
+      if (providedHash === expectedHash) return true;
+    } catch (e) {
+      console.warn('HMAC verification unavailable, falling back to sync');
+    }
+
+    // 2. Try legacy sync verification as fallback
+    const expectedSyncHash = generateSecureHashSync(orderId, userId, cafeteriaId, createdAt, expiresAt);
+    return providedHash === expectedSyncHash;
   } catch (error) {
-    console.error('Hash verification error:', error);
-    // Fallback to sync verification for backward compatibility
-    const expectedHash = generateSecureHashSync(orderId, userId, cafeteriaId, createdAt, expiresAt);
-    return providedHash === expectedHash;
+    console.error('Critical hash verification error:', error);
+    return false;
   }
 };
 

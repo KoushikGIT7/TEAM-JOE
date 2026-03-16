@@ -42,7 +42,7 @@ import {
   KitchenStatus
 } from "../types";
 import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT } from "../constants";
-import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired } from "./qr";
+import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
   useCallables,
   createOrderCallable,
@@ -1260,7 +1260,7 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
     // 3. Cryptographic Signature Verification
     // Use timestamps from payload for verification as they were used in generation
     const verifCreatedAt = payloadCreatedAt || order.createdAt;
-    const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + 24 * 60 * 60 * 1000);
+    const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
 
     let isValid = false;
     if (secureHash === 'MANUAL_OVERRIDE') {
