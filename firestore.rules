@@ -157,8 +157,8 @@ service cloud.firestore {
 
     // Idempotency keys for Spark plan client-side ordering
     match /idempotency_keys/{keyId} {
-      allow read: if isAuthenticated();
-      allow create: if true; // Keys restricted via transaction logic
+      // Allow read/create for everyone (including guests) to support duplicate check in transactions
+      allow read, create: if true;
     }
   }
 }
