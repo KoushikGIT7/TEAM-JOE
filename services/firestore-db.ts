@@ -1234,30 +1234,21 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
   console.log('🛡️ [FIREBASE-ORDER] Validating Meal Token...');
   
   try {
-    // 1. Parse the secure encrypted payload OR handle plain Order ID as fallback
     let orderId: string;
-    let userId: string;
-    let cafeteriaId: string;
     let secureHash: string;
     let payloadExpiresAt: number | undefined;
-    let payloadCreatedAt: number | undefined;
 
     if (qrData.startsWith('order_')) {
-      // Manual fallback: Data is just the order ID
       orderId = qrData;
-      // We will fill the rest from the database since we don't have a payload
-      const orderDoc = await getDoc(doc(db, "orders", orderId));
-      if (!orderDoc.exists()) throw new Error("ORDER_NOT_FOUND - Token corresponds to a non-existent order.");
-      const orderData = orderDoc.data();
-      userId = orderData.userId;
-      cafeteriaId = orderData.cafeteriaId;
-      secureHash = 'MANUAL_OVERRIDE'; // Skips verification if staff is trusted
+      secureHash = 'MANUAL_OVERRIDE';
     } else {
       const payload = await parseQRPayload(qrData);
       if (!payload?.orderId) {
         throw new Error("INVALID_TOKEN_FORMAT - This does not look like a JOE Meal Token.");
       }
-      ({ orderId, userId, cafeteriaId, secureHash, expiresAt: payloadExpiresAt, createdAt: payloadCreatedAt } = payload);
+      orderId = payload.orderId;
+      secureHash = payload.secureHash;
+      payloadExpiresAt = payload.expiresAt;
     }
 
     // 2. Direct Firestore Fetch (The Source of Truth)
@@ -1269,40 +1260,37 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
     const orderData = orderDoc.data();
     const order = firestoreToOrder(orderDoc.id, orderData);
 
-    // 3. Cryptographic Signature Verification
-    // Use timestamps from payload for verification as they were used in generation
-    const verifCreatedAt = payloadCreatedAt || order.createdAt;
-    const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
-
-    let isValid = false;
-    if (secureHash === 'MANUAL_OVERRIDE') {
-      isValid = true;
-    } else {
-      isValid = await verifySecureHash(
-        orderId, 
-        userId, 
-        cafeteriaId, 
-        verifCreatedAt, 
-        verifExpiresAt, 
-        secureHash
-      );
-    }
-
-    if (!isValid) {
-      throw new Error("SECURITY_BREACH - Token signature is invalid or expired.");
-    }
-
-    // 4. Status Checks
+    // 3. Status Checks (Fail fast)
     if (order.paymentStatus !== 'SUCCESS') {
       throw new Error("PAYMENT_REQUIRED - This order has not been paid for yet.");
     }
 
-    if (order.qrStatus === 'USED') {
+    if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED') {
       throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
     }
 
-    if (order.qrStatus === 'EXPIRED') {
+    if (order.qrStatus === 'EXPIRED' || (payloadExpiresAt && Date.now() > payloadExpiresAt)) {
       throw new Error("TOKEN_EXPIRED - This token is no longer valid.");
+    }
+
+    // 4. Cryptographic Signature Verification
+    if (secureHash !== 'MANUAL_OVERRIDE') {
+      // Reconstruct components for verification using DB data
+      const verifCreatedAt = order.createdAt;
+      const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
+
+      const isValid = await verifySecureHash(
+        orderId, 
+        order.userId, 
+        order.cafeteriaId, 
+        verifCreatedAt, 
+        verifExpiresAt, 
+        secureHash
+      );
+
+      if (!isValid) {
+        throw new Error("SECURITY_BREACH - Token signature is invalid.");
+      }
     }
 
     console.log('✅ [FIREBASE-ORDER] Token validated successfully:', orderId);
@@ -1400,7 +1388,7 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
           remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity
         })),
         orderStatus: newOrderStatus,
-        qrStatus: allItemsServed ? 'USED' : order.qrStatus,
+        qrStatus: allItemsServed ? 'DESTROYED' : order.qrStatus,
         qrState: allItemsServed ? 'SERVED' : 'SCANNED',
         servedAt: allItemsServed ? serverTimestamp() : order.servedAt ? Timestamp.fromMillis(order.servedAt) : null
       });
@@ -1416,26 +1404,41 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
         servedAt: serverTimestamp()
       });
 
-      // Update main inventory count
-      if (invSnap.exists()) {
-        tx.update(invRef, {
-          consumed: increment(1),
-          lastUpdated: serverTimestamp()
-        });
-      }
+      // Update inventory shard (High performance / scalability)
+      // This avoids write hotspots on the main inventory documents during peak loads
+      const shardId = `shard_${Math.floor(Math.random() * INVENTORY_SHARD_COUNT)}`;
+      const shardRef = doc(db, "inventory_shards", itemId, "shards", shardId);
+      
+      tx.set(shardRef, { 
+        count: increment(1),
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
 
-      // Update inventory_meta (for real-time student view)
-      if (metaSnap.exists()) {
-        tx.update(metaRef, {
-          consumed: increment(1),
-          lastUpdated: serverTimestamp()
-        });
-      }
+      // Note: inventory_meta and inventory docs are updated via Cloud Function aggregation
+      // to maintain high throughput on this serving transaction.
     });
 
     console.log('✅ Item served:', { orderId, itemId, servedBy });
   } catch (error) {
     console.error("Error serving item:", error);
+    throw error;
+  }
+};
+
+/** Reject order from serving counter (Fraud/Invalid) */
+export const rejectOrderFromCounter = async (orderId: string, rejectedBy: string): Promise<void> => {
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    await updateDoc(orderRef, {
+      orderStatus: 'REJECTED',
+      qrStatus: 'DESTROYED',
+      qrState: 'DESTROYED',
+      rejectedBy,
+      rejectedAt: Date.now()
+    });
+    console.log('🚫 Order rejected from counter:', orderId);
+  } catch (error) {
+    console.error("Error rejecting order:", error);
     throw error;
   }
 };
@@ -1447,24 +1450,18 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
   try {
     // Parse payload or handle plain ID
     let orderId: string;
-    let userId: string;
-    let cafeteriaId: string;
     let secureHash: string;
     let payloadExpiresAt: number | undefined;
-    let payloadCreatedAt: number | undefined;
 
     if (qrDataRaw.startsWith('order_')) {
       orderId = qrDataRaw;
-      const orderDoc = await getDoc(doc(db, "orders", orderId));
-      if (!orderDoc.exists()) throw new Error("Order not found");
-      const orderData = orderDoc.data();
-      userId = orderData.userId;
-      cafeteriaId = orderData.cafeteriaId;
       secureHash = 'MANUAL_OVERRIDE';
     } else {
       const payload = await parseQRPayload(qrDataRaw);
       if (!payload) throw new Error("Invalid Token Format");
-      ({ orderId, userId, cafeteriaId, secureHash, expiresAt: payloadExpiresAt, createdAt: payloadCreatedAt } = payload);
+      orderId = payload.orderId;
+      secureHash = payload.secureHash;
+      payloadExpiresAt = payload.expiresAt;
     }
 
     const orderDoc = await getDoc(doc(db, "orders", orderId));
@@ -1475,9 +1472,9 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
     const order = firestoreToOrder(orderDoc.id, orderDoc.data());
 
     if (secureHash !== 'MANUAL_OVERRIDE') {
-      const verifCreatedAt = payloadCreatedAt || order.createdAt;
+      const verifCreatedAt = order.createdAt;
       const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
-      const isValid = await verifySecureHash(orderId, userId, cafeteriaId, order.createdAt, verifExpiresAt, secureHash);
+      const isValid = await verifySecureHash(orderId, order.userId, order.cafeteriaId, order.createdAt, verifExpiresAt, secureHash);
       if (!isValid) {
         throw new Error("Invalid Token Signature");
       }
@@ -1487,7 +1484,7 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
       throw new Error("PAYMENT_NOT_VERIFIED");
     }
 
-    if (order.qrStatus === 'USED') {
+    if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED') {
       throw new Error("TOKEN_ALREADY_USED");
     }
 
@@ -1498,7 +1495,8 @@ export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = '
     // Update order
     await updateDoc(doc(db, "orders", orderId), {
       orderStatus: 'SERVED',
-      qrStatus: 'USED',
+      qrStatus: 'DESTROYED',
+      qrState: 'SERVED',
       servedAt: serverTimestamp()
     });
 

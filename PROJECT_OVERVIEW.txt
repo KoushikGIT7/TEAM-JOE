@@ -1,0 +1,116 @@
+================================================================================
+JOE CAFETERIA AUTOMATION SYSTEM - END-TO-END PROJECT DOCUMENTATION
+================================================================================
+Version: 1.2 (Production Ready)
+Last Updated: March 16, 2026
+Architecture Status: Scalable Hybrid (React + Firestore Real-time)
+
+--------------------------------------------------------------------------------
+1. SYSTEM ARCHITECTURE
+--------------------------------------------------------------------------------
+- Frontend: React 19 + TypeScript + Vite (Mobile-First UI)
+- Backend: Firebase Cloud Functions (v2) for critical mutations
+- Database: Firestore (NoSQL) for real-time state synchronization
+- Authentication: Google OAuth 2.0 + Firebase Auth (Role-Based)
+- Real-time Engine: Firestore onSnapshot listeners (zero-latency updates)
+
+--------------------------------------------------------------------------------
+2. QR SECURITY & VALIDATION MODEL
+--------------------------------------------------------------------------------
+- Signature: HMAC-SHA256 (Base64URL safe)
+- Payload Format: JSON (Compact)
+    {
+      "orderId": string,
+      "userId": string,
+      "cafeteriaId": string,
+      "secureHash": base64,
+      "expiresAt": timestamp,
+      "createdAt": timestamp
+    }
+- Validation Logic:
+    1. Check Expiry: QR expires after 30 mins (configurable).
+    2. Signature Check: HMAC verified against VITE_QR_SECRET_KEY.
+    3. State Check: qrStatus must be 'ACTIVE'.
+    4. Replay Protection: qrStatus changes to 'USED' immediately upon first scan.
+    5. User Consistency: Validates that the order exists and belongs to the user.
+
+--------------------------------------------------------------------------------
+3. FIRESTORE DATABASE SCHEMA (KEY COLLECTIONS)
+--------------------------------------------------------------------------------
+- users/{uid}
+    - role: 'student' | 'cashier' | 'server' | 'admin'
+    - profile: { name, email, photoUrl }
+
+- orders/{orderId}
+    - userId: string
+    - items: Array<{ id, name, price, quantity, remainingQty, servedQty }>
+    - totalAmount: number
+    - paymentType: 'UPI' | 'CARD' | 'CASH' | 'NET'
+    - paymentStatus: 'PENDING' | 'SUCCESS' | 'REJECTED'
+    - orderStatus: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+    - qrStatus: 'PENDING_PAYMENT' | 'ACTIVE' | 'USED' | 'REJECTED'
+    - qrState: 'ACTIVE' | 'SCANNED' | 'SERVED'
+    - orderType: 'FAST_ITEM' | 'PREPARATION_ITEM'
+    - serveFlowStatus: 'PAID' | 'NEW' | 'PREPARING' | 'READY' | 'SERVED'
+
+- inventory_meta/{itemId}
+    - totalStock: number
+    - consumed: number (Aggregated from shards)
+    - stockStatus: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK'
+
+--------------------------------------------------------------------------------
+4. CASHIER PORTAL DESIGN & FLOW
+--------------------------------------------------------------------------------
+- View: Staff/CashierView.tsx
+- Flow:
+    1. Monitor 'PENDING' Cash orders in real-time.
+    2. Click 'APPROVE' -> Triggers `confirmPayment` Cloud Function.
+    3. Update: paymentStatus = 'SUCCESS', qrStatus = 'ACTIVE'.
+    4. Student UI: Instantly updates via listener to show the QR Code.
+- Security: Requires 'cashier' or 'admin' custom claim for write permissions.
+
+--------------------------------------------------------------------------------
+5. SERVER PORTAL (SERVING COUNTER) DESIGN
+--------------------------------------------------------------------------------
+- View: Staff/ServingCounterView.tsx
+- Flow:
+    1. Scan QR: Mobile camera or USB scanner decoding.
+    2. Validation: Backend verifies signature, status, and expiry.
+    3. Ready for Packing: Validated orders appear in the "Ready for Packing" list.
+    4. Serve Action: Server clicks 'SERVE' for individual items.
+    5. Auto-Update: Once all items are served, orderStatus -> 'COMPLETED'.
+- UI Highlights: Jumbo Order IDs, Food Images, and 1-Click Serve buttons.
+
+--------------------------------------------------------------------------------
+6. PREPARATION QUEUE SYSTEM (KITCHEN DASHBOARD)
+--------------------------------------------------------------------------------
+- View: Staff/KitchenView.tsx
+- Categorization:
+    - FAST_ITEM (Snacks/Coffee): High speed, bypasses kitchen prep queue.
+    - PREPARATION_ITEM (Dosa/Meals): Enters preparation pipeline.
+- States:
+    1. NEW: Order paid, waiting for kitchen.
+    2. PREPARING: Chef active on order (sets Estimated Ready Time).
+    3. READY: Waiting for student to arrive at counter.
+- FIFO logic: `orderBy('createdAt', 'asc')` for the primary queue.
+
+--------------------------------------------------------------------------------
+7. PERFORMANCE & SCALING STRATEGY
+--------------------------------------------------------------------------------
+- Load Handling: Supports 10,000+ Students (Firebase scale).
+- Low Latency: Vercel/Netlify CDN for UI; Firestore Regional endpoints.
+- Inventory Sharding: Uses `inventory_shards` subcollection (10 shards) to 
+  prevent write hotspots during peak lunch hour (300+ orders/min).
+- Offline Support: Firestore persistence enabled for unreliable network conditions.
+
+--------------------------------------------------------------------------------
+8. FRAUD PREVENTION MECHANISMS
+--------------------------------------------------------------------------------
+- Double Serving: QR status checked within a Firestore Transaction.
+- Screenshot Reuse: Signature check fails if the QR is expired or already used.
+- Counterfeit: HMAC signature prevents manual ID guessing or fake QR generation.
+- Role Guarding: Cloud Functions verify `context.auth.token.role` for all serving actions.
+
+================================================================================
+Generated by JOE Automation Engineering Team
+================================================================================

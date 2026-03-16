@@ -47,7 +47,7 @@ export class HardwareScanner {
       input.style.pointerEvents = "none";
       input.autocomplete = "off";
       input.autocapitalize = "off";
-      input.autocorrect = "off";
+      (input as any).autocorrect = "off";
       input.spellcheck = false;
       document.body.appendChild(input);
     }

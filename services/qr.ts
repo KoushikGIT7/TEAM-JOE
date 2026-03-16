@@ -192,7 +192,8 @@ export const decryptData = async (encryptedBase64: string): Promise<string> => {
 };
 
 /**
- * Generate QR payload for encoding (PRODUCTION-GRADE with full details & encryption)
+ * Generate QR payload for encoding (REDESIGNED: COMPACT & SECURE)
+ * Format: v1.<orderId>.<signature>.<expiry>
  */
 export const generateQRPayload = async (order: Order): Promise<string> => {
   if (order.paymentStatus !== 'SUCCESS') {
@@ -203,13 +204,13 @@ export const generateQRPayload = async (order: Order): Promise<string> => {
     throw new Error('QR is not active');
   }
 
-  // INDEFINITE expiry (10 years) to match student expectations
+  // QR expiry in milliseconds
   const expiresAt = order.createdAt + QR_EXPIRY_MS;
   
   // Generate secure HMAC-SHA256 signature
-  let secureHash: string;
+  let signature: string;
   try {
-    secureHash = await generateSecureHash(
+    signature = await generateSecureHash(
       order.id, 
       order.userId, 
       order.cafeteriaId, 
@@ -217,89 +218,65 @@ export const generateQRPayload = async (order: Order): Promise<string> => {
       expiresAt
     );
   } catch (error) {
-    secureHash = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
+    signature = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
   }
   
-  const qrData = {
-    orderId: order.id,
-    userId: order.userId,
-    userName: order.userName || 'Student',
-    cafeteriaId: order.cafeteriaId,
-    totalAmount: order.totalAmount,
-    // Include minimal item details for instant server-side display fallback
-    items: order.items.map(item => ({
-      id: item.id,
-      name: item.name,
-      qty: item.quantity,
-      price: item.price
-    })),
-    secureHash: secureHash,
-    expiresAt: expiresAt,
-    createdAt: order.createdAt,
-    v: '2.0' // Version flag for new encrypted format
-  };
-
-  const jsonPayload = JSON.stringify(qrData);
-  
-  // Encrypt the entire payload for maximum security
-  return await encryptData(jsonPayload);
+  // Compact Format: v1.orderId.signature.expiry
+  // We use dot as separator because it's not base64url or orderId character
+  return `v1.${order.id}.${signature}.${expiresAt}`;
 };
 
 /**
- * Synchronous version (fallback)
+ * Synchronous version
  */
 export const generateQRPayloadSync = (order: Order): string => {
-  // Sync version doesn't support AES encryption easily, using plain JSON as fallback
   const expiresAt = order.createdAt + QR_EXPIRY_MS;
-  const secureHash = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
-  
-  const qrData = {
-    orderId: order.id,
-    userId: order.userId,
-    userName: order.userName || 'Student',
-    cafeteriaId: order.cafeteriaId,
-    totalAmount: order.totalAmount,
-    items: order.items.map(item => ({
-      id: item.id,
-      name: item.name,
-      qty: item.quantity
-    })),
-    secureHash: secureHash,
-    expiresAt: expiresAt,
-    createdAt: order.createdAt,
-    v: '1.0'
-  };
-
-  return JSON.stringify(qrData);
+  const signature = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
+  return `v1.${order.id}.${signature}.${expiresAt}`;
 };
 
 /**
- * Parse and validate QR payload (Handles encrypted V2 and legacy V1)
+ * Parse and validate QR payload (REDESIGNED for speed)
  */
 export const parseQRPayload = async (qrString: string): Promise<{ 
   orderId: string; 
-  userId: string; 
-  userName?: string;
-  items?: any[];
-  totalAmount?: number;
-  cafeteriaId: string; 
   secureHash: string;
-  expiresAt?: number;
-  createdAt?: number;
+  expiresAt: number;
+  version: string;
 } | null> => {
   try {
-    let payload = qrString;
+    // Check if it matches new dot-separated format
+    if (qrString.startsWith('v1.')) {
+      const parts = qrString.split('.');
+      if (parts.length === 4) {
+        return {
+          version: parts[0],
+          orderId: parts[1],
+          secureHash: parts[2],
+          expiresAt: parseInt(parts[3], 10)
+        };
+      }
+    }
     
-    // If it's not JSON, try decrypting first
+    // Fallback to legacy JSON/Encrypted formats (for transition)
+    let payload = qrString;
     if (!qrString.trim().startsWith('{')) {
-      payload = await decryptData(qrString);
+      try {
+        payload = await decryptData(qrString);
+      } catch (e) {
+        return null;
+      }
     }
     
     const parsed = JSON.parse(payload);
-    if (!parsed.orderId || !parsed.userId || !parsed.cafeteriaId || !parsed.secureHash) {
-      return null;
-    }
-    return parsed;
+    if (!parsed.orderId || !parsed.secureHash) return null;
+    
+    return {
+      orderId: parsed.orderId,
+      secureHash: parsed.secureHash,
+      expiresAt: parsed.expiresAt || 0,
+      version: parsed.v || 'legacy'
+    };
   } catch (err) {
     console.error('QR Parse Error:', err);
     return null;

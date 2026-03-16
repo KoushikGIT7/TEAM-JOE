@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LogOut, CheckCircle, Clock, Banknote, RefreshCw, Search, LayoutDashboard, 
   FileText, BarChart3, Settings, X, AlertCircle, TrendingUp, DollarSign,
-  Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon
+  Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon,
+  Calculator, TrendingDown, ArrowUpRight, ChevronRight
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
 import { listenToPendingCashOrders, confirmCashPayment, rejectCashPayment, listenToAllOrders } from '../../services/firestore-db';
@@ -307,76 +308,134 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   );
 
   const renderCashRequests = () => (
-    <div className="space-y-4 animate-in fade-in duration-500">
-      <div className="bg-white rounded-2xl p-6 border-4 border-amber-500 shadow-lg">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-black text-textMain uppercase">Cash Requests</h2>
-          <span className="bg-amber-100 text-amber-600 px-4 py-2 rounded-full text-sm font-black">
-            {pendingOrders.length} Pending
-          </span>
+    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* 📊 Header Metric */}
+      <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-[2rem] p-8 shadow-2xl shadow-amber-200 text-white relative overflow-hidden">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-black uppercase tracking-tight">Active Requests</h2>
+            <p className="text-amber-100 font-bold text-sm opacity-90">Verify and confirm individual student cash payments</p>
+          </div>
+          <div className="flex items-center gap-4 bg-white/20 backdrop-blur-md px-6 py-4 rounded-3xl border border-white/20">
+            <div className="relative">
+              <Banknote className="w-10 h-10 text-white" />
+              {pendingOrders.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full animate-ping" />
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Awaiting</p>
+              <p className="text-4xl font-black leading-none">{pendingOrders.length}</p>
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-textSecondary">Real-time cash payment approvals</p>
+        {/* Background Decorative Element */}
+        <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
       </div>
 
       {loading ? (
-        <div className="flex justify-center p-12">
-          <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+        <div className="flex flex-col items-center justify-center p-20 gap-4">
+          <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-amber-600 font-black uppercase text-xs tracking-[0.2em]">Syncing Orders...</p>
         </div>
       ) : pendingOrders.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-gray-200">
-          <Banknote className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-xl font-black text-textSecondary">No Pending Cash Payments</p>
-          <p className="text-sm text-textSecondary mt-2">All payments are confirmed</p>
+        <div className="bg-white rounded-[2.5rem] p-16 text-center border-4 border-dashed border-gray-100 flex flex-col items-center">
+          <div className="w-32 h-32 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+            <CheckCircle className="w-16 h-16 text-green-300" />
+          </div>
+          <p className="text-2xl font-black text-gray-900 mb-2">Queue is Clear!</p>
+          <p className="text-gray-400 font-medium max-w-xs">There are no pending cash payments at this moment.</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {pendingOrders.map(order => (
-            <div key={order.id} className="bg-white rounded-2xl p-6 border-4 border-amber-400 shadow-lg">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="bg-black text-white px-4 py-2 rounded-xl inline-block mb-2">
-                    <p className="text-xs font-black uppercase tracking-widest text-gray-300 mb-1">ORDER NO</p>
-                    <p className="text-xl font-black">#{order.id.slice(-8).toUpperCase()}</p>
+        <div className="grid grid-cols-1 gap-6">
+          {pendingOrders.map((order, idx) => (
+            <div 
+              key={order.id} 
+              className="group bg-white rounded-[2.5rem] border-2 border-gray-100 hover:border-amber-400 p-6 sm:p-8 shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden animate-in slide-in-from-right-4 duration-500"
+              style={{ animationDelay: `${idx * 100}ms` }}
+            >
+              <div className="flex flex-col lg:flex-row gap-8 items-start lg:items-center">
+                {/* 🏷️ Order Identity */}
+                <div className="flex-shrink-0 w-full lg:w-48">
+                  <div className="bg-gray-900 text-white p-5 rounded-[2rem] shadow-lg relative h-32 flex flex-col justify-center text-center overflow-hidden">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 relative z-10">ORDER NO</p>
+                    <p className="text-3xl font-black relative z-10 whitespace-nowrap">
+                      #{order.id.slice(-8).toUpperCase()}
+                    </p>
+                    {/* Visual pattern */}
+                    <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_2px_2px,_rgba(255,255,255,0.2)_1px,_transparent_0)] bg-[size:12px_12px]" />
                   </div>
-                  <p className="text-sm font-bold text-textSecondary mt-2">Student: {order.userName}</p>
-                  <p className="text-sm font-bold text-textSecondary">Payment: <span className="text-cash font-black">CASH</span></p>
                 </div>
-                <div className="text-right">
-                  <p className="text-3xl font-black text-primary">₹{order.totalAmount}</p>
-                  <div className="flex items-center gap-1 text-xs text-amber-600 font-black justify-end mt-2">
-                    <Clock className="w-4 h-4" />
-                    AWAITING
+
+                {/* 👤 Student & Total */}
+                <div className="flex-1 min-w-0 space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center border-2 border-amber-200">
+                      <span className="text-amber-700 font-black text-lg">
+                        {order.userName?.charAt(0).toUpperCase() || '?'}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-xl font-black text-gray-900 truncate">{order.userName}</h3>
+                      <p className="text-sm font-bold text-gray-400 flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5" />
+                        Requested {formatTime(order.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                    <div className="flex flex-wrap gap-2">
+                      {order.items.map(item => (
+                        <span key={item.id} className="bg-white px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-black text-gray-600 flex items-center gap-2">
+                          <span className="text-amber-500">x{item.quantity}</span>
+                          {item.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 💰 Value & Actions */}
+                <div className="flex flex-col items-center lg:items-end gap-6 w-full lg:w-auto">
+                  <div className="text-center lg:text-right">
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Due Amount</p>
+                    <p className="text-5xl font-black text-gray-900">₹{order.totalAmount}</p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full">
+                    <button
+                      onClick={() => handleConfirm(order.id)}
+                      disabled={!!confirming || !!rejecting}
+                      className="flex-1 lg:min-w-[200px] bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-black py-5 px-8 rounded-3xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 shadow-[0_10px_30px_rgba(34,197,94,0.3)] hover:shadow-[0_15px_40px_rgba(34,197,94,0.4)]"
+                    >
+                      {confirming === order.id ? (
+                        <RefreshCw className="animate-spin w-6 h-6" />
+                      ) : (
+                        <><CheckCircle className="w-6 h-6" /> CONFIRM</>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleReject(order.id)}
+                      disabled={!!confirming || !!rejecting}
+                      className="bg-red-50 hover:bg-red-100 text-red-600 font-black px-6 py-5 rounded-3xl transition-all active:scale-95 disabled:opacity-50 border-2 border-red-100 flex items-center justify-center gap-2"
+                      title="Reject payment"
+                    >
+                      {rejecting === order.id ? <RefreshCw className="w-5 h-5 animate-spin" /> : <X className="w-5 h-5" />}
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
-                <p className="text-xs font-black text-textSecondary uppercase mb-2">Items:</p>
-                {order.items.map(item => (
-                  <div key={item.id} className="flex justify-between text-sm">
-                    <span className="text-textMain font-medium">• {item.name}</span>
-                    <span className="font-black text-textMain">x{item.quantity}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleConfirm(order.id)}
-                  disabled={!!confirming || !!rejecting}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white font-black py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 shadow-lg"
-                >
-                  {confirming === order.id ? <RefreshCw className="animate-spin w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
-                  APPROVE CASH
-                </button>
-                <button
-                  onClick={() => handleReject(order.id)}
-                  disabled={!!confirming || !!rejecting}
-                  className="px-6 bg-red-500 hover:bg-red-600 text-white font-black py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 shadow-lg"
-                >
-                  {rejecting === order.id ? <RefreshCw className="w-5 h-5 animate-spin" /> : <X className="w-5 h-5" />}
-                  REJECT
-                </button>
+              {/* Status bar */}
+              <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Awaiting Verification</span>
+                </div>
+                <div className="text-[10px] font-black text-gray-300 uppercase tracking-widest">
+                  Secure Peer-to-Peer Cash
+                </div>
               </div>
             </div>
           ))}
@@ -497,47 +556,96 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   );
 
   const renderDailySummary = () => (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white rounded-2xl p-8 border-4 border-primary shadow-lg">
-        <h2 className="text-2xl font-black text-textMain mb-6 uppercase">Cash Reconciliation</h2>
+    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
+      {/* 🧾 MAIN RECONCILIATION CARD */}
+      <div className="bg-white rounded-[3rem] p-8 sm:p-12 border border-gray-100 shadow-2xl relative overflow-hidden">
+        {/* Background Decorative Gradient */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-amber-50 rounded-bl-[10rem] -mr-16 -mt-16 opacity-50" />
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
-          <div className="bg-gray-50 rounded-xl p-6">
-            <p className="text-xs font-black text-textSecondary uppercase mb-2">Expected Cash</p>
-            <p className="text-3xl font-black text-textMain">₹{dailySummary.expectedCash.toLocaleString()}</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-12 relative z-10">
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 bg-amber-500 rounded-3xl flex items-center justify-center shadow-lg shadow-amber-200">
+              <Calculator className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tight">Shift Balance</h2>
+              <p className="text-gray-400 font-bold text-sm">Automated cash reconciliation logic</p>
+            </div>
           </div>
-          <div className="bg-gray-50 rounded-xl p-6">
-            <p className="text-xs font-black text-textSecondary uppercase mb-2">Actual Cash</p>
-            <p className="text-3xl font-black text-textMain">₹{dailySummary.actualCash.toLocaleString()}</p>
+          <button className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-800 transition-all active:scale-95 shadow-lg flex items-center gap-2">
+            <Download className="w-4 h-4" /> Export Audit
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12 relative z-10">
+          <div className="bg-gray-50 rounded-[2rem] p-8 border border-gray-100 group hover:bg-white hover:shadow-xl transition-all">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Expected In Drawer</p>
+            <p className="text-4xl font-black text-gray-900">₹{dailySummary.expectedCash.toLocaleString()}</p>
+            <div className="flex items-center gap-1 mt-4 text-[10px] font-black text-green-600 uppercase">
+              <TrendingUp className="w-3 h-3" /> From {dailySummary.totalCashOrders} Orders
+            </div>
           </div>
-          <div className={`rounded-xl p-6 ${dailySummary.difference === 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-            <p className="text-xs font-black text-textSecondary uppercase mb-2">Difference</p>
-            <p className={`text-3xl font-black ${dailySummary.difference === 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {dailySummary.difference >= 0 ? '+' : ''}₹{Math.abs(dailySummary.difference).toLocaleString()}
+
+          <div className="bg-gray-50 rounded-[2rem] p-8 border border-gray-100 group hover:bg-white hover:shadow-xl transition-all">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Actual Recorded</p>
+            <p className="text-4xl font-black text-gray-900">₹{dailySummary.actualCash.toLocaleString()}</p>
+            <p className="mt-4 text-[10px] font-black text-gray-400 uppercase italic">Updating Real-time</p>
+          </div>
+
+          <div className={`rounded-[2rem] p-8 shadow-inner ${dailySummary.difference === 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 text-center sm:text-left">Settlement Variance</p>
+            <div className="flex items-center justify-center sm:justify-start gap-3">
+              <p className={`text-4xl font-black ${dailySummary.difference === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {dailySummary.difference >= 0 ? '+' : ''}₹{Math.abs(dailySummary.difference).toLocaleString()}
+              </p>
+              {dailySummary.difference !== 0 ? (
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 animate-bounce">
+                  <TrendingDown className="w-5 h-5" />
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600">
+                  <CheckCircle className="w-5 h-5" />
+                </div>
+              )}
+            </div>
+            <p className={`mt-4 text-[10px] font-black uppercase text-center sm:text-left ${dailySummary.difference === 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {dailySummary.difference === 0 ? 'Perfectly Balanced' : 'Action Required: Verify Loose Cash'}
             </p>
-            {dailySummary.difference !== 0 && (
-              <AlertCircle className="w-6 h-6 text-red-600 mt-2" />
-            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-6 border-t border-gray-200">
-          <div>
-            <p className="text-xs font-black text-textSecondary uppercase mb-1">Total Cash Orders</p>
-            <p className="text-xl font-black text-textMain">{dailySummary.totalCashOrders}</p>
+        {/* Breakdown Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-8 bg-gray-900 rounded-[2.5rem] shadow-2xl">
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Avg Value</p>
+            <p className="text-2xl font-black text-white">₹{Math.round(dailySummary.avgCashOrder)}</p>
           </div>
-          <div>
-            <p className="text-xs font-black text-textSecondary uppercase mb-1">Avg Cash Order</p>
-            <p className="text-xl font-black text-textMain">₹{Math.round(dailySummary.avgCashOrder)}</p>
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Highest Swell</p>
+            <p className="text-2xl font-black text-white">₹{dailySummary.highestOrder}</p>
           </div>
-          <div>
-            <p className="text-xs font-black text-textSecondary uppercase mb-1">Highest Order</p>
-            <p className="text-xl font-black text-textMain">₹{dailySummary.highestOrder}</p>
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Cash Volume</p>
+            <p className="text-2xl font-black text-white">{dailySummary.totalCashOrders}</p>
           </div>
-          <div>
-            <p className="text-xs font-black text-textSecondary uppercase mb-1">Total Orders</p>
-            <p className="text-xl font-black text-textMain">{dailySummary.totalOrders}</p>
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Total Txns</p>
+            <p className="text-2xl font-black text-white">{dailySummary.totalOrders}</p>
           </div>
+        </div>
+      </div>
+
+      {/* 💡 Information Note */}
+      <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 flex items-start gap-4">
+        <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center text-amber-500 shadow-sm shrink-0">
+          <AlertCircle className="w-5 h-5" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm font-black text-amber-800 uppercase tracking-wider">Note for Management</p>
+          <p className="text-xs text-amber-700 font-bold opacity-80 leading-relaxed">
+            Reconciliation data is updated instantly as orders are confirmed. For manual discrepancies, 
+            please record them in the Audit Log under Settings.
+          </p>
         </div>
       </div>
     </div>
@@ -729,94 +837,83 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             }}
           />
           {/* Mobile Sidebar */}
-          <div className="fixed inset-y-0 left-0 w-64 bg-white z-50 lg:hidden flex flex-col shadow-xl pointer-events-auto">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="fixed inset-y-0 left-0 w-72 bg-white z-50 lg:hidden flex flex-col shadow-2xl pointer-events-auto rounded-r-[2.5rem] overflow-hidden">
+            <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
               <Logo size="md" />
               <button
                 type="button"
-                onClick={() => {
-                  console.log('Close button clicked');
-                  setIsSidebarOpen(false);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-3 hover:bg-white rounded-2xl transition-all shadow-sm border border-gray-100 active:scale-90"
               >
-                <X className="w-5 h-5 text-textSecondary" />
+                <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
             
-            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+            <nav className="flex-1 p-6 space-y-3 overflow-y-auto bg-white">
+              <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-4">Management</div>
               {navItems.map(item => (
                 <button
                   type="button"
                   key={item.id}
-                  onClick={() => {
-                    console.log('Nav button clicked:', item.id);
-                    handleTabChange(item.id as CashierTab);
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm uppercase tracking-wider cursor-pointer ${
+                  onClick={() => handleTabChange(item.id as CashierTab)}
+                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.5rem] transition-all font-black text-sm uppercase tracking-wider cursor-pointer ${
                     activeTab === item.id
-                      ? 'bg-primary text-white shadow-lg'
-                      : 'text-textSecondary hover:bg-gray-100'
+                      ? 'bg-amber-500 text-white shadow-[0_10px_25px_rgba(245,158,11,0.3)]'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
                   }`}
                 >
-                  <item.icon className="w-5 h-5 shrink-0" />
+                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-amber-500'}`} />
                   <span className="truncate">{item.id === 'CashRequests' ? 'Cash Requests' : item.id}</span>
                 </button>
               ))}
             </nav>
 
-            <div className="p-4 border-t border-gray-200">
+            <div className="p-6 border-t border-gray-100 bg-gray-50/50">
               <button
                 type="button"
                 onClick={onLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-wider cursor-pointer"
+                className="w-full flex items-center gap-4 px-5 py-4 rounded-[1.5rem] bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-wider shadow-sm"
               >
                 <LogOut className="w-5 h-5 shrink-0" />
-                <span className="truncate">Logout</span>
+                <span className="truncate">Station Exit</span>
               </button>
             </div>
           </div>
         </>
       )}
 
-      {/* Desktop Sidebar - Always visible on lg and above */}
-      <aside className={`
-        w-64 bg-white border-r border-gray-200 flex flex-col shrink-0
-        hidden lg:flex
-      `}>
-        <div className="p-6 border-b border-gray-200">
-          <Logo size="md" />
+      <aside className="w-80 bg-white border-r border-gray-100 flex flex-col shrink-0 hidden lg:flex shadow-sm relative z-20">
+        <div className="p-10 border-b border-gray-100">
+          <Logo size="lg" />
         </div>
         
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 p-8 space-y-3 overflow-y-auto">
+          <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-4">Terminal Console</div>
           {navItems.map(item => (
             <button
               type="button"
               key={item.id}
-              onClick={() => {
-                console.log('Desktop nav button clicked:', item.id);
-                handleTabChange(item.id as CashierTab);
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm uppercase tracking-wider cursor-pointer ${
+              onClick={() => handleTabChange(item.id as CashierTab)}
+              className={`w-full flex items-center gap-4 px-6 py-4 rounded-[1.5rem] transition-all font-black text-sm uppercase tracking-wider cursor-pointer group ${
                 activeTab === item.id
-                  ? 'bg-primary text-white shadow-lg'
-                  : 'text-textSecondary hover:bg-gray-100'
+                  ? 'bg-amber-500 text-white shadow-[0_15px_35px_rgba(245,158,11,0.25)] scale-[1.02]'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
               }`}
             >
-              <item.icon className="w-5 h-5 shrink-0" />
+              <item.icon className={`w-5 h-5 shrink-0 transition-colors ${activeTab === item.id ? 'text-white' : 'text-amber-500 group-hover:text-amber-600'}`} />
               <span className="truncate">{item.id === 'CashRequests' ? 'Cash Requests' : item.id}</span>
             </button>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-8 border-t border-gray-100 bg-gray-50/50">
           <button
             type="button"
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-wider cursor-pointer"
+            className="w-full flex items-center gap-4 px-6 py-4 rounded-[1.5rem] bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-widest shadow-sm active:scale-95"
           >
             <LogOut className="w-5 h-5 shrink-0" />
-            <span className="truncate">Logout</span>
+            <span className="truncate">End Shift</span>
           </button>
         </div>
       </aside>

@@ -35,6 +35,7 @@ const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState<ViewState>('WELCOME');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
 
   // Initialize menu (non-blocking)
   useEffect(() => {
@@ -157,9 +158,11 @@ const App: React.FC = () => {
     });
   }, [authLoading, user, profile, role]);
 
-  // Handle splash screen completion
+  // Handle splash screen completion — immediately apply auth routing if already resolved
   const handleSplashFinish = () => {
     setShowSplash(false);
+    // Clear any pending sign-in marker (set before Google redirect)
+    try { sessionStorage.removeItem('joe_google_signin_pending'); } catch (_) {}
   };
 
   const handleStartOrdering = async () => {
@@ -177,28 +180,29 @@ const App: React.FC = () => {
   const navigateToHome = () => setView('HOME');
   const navigateToStaffLogin = () => setView('STAFF_LOGIN');
   const navigateToLogin = async () => {
+    if (googleSignInLoading) return; // Prevent double-click
+    setGoogleSignInLoading(true);
     try {
-      // Platform-aware Google sign-in:
-      // - Web: Uses popup (faster, no redirect)
-      // - Mobile/APK: Uses redirect (required for native platforms)
-      // In both cases, signInWithGoogle handles profile creation automatically
-      // onAuthStateChanged will handle routing after auth succeeds
+      // Mark pending sign-in before redirect (survives page reload on mobile)
+      try { sessionStorage.setItem('joe_google_signin_pending', '1'); } catch (_) {}
+      
       await signInWithGoogle();
-      console.log('✅ Google sign-in initiated, waiting for auth state to propagate...');
+      // Popup path: auth state change will handle routing; clear loading
+      setGoogleSignInLoading(false);
+      console.log('✅ Google sign-in popup completed, auth state propagating...');
     } catch (error: any) {
-      // Only show error for popup-based auth (web)
-      // Redirect-based auth (mobile) doesn't throw - it redirects then authenticates
+      setGoogleSignInLoading(false);
+      try { sessionStorage.removeItem('joe_google_signin_pending'); } catch (_) {}
       console.error('❌ Google sign-in error:', error);
       
-      // Check if this is a redirect timeout or network error (show user-friendly message)
       if (error?.code === 'auth/popup-blocked') {
-        alert('Please enable popups for this site to use Google Sign-In.');
-      } else if (error?.message?.includes('redirect')) {
-        // Redirect auth - don't show error, auth handler will manage it
-        console.log('📱 Redirect auth in progress...');
+        alert('Popups are blocked. Please allow popups for this site and try again.');
+      } else if (error?.code === 'auth/popup-closed-by-user') {
+        // User closed popup — silently ignore, no alert needed
+        console.log('ℹ️ Google sign-in cancelled by user.');
       } else if (error?.code === 'auth/operation-not-supported-in-this-environment') {
-        alert('Google Sign-In is not available in this environment. Please try again.');
-      } else if (error) {
+        alert('Google Sign-In is not available here. Please try using a modern browser.');
+      } else if (error?.message && !error.message.includes('redirect')) {
         alert('Google sign-in failed. Please check your connection and try again.');
       }
     }
@@ -230,8 +234,13 @@ const App: React.FC = () => {
   };
 
   // Show splash screen during initial load or until minimum display time
+  // Use a shorter splash time if we detect a returning Google redirect (pending sign-in)
+  const hasPendingGoogleSignIn = (() => {
+    try { return sessionStorage.getItem('joe_google_signin_pending') === '1'; } catch (_) { return false; }
+  })();
+
   if (showSplash) {
-    return <SplashScreen onFinish={handleSplashFinish} minDisplayTime={2500} />;
+    return <SplashScreen onFinish={handleSplashFinish} minDisplayTime={hasPendingGoogleSignIn ? 800 : 2000} />;
   }
 
   // Show loading screen if auth state is still resolving (blocks routing until role is available)
@@ -260,12 +269,21 @@ const App: React.FC = () => {
               if (role === 'server') return <ServingCounterView profile={profile} onLogout={handleLogout} />;
               return <HomeView profile={profile} onProceed={navigateToPayment} onLogout={handleLogout} />;
             }
+            // If auth is still loading (edge case: splash finished but auth pending)
+            if (authLoading) {
+              return (
+                <div className="h-screen w-full flex items-center justify-center bg-black">
+                  <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              );
+            }
             return (
               <WelcomeView
                 onStart={handleStartOrdering}
                 onStaffLogin={navigateToLogin}
                 onAdminLogin={navigateToStaffLogin}
-                disabled={authLoading}
+                disabled={authLoading || googleSignInLoading}
+                googleLoading={googleSignInLoading}
               />
             );
           }

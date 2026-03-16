@@ -5,7 +5,8 @@ import {
   CheckCircle2, Activity, Trash2, Edit2, ShieldAlert,
   Bell, Globe, Gauge, ShieldCheck, Plus, X as CloseIcon, 
   Percent, Wallet, Megaphone, CalendarDays, Zap, Save, ChevronRight,
-  ArrowUpCircle, AlertTriangle, History, ArrowDownCircle, Banknote, Upload, Image as ImageIcon
+  ArrowUpCircle, AlertTriangle, History, ArrowDownCircle, Banknote, Upload, Image as ImageIcon,
+  RefreshCw
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -738,8 +739,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         <div className="bg-white p-6 rounded-[2rem] border border-black/5 shadow-sm">
           <h4 className="text-[10px] font-black text-textSecondary uppercase tracking-widest mb-4">Today&apos;s consumption (served)</h4>
           <ul className="space-y-2">
-            {Object.entries(dailyConsumption)
-              .sort((a, b) => b[1] - a[1])
+            {(Object.entries(dailyConsumption) as [string, number][])
+              .sort((a, b) => (b[1] as number) - (a[1] as number))
               .slice(0, 8)
               .map(([itemId, qty]) => (
                 <li key={itemId} className="flex justify-between text-sm">

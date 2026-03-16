@@ -1,12 +1,12 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle, AlertCircle, Scan, Search, LogOut, RefreshCw } from 'lucide-react';
+import { CheckCircle, AlertCircle, Scan, Search, LogOut, RefreshCw, Gamepad2, Zap } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
-import { listenToActiveOrders, listenToPendingItems, serveItem, validateQRForServing, PendingItem, scanAndServeOrder, rejectOrder } from '../../services/firestore-db';
+import { listenToActiveOrders, listenToPendingItems, serveItem, validateQRForServing, PendingItem, scanAndServeOrder, rejectOrderFromCounter } from '../../services/firestore-db';
 import { initializeScanner, getScanner } from '../../services/scanner';
 import { offlineDetector } from '../../utils/offlineDetector';
 import SyncStatus from '../../components/SyncStatus';
 import QRScanner from '../../components/QRScanner';
+import { seedReadyOrders } from '../../services/test-utils';
 
 interface ServingCounterViewProps {
   profile: UserProfile;
@@ -203,106 +203,37 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
   };
 
   const processQRScan = async (qrData: string) => {
-    console.log('🔄 processQRScan called with:', qrData);
-    console.log('   Data type:', typeof qrData);
-    console.log('   Data length:', qrData?.length);
-
+    if (!qrData) return;
+    const trimmed = qrData.trim();
+    
+    console.log('🔄 processQRScan:', trimmed.slice(0, 20) + '...');
     setIsScanning(true);
     setError(null);
     setSuccess(null);
     
     try {
-      // Handle QR data - can be JSON string or already parsed
-      let qrPayload: any = qrData;
+      // Pass raw string to backend validator - it handles v1, JSON, and order_ prefixes
+      const order = await validateQRForServing(trimmed);
       
-      // Try to parse as JSON if it's a string
-      if (typeof qrData === 'string') {
-        const trimmed = qrData.trim();
-        console.log('   Trimmed data:', trimmed);
-        console.log('   Starts with {:', trimmed.startsWith('{'));
-        
-        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-          try {
-            qrPayload = JSON.parse(trimmed);
-            console.log('✅ Successfully parsed JSON:', qrPayload);
-          } catch (parseError: any) {
-            console.error('❌ JSON parse error:', parseError);
-            console.error('   Raw data:', trimmed);
-            // Try parseQRPayload as fallback from qr module
-            const qrModule = await import('../../services/qr');
-            const parsed = await qrModule.parseQRPayload(trimmed);
-            if (parsed) {
-              qrPayload = parsed;
-              console.log('✅ Parsed using parseQRPayload:', qrPayload);
-            } else {
-              throw new Error(`Invalid QR Format - Cannot parse: ${parseError.message}`);
-            }
-          }
-            } else {
-              // Not JSON, check if it's a plain order ID
-              if (trimmed.startsWith('order_')) {
-                qrPayload = { orderId: trimmed };
-                console.log('✅ Identified plain Order ID:', qrPayload.orderId);
-              } else {
-                // Try parseQRPayload from qr module for other legacy formats
-                const { parseQRPayload } = await import('../../services/qr');
-                const parsed = await parseQRPayload(trimmed);
-                if (parsed) {
-                  qrPayload = parsed;
-                  console.log('✅ Parsed using parseQRPayload:', qrPayload);
-                } else {
-                  throw new Error('Invalid QR Format - Not JSON and cannot identify as Order ID');
-                }
-              }
-            }
-      }
+      console.log('✅ QR Scan successful! Order:', order.id);
       
-      console.log('🔍 Final QR payload:', qrPayload);
-      console.log('   OrderId:', qrPayload?.orderId);
-      console.log('   UserId:', qrPayload?.userId);
-      
-      // Validate payload structure
-      if (!qrPayload || typeof qrPayload !== 'object') {
-        throw new Error('Invalid QR Format - Payload is not an object');
-      }
-      
-      if (!qrPayload.orderId) {
-        throw new Error('Invalid QR Format - Missing orderId');
-      }
-      
-      // Scan and get order details - validateQRForServing expects string (JSON stringified)
-      const qrDataString = typeof qrPayload === 'string' ? qrPayload : JSON.stringify(qrPayload);
-      console.log('📤 Calling validateQRForServing with:', qrDataString);
-      console.log('   Payload type:', typeof qrPayload);
-      console.log('   Stringified:', qrDataString);
-      
-      // Call validateQRForServing - it will parse the JSON string internally
-      const order = await validateQRForServing(qrDataString);
-      
-      console.log('✅ QR Scan successful! Order:', order);
-      console.log('   Order ID:', order.id);
-      console.log('   Items:', order.items.length);
-      
-      // Show a brief success indicator instead of a giant modal that auto-hides
       setSuccess({
         orderId: order.id,
         orderNumber: order.id.slice(-8).toUpperCase(),
         userName: order.userName,
         items: order.items,
-        qrDataRaw: qrDataString
+        qrDataRaw: trimmed
       });
       
-      // Clear success state after scan so user can keep scanning, 
-      // but the item stays in the list because qrState is now SCANNED
+      // Auto-clear success toast after a delay so it doesn't block the next scan
       setTimeout(() => {
         setSuccess(null);
         setIsScanning(false);
         const scanner = getScanner();
-        if (scanner) scanner.focus();
-      }, 1500);
-      
+        if (scanner) setTimeout(() => scanner.focus(), 50);
+      }, 2500);
+
     } catch (err: any) {
-      setIsScanning(false);
       console.error('❌ QR Scan Error:', err);
       console.error('   Error message:', err.message);
       console.error('   Error stack:', err.stack);
@@ -359,7 +290,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     if (confirm('Are you sure you want to REJECT this order? This will cancel the order and invalidate the QR.')) {
       setServingKey(`REJECT_${orderId}`);
       try {
-        await rejectOrder(orderId, profile.uid);
+        await rejectOrderFromCounter(orderId, profile.uid);
       } catch (err: any) {
         alert('Failed to reject order: ' + err.message);
       } finally {
@@ -429,6 +360,23 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     setError(null);
     const scanner = getScanner();
     if (scanner) setTimeout(() => scanner.focus(), 50);
+  };
+
+  const handleSimulateEfficiency = async () => {
+    if (isScanning || isCameraOpen) return;
+    
+    console.log('🏁 Starting Multi-Order Scan Efficiency Test');
+    const payloads = await seedReadyOrders(5);
+    
+    // Scan one by one with 800ms delay to simulate fast manual scanning
+    for (let i = 0; i < payloads.length; i++) {
+        console.log(`⏱️ Scanning Order ${i + 1}/5...`);
+        await processQRScan(payloads[i]);
+        // Short pause between scans
+        await new Promise(r => setTimeout(r, 1200));
+    }
+    
+    console.log('✅ Multi-Scan Simulation Complete');
   };
 
   return (
@@ -599,86 +547,107 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
               </div>
             ) : (
               (() => {
-                // Group items by order number
+                // Group items by order number and sort by scanned length or creation
                 const groupedByOrder = readyItems.reduce((acc, item) => {
-                  if (!acc[item.orderNumber]) {
-                    acc[item.orderNumber] = [];
+                  if (!acc[item.orderId]) {
+                    acc[item.orderId] = {
+                      orderId: item.orderId,
+                      orderNumber: item.orderNumber,
+                      userName: item.userName,
+                      items: []
+                    };
                   }
-                  acc[item.orderNumber].push(item);
+                  acc[item.orderId].items.push(item);
                   return acc;
-                }, {} as Record<string, ReadyItem[]>);
+                }, {} as Record<string, { orderId: string, orderNumber: string, userName: string, items: ReadyItem[] }>);
 
-                return Object.entries(groupedByOrder).map(([orderNumber, items]) => {
-                  const firstItem = items[0];
-                  return (
-                    <div key={orderNumber} className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 border-4 border-green-500 shadow-2xl animate-in zoom-in-95 duration-300">
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 pb-4 border-b-2 border-green-100">
-                        <div className="text-center sm:text-left">
-                           <p className="text-[10px] font-black uppercase tracking-widest text-green-600 mb-1">Customer Token</p>
-                           <h3 className="text-2xl sm:text-3xl font-black text-gray-900 leading-none">{firstItem.userName}</h3>
-                        </div>
-                        <div className="flex flex-col sm:flex-row items-center gap-3">
-                          <button
-                            onClick={() => handleRejectOrderAction(firstItem.orderId)}
-                            className="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-colors flex items-center gap-2"
-                          >
-                            <AlertCircle className="w-4 h-4" /> Reject Order
-                          </button>
-                          <div className="bg-black text-white px-5 py-2 rounded-2xl">
-                             <p className="text-[8px] font-black text-white/50 uppercase tracking-widest mb-0.5">Order No</p>
-                             <p className="text-xl font-black">{orderNumber}</p>
+                const sortedOrders: Array<{ orderId: string, orderNumber: string, userName: string, items: ReadyItem[] }> = Object.values(groupedByOrder);
+                const nowServing = sortedOrders[0];
+                const queue = sortedOrders.slice(1);
+
+                return (
+                  <div className="space-y-8 pb-32">
+                    {/* 🚀 NOW SERVING SECTION */}
+                    {nowServing && (
+                      <div className="bg-white rounded-[2.5rem] border-8 border-green-500 shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in zoom-in-95 duration-500">
+                        <div className="bg-green-500 px-8 py-4 flex items-center justify-between text-white">
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-[0.2em] opacity-80">Now Serving</p>
+                            <h3 className="text-4xl font-black">#{nowServing.orderNumber}</h3>
+                          </div>
+                          <div className="text-right">
+                             <p className="text-xs font-black uppercase tracking-[0.2em] opacity-80">Customer</p>
+                             <h3 className="text-2xl font-black">{nowServing.userName}</h3>
                           </div>
                         </div>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        {(items as ReadyItem[]).map((item) => {
-                          const key = `${item.orderId}_${item.itemId}`;
-                          const isServing = servingKey === key;
-
-                          return (
-                            <div
-                              key={key}
-                              className="flex flex-col lg:flex-row items-center gap-6 bg-gray-50 rounded-3xl p-4 sm:p-6 border-2 border-green-200 hover:border-green-400 transition-colors"
-                            >
-                              <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-[2rem] overflow-hidden shadow-xl border-4 border-white flex-shrink-0">
-                                <img
-                                  src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'}
-                                  alt={item.itemName}
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                              <div className="flex-1 text-center lg:text-left min-w-0 w-full">
-                                <h4 className="text-2xl sm:text-3xl lg:text-4xl font-black text-gray-900 mb-2 leading-tight tracking-tight">{item.itemName}</h4>
-                                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3">
-                                   <div className="bg-white px-4 py-2 rounded-xl border border-gray-200">
-                                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">To Serve</p>
-                                      <p className="text-3xl font-black text-green-600">{item.remainingQty}</p>
-                                   </div>
-                                   <div className="bg-white px-4 py-2 rounded-xl border border-gray-200">
-                                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Total Order</p>
-                                      <p className="text-3xl font-black text-gray-300">{item.orderedQty}</p>
-                                   </div>
+                        
+                        <div className="p-6 sm:p-8 space-y-6">
+                          {nowServing.items.map((item) => {
+                            const key = `${item.orderId}_${item.itemId}`;
+                            const isServing = servingKey === key;
+                            return (
+                              <div key={key} className="flex flex-col lg:flex-row items-center gap-8 bg-gray-50 rounded-[2rem] p-6 border-2 border-green-100">
+                                <div className="w-48 h-48 rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white flex-shrink-0">
+                                  <img 
+                                    src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'} 
+                                    alt={item.itemName} 
+                                    className="w-full h-full object-cover" 
+                                  />
+                                </div>
+                                <div className="flex-1 text-center lg:text-left">
+                                  <h4 className="text-3xl lg:text-4xl font-black text-gray-900 mb-2">{item.itemName}</h4>
+                                  <div className="flex items-center justify-center lg:justify-start gap-4">
+                                     <div className="bg-white px-6 py-3 rounded-2xl border border-gray-200 shadow-sm">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Qty</p>
+                                        <p className="text-4xl font-black text-green-600">x{item.remainingQty}</p>
+                                     </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col gap-3 w-full lg:w-auto">
+                                  <button
+                                    onClick={() => handleServeReadyItem(item)}
+                                    disabled={isServing}
+                                    className="bg-green-500 hover:bg-green-600 text-white px-10 py-6 rounded-3xl text-2xl font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                  >
+                                    {isServing ? <RefreshCw className="w-8 h-8 animate-spin" /> : <><CheckCircle className="w-8 h-8" /> SERVE</>}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectOrderAction(item.orderId)}
+                                    className="bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                                  >
+                                    <AlertCircle className="w-4 h-4" /> REJECT
+                                  </button>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => handleServeReadyItem(item)}
-                                disabled={isServing}
-                                className="w-full lg:w-auto min-h-[80px] lg:min-w-[180px] bg-green-500 hover:bg-green-600 active:scale-[0.98] text-white px-8 py-4 rounded-[2rem] text-2xl font-black uppercase tracking-widest shadow-xl shadow-green-200 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
-                              >
-                                {isServing ? (
-                                  <RefreshCw className="w-8 h-8 animate-spin" />
-                                ) : (
-                                  <><CheckCircle className="w-8 h-8" /> Serve</>
-                                )}
-                              </button>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                });
+                    )}
+
+                    {/* 🕒 QUEUE SECTION */}
+                    {queue.length > 0 && (
+                      <div className="space-y-4">
+                         <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] pl-4">Queue — {queue.length} Orders</h3>
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {queue.map(order => (
+                              <div key={order.orderId} className="bg-white rounded-[2rem] border-4 border-gray-200 p-6 flex items-center justify-between shadow-sm hover:border-amber-400 transition-colors">
+                                 <div>
+                                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Order</p>
+                                   <p className="text-2xl font-black text-gray-900">#{order.orderNumber}</p>
+                                   <p className="text-sm font-bold text-gray-500">{order.userName}</p>
+                                 </div>
+                                 <div className="text-right">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Items</p>
+                                    <p className="text-xl font-black text-gray-900">{order.items.length}</p>
+                                 </div>
+                              </div>
+                            ))}
+                         </div>
+                      </div>
+                    )}
+                  </div>
+                );
               })()
             )}
           </div>
@@ -823,8 +792,6 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
           </p>
         )}
       </div>
-
-      {/* Scanner input is created by scanner service - no need for duplicate */}
     </div>
   );
 };

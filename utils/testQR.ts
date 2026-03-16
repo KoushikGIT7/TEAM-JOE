@@ -15,19 +15,23 @@ export interface TestOrderData {
 /**
  * Generate a valid QR code payload for testing
  */
-export function generateTestQRCode(orderData: TestOrderData): string {
-  const secureHash = generateSecureHash(
+export async function generateTestQRCode(orderData: TestOrderData): Promise<string> {
+  const expiresAt = orderData.createdAt + (30 * 60 * 1000); // 30 mins
+  const secureHash = await generateSecureHash(
     orderData.orderId,
     orderData.userId,
     orderData.cafeteriaId,
-    orderData.createdAt
+    orderData.createdAt,
+    expiresAt
   );
 
   const qrData = {
     orderId: orderData.orderId,
     userId: orderData.userId,
     cafeteriaId: orderData.cafeteriaId,
-    secureHash: secureHash
+    secureHash: secureHash,
+    expiresAt,
+    createdAt: orderData.createdAt
   };
 
   return JSON.stringify(qrData);
@@ -36,7 +40,7 @@ export function generateTestQRCode(orderData: TestOrderData): string {
 /**
  * Create a test order and return the QR code
  */
-export function createTestOrderWithQR(): { orderId: string; qrCode: string; orderData: TestOrderData } {
+export async function createTestOrderWithQR(): Promise<{ orderId: string; qrCode: string; orderData: TestOrderData }> {
   const orderId = 'order_' + Math.random().toString(36).substr(2, 9);
   const userId = 'student_' + Math.random().toString(36).substr(2, 9);
   const cafeteriaId = 'MAIN_CAFE';
@@ -49,7 +53,7 @@ export function createTestOrderWithQR(): { orderId: string; qrCode: string; orde
     createdAt
   };
 
-  const qrCode = generateTestQRCode(orderData);
+  const qrCode = await generateTestQRCode(orderData);
 
   return {
     orderId,

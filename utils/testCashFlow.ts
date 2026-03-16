@@ -3,8 +3,8 @@
  * Run this in browser console to test the flow
  */
 
-import { confirmCashPayment } from '../services/db';
-import { listenToOrder } from '../services/db';
+import { confirmCashPayment } from '../services/firestore-db';
+import { listenToOrder } from '../services/firestore-db';
 
 /**
  * Test function to simulate cashier approval

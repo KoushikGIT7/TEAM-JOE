@@ -31,7 +31,7 @@ export interface CartItem extends MenuItem {
 }
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED';
-export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED';
+export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED' | 'DESTROYED';
 
 /** Zero-wait: FAST_ITEM = instant serve at counter; PREPARATION_ITEM = kitchen flow + pickup window */
 export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
@@ -40,7 +40,7 @@ export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
 export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'READY' | 'SERVED';
 
 /** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED (or EXPIRED) */
-export type QRState = 'ACTIVE' | 'SCANNED' | 'SERVED' | 'EXPIRED';
+export type QRState = 'ACTIVE' | 'SCANNED' | 'SERVED' | 'EXPIRED' | 'DESTROYED';
 
 /** Kitchen workflow: PLACED → COOKING → READY → SERVED */
 export type KitchenStatus = 'PLACED' | 'COOKING' | 'READY' | 'SERVED';

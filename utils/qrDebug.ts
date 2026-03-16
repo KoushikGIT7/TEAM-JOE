@@ -96,8 +96,8 @@ async function validateQR(qrData: string): Promise<void> {
 
     const isValid = await verifySecureHash(
       payload.orderId,
-      payload.userId,
-      payload.cafeteriaId,
+      order.userId,
+      order.cafeteriaId,
       order.createdAt,
       expiresAt,
       payload.secureHash

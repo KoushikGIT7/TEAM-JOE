@@ -220,34 +220,34 @@ const isMobilePlatform = (): boolean => {
 export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile: UserProfile }> => {
   try {
     const provider = new GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
     
-    // Detect platform and use appropriate auth method
-    const onMobile = isMobilePlatform();
-    console.log(`📱 Platform detection: ${onMobile ? 'MOBILE' : 'WEB'}`);
+    // Detect if running in a NATIVE app wrapper (Cordova / Capacitor)
+    // For ALL web contexts (desktop browser, mobile browser) use popup.
+    // Redirect causes a page reload which shows the splash screen loop.
+    const isNativeApp = !!(
+      (window as any).cordova || 
+      (window as any).Capacitor?.isNativePlatform?.()
+    );
     
     let result;
     
-    if (onMobile) {
-      // Mobile: Use redirect method (required for native apps and mobile browsers)
-      console.log('🔄 Using signInWithRedirect for mobile platform...');
+    if (isNativeApp) {
+      // True native app: use redirect (popup won't work in WebView)
+      console.log('📱 Native app detected — using redirect sign-in');
       await signInWithRedirect(auth, provider);
-      // After redirect, getRedirectResult will be called in onAuthStateChanged
-      // Return early - auth state change will be detected by listener
-      console.log('⏳ Redirect initiated, waiting for auth state change...');
-      // This will not actually return; the function will complete and 
-      // onAuthStateChanged will pick up the auth state change
-      return new Promise(() => {}); // Never resolves - auth listener handles it
+      return new Promise(() => {}); // Page will reload; auth handler picks it up
     } else {
-      // Web: Use popup method (faster, no redirect)
-      console.log('🪟 Using signInWithPopup for web platform...');
+      // Web (desktop or mobile browser): always use popup
+      console.log('🪟 Web context — using popup sign-in');
       result = await signInWithPopup(auth, provider);
     }
     
     const user = result.user;
+    console.log('🔐 signInWithGoogle: Auth successful for', user.email);
     
-    console.log('🔐 signInWithGoogle: Firebase popup auth successful for', user.email);
-    
-    // Auto-create profile if doesn't exist
+    // Ensure profile exists in Firestore
     let profile = await getUserProfile(user.uid);
     
     if (!profile) {
@@ -262,7 +262,7 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
     }
     
     if (!profile) {
-      // Fallback in-memory profile (should not happen)
+      // Fallback in-memory profile
       console.warn('⚠️ signInWithGoogle: Profile creation failed, using fallback');
       profile = {
         uid: user.uid,
@@ -275,18 +275,16 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
       };
     }
     
-    console.log('✅ signInWithGoogle: Complete - user profile ready:', {
-      email: profile.email,
-      role: profile.role
-    });
+    console.log('✅ signInWithGoogle: Complete:', { email: profile.email, role: profile.role });
     
-    // 🚫 DO NOT NAVIGATE - let onAuthStateChanged handle routing
+    // DO NOT NAVIGATE — onAuthStateChanged handles routing
     return { user, profile };
   } catch (error: any) {
     console.error('❌ signInWithGoogle failed:', error);
     throw error;
   }
 };
+
 
 /**
  * Legacy: Google Sign-In with redirect (kept for compatibility)
