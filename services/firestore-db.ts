@@ -1223,73 +1223,59 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
 };
 
 export const validateQRForServing = async (qrData: string): Promise<Order> => {
-  console.log('🌐 [SERVICE] Validating QR...', { length: qrData.length });
+  console.log('🛡️ [FIREBASE-ORDER] Validating Meal Token...');
   
   try {
-    // Attempt backend API first if configured
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-    if (API_BASE_URL && !API_BASE_URL.includes('localhost')) {
-      try {
-        const payload = parseQRPayload(qrData) || { scannedData: qrData };
-        const response = await fetch(`${API_BASE_URL}/qr/validate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          return {
-            id: result.data.order.id,
-            userId: '', 
-            userName: result.data.order.userName,
-            items: result.data.order.items.map((it: any) => ({
-              id: it.itemId || it.id,
-              name: it.name || 'Item',
-              quantity: it.quantity || 1,
-              price: it.price || 0,
-              costPrice: 0,
-              category: 'Snacks',
-              imageUrl: '',
-              active: true
-            })),
-            totalAmount: 0,
-            paymentStatus: 'SUCCESS',
-            paymentType: 'UPI',
-            orderStatus: result.data.order.status as any,
-            qrStatus: 'USED',
-            cafeteriaId: 'MAIN_CAFE', 
-            createdAt: Date.now()
-          };
-        }
-      } catch (e) {
-        console.warn('⚠️ Backend unreachable, falling back to local validation...');
-      }
-    }
-
-    // FALLBACK: Local validation using Firestore (The "Free Mode" Logic)
+    // 1. Parse the secure encrypted payload
     const payload = parseQRPayload(qrData);
-    if (!payload) throw new Error("Invalid Token Format");
+    if (!payload?.orderId) {
+      throw new Error("INVALID_TOKEN_FORMAT - This does not look like a JOE Meal Token.");
+    }
 
     const { orderId, userId, cafeteriaId, secureHash } = payload;
-    const orderDoc = await getDoc(doc(db, "orders", orderId));
-    
-    if (!orderDoc.exists()) throw new Error("Order not found");
-    const order = firestoreToOrder(orderDoc.id, orderDoc.data());
 
-    // Security check
-    const qrExpiresAt = order.createdAt + 24 * 60 * 60 * 1000;
-    if (!verifySecureHash(orderId, userId, cafeteriaId, order.createdAt, qrExpiresAt, secureHash)) {
-      throw new Error("Invalid Token Signature");
+    // 2. Direct Firestore Fetch (The Source of Truth)
+    const orderDoc = await getDoc(doc(db, "orders", orderId));
+    if (!orderDoc.exists()) {
+      throw new Error("ORDER_NOT_FOUND - Token corresponds to a non-existent order.");
     }
 
-    if (order.paymentStatus !== 'SUCCESS') throw new Error("PAYMENT_NOT_VERIFIED");
-    if (order.qrStatus === 'USED') throw new Error("TOKEN_ALREADY_USED");
+    const orderData = orderDoc.data();
+    const order = firestoreToOrder(orderDoc.id, orderData);
 
-    console.log('✅ [LOCAL] QR Validated successfully');
+    // 3. Cryptographic Signature Verification
+    // Prevents forged tokens by checking against the server-generated hash
+    const qrExpiresAt = order.createdAt + 24 * 60 * 60 * 1000; // 24hr validity
+    const isValid = verifySecureHash(
+      orderId, 
+      userId, 
+      cafeteriaId, 
+      order.createdAt, 
+      qrExpiresAt, 
+      secureHash
+    );
+
+    if (!isValid) {
+      throw new Error("SECURITY_BREACH - Token signature is invalid or forged.");
+    }
+
+    // 4. Status Checks
+    if (order.paymentStatus !== 'SUCCESS') {
+      throw new Error("PAYMENT_REQUIRED - This order has not been paid for yet.");
+    }
+
+    if (order.qrStatus === 'USED') {
+      throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
+    }
+
+    if (order.qrStatus === 'EXPIRED') {
+      throw new Error("TOKEN_EXPIRED - This token is no longer valid.");
+    }
+
+    console.log('✅ [FIREBASE-ORDER] Token validated successfully:', orderId);
     return order;
   } catch (error: any) {
-    console.error('❌ [SERVICE] validateQRForServing error:', error);
+    console.error('❌ [SCAN-ERROR]:', error.message);
     throw error;
   }
 };
