@@ -73,14 +73,19 @@ You should see output like:
 
 ## Demo Credentials
 
+### Admin Portal
+- **Email**: `admin@joecafe.com`
+- **Password**: `joeadmin2026`
+- **Portal**: Admin Dashboard (full system control)
+
 ### Cashier Portal
-- **Email**: `cashier@joe.com`
-- **Password**: `cashier123`
+- **Email**: `cashier@joecafe.com`
+- **Password**: `joecashier2026`
 - **Portal**: Cashier Dashboard (handles cash payment approvals)
 
 ### Server Portal
-- **Email**: `server@joe.com`
-- **Password**: `server123`
+- **Email**: `server@joecafe.com`
+- **Password**: `joeserver2026`
 - **Portal**: Serving Counter (handles order serving and QR scanning)
 
 ## Firestore Profile Structure
@@ -135,8 +140,9 @@ If the script doesn't work, you can create users manually:
 2. Select your project: **joecafe-a7fff**
 3. Go to **Authentication** → **Users** → **Add user**
 4. Create:
-   - `cashier@joe.com` / `cashier123`
-   - `server@joe.com` / `server123`
+   - `admin@joecafe.com` / `joeadmin2026`
+   - `cashier@joecafe.com` / `joecashier2026`
+   - `server@joecafe.com` / `joeserver2026`
 
 ### 2. Create Profiles in Firestore
 1. Go to **Firestore Database** → `users` collection
@@ -157,8 +163,9 @@ After setup, test login:
 
 1. Click "Admin Login" button on welcome screen
 2. Enter credentials:
-   - Cashier: `cashier@joe.com` / `cashier123`
-   - Server: `server@joe.com` / `server123`
+   - Admin: `admin@joecafe.com` / `joeadmin2026`
+   - Cashier: `cashier@joecafe.com` / `joecashier2026`
+   - Server: `server@joecafe.com` / `joeserver2026`
 3. You should be routed to:
    - Cashier → Cashier Dashboard
    - Server → Serving Counter

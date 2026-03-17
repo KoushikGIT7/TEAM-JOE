@@ -9,7 +9,7 @@
  * 4. Press Enter
  * 
  * This will:
- * - Find all users with server@joe.com or cashier@joe.com emails
+ * - Find all users with server@joecafe.com or cashier@joecafe.com emails
  * - Update their role in Firestore to match their email
  */
 
@@ -25,9 +25,9 @@
     
     // Staff emails and their correct roles
     const staffEmails = [
-      { email: 'server@joe.com', role: 'server', password: 'server123' },
-      { email: 'cashier@joe.com', role: 'cashier', password: 'cashier123' },
-      { email: 'admin@joe.com', role: 'admin', password: 'admin123' }
+      { email: 'server@joecafe.com', role: 'server', password: 'joeserver2026' },
+      { email: 'cashier@joecafe.com', role: 'cashier', password: 'joecashier2026' },
+      { email: 'admin@joecafe.com', role: 'admin', password: 'joeadmin2026' }
     ];
     
     console.log(`\n📋 Fixing roles for ${staffEmails.length} staff users...\n`);
@@ -144,10 +144,10 @@
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('📧 Fixed Users:\n');
     console.log('   SERVER:');
-    console.log('   📧 Email: server@joe.com');
+    console.log('   📧 Email: server@joecafe.com');
     console.log('   ✅ Role: server\n');
     console.log('   CASHIER:');
-    console.log('   📧 Email: cashier@joe.com');
+    console.log('   📧 Email: cashier@joecafe.com');
     console.log('   ✅ Role: cashier\n');
     console.log('💡 You can now login and should be routed to the correct portal!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

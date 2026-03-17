@@ -17,9 +17,9 @@
     const { doc, setDoc, getDoc, serverTimestamp } = await import('firebase/firestore');
     
     const users = [
-      { email: 'admin@joe.com', password: 'admin123', name: 'JOE Admin', role: 'admin' },
-      { email: 'cashier@joe.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
-      { email: 'server@joe.com', password: 'server123', name: 'Server Node', role: 'server' }
+      { email: 'admin@joecafe.com', password: 'joeadmin2026', name: 'JOE Admin', role: 'admin' },
+      { email: 'cashier@joecafe.com', password: 'joecashier2026', name: 'Cashier Node', role: 'cashier' },
+      { email: 'server@joecafe.com', password: 'joeserver2026', name: 'Server Node', role: 'server' }
     ];
     
     for (const userData of users) {
@@ -102,16 +102,16 @@
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('📧 Demo Credentials:\n');
     console.log('   ADMIN PORTAL:');
-    console.log('   📧 Email: admin@joe.com');
-    console.log('   🔑 Password: admin123');
+    console.log('   📧 Email: admin@joecafe.com');
+    console.log('   🔑 Password: joeadmin2026');
     console.log('   🎯 Portal: Admin Dashboard\n');
     console.log('   CASHIER PORTAL:');
-    console.log('   📧 Email: cashier@joe.com');
-    console.log('   🔑 Password: cashier123');
+    console.log('   📧 Email: cashier@joecafe.com');
+    console.log('   🔑 Password: joecashier2026');
     console.log('   🎯 Portal: Cashier Dashboard\n');
     console.log('   SERVER PORTAL:');
-    console.log('   📧 Email: server@joe.com');
-    console.log('   🔑 Password: server123');
+    console.log('   📧 Email: server@joecafe.com');
+    console.log('   🔑 Password: joeserver2026');
     console.log('   🎯 Portal: Serving Counter\n');
     console.log('💡 You can now login with these credentials!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

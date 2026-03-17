@@ -32,9 +32,9 @@
     const { doc: firestoreDoc, setDoc: firestoreSetDoc, serverTimestamp } = await import('firebase/firestore');
     
     const users = [
-      { email: 'admin@joe.com', password: 'admin123', name: 'JOE Admin', role: 'admin' },
-      { email: 'cashier@joe.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
-      { email: 'server@joe.com', password: 'server123', name: 'Server Node', role: 'server' }
+      { email: 'admin@joecafe.com', password: 'joeadmin2026', name: 'JOE Admin', role: 'admin' },
+      { email: 'cashier@joecafe.com', password: 'joecashier2026', name: 'Cashier Node', role: 'cashier' },
+      { email: 'server@joecafe.com', password: 'joeserver2026', name: 'Server Node', role: 'server' }
     ];
     
     for (const userData of users) {
@@ -69,9 +69,9 @@
     
     console.log('✅ User initialization complete!');
     console.log('Now you can login with:');
-    console.log('  - admin@joe.com / admin123');
-    console.log('  - cashier@joe.com / cashier123');
-    console.log('  - server@joe.com / server123');
+    console.log('  - admin@joecafe.com / joeadmin2026');
+    console.log('  - cashier@joecafe.com / joecashier2026');
+    console.log('  - server@joecafe.com / joeserver2026');
     
   } catch (error) {
     console.error('❌ Setup failed:', error);

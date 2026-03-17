@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ChevronLeft, Mail, Lock, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
+import { ChevronLeft, Mail, Lock, Loader2, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 import Logo from '../../components/Logo';
 import { signIn } from '../../services/auth';
 import { UserProfile } from '../../types';
@@ -95,21 +95,25 @@ const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onBack }) => {
           onClick={onBack} 
           disabled={isSubmitting}
           className="p-3 bg-gray-50 rounded-2xl text-textSecondary active:scale-90 transition-all disabled:opacity-50 min-h-[48px] min-w-[48px] flex items-center justify-center"
-          aria-label="Go back"
+          aria-label="Back to landing"
         >
           <ChevronLeft className="w-6 h-6" />
         </button>
       </div>
 
-      {/* Logo & Header */}
-      <div className="w-full text-center mb-8 sm:mb-12 mt-16 sm:mt-0">
-        <Logo size="lg" className="mb-6 sm:mb-8 justify-center" />
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-textMain tracking-tighter">System Access</h2>
-        <p className="text-textSecondary text-base sm:text-lg font-bold mt-2 sm:mt-3">Enter credentials to continue</p>
+      {/* Header */}
+      <div className="w-full text-center mb-10 mt-16 sm:mt-0">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-black uppercase tracking-wider mb-6 border border-primary/20">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          Staff & Admin Portal
+        </div>
+        <h2 className="text-3xl sm:text-4xl font-black text-textMain tracking-tighter leading-tight">Authorize Access</h2>
+        <p className="text-textSecondary text-base font-bold mt-2">Enter your secure credentials</p>
       </div>
 
       {/* Login Form */}
-      <form onSubmit={handleSubmit} className="w-full space-y-5 sm:space-y-6 max-w-sm">
+      <form onSubmit={handleSubmit} className="w-full space-y-6 max-w-sm">
+
         {/* Email Input */}
         <div className="space-y-2">
           <label htmlFor="email" className="text-xs sm:text-sm font-black uppercase tracking-widest text-textSecondary ml-1 block">
@@ -129,7 +133,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onBack }) => {
               autoFocus
               disabled={isSubmitting}
               className="w-full bg-gray-50 border-none rounded-2xl py-4 sm:py-5 pl-14 pr-4 text-lg font-bold outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed min-h-[52px]"
-              placeholder="admin@joe.com"
+              placeholder="admin@joecafe.com"
               required
             />
           </div>

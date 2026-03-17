@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { useOrderNotifications } from './hooks/useOrderNotifications';
 import SplashScreen from './components/SplashScreen';
 import { signInWithGoogle } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
+import { UserProfile } from './types';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -18,10 +20,18 @@ type ViewState =
   | 'ADMIN'
   | 'SERVING_COUNTER'
   | 'KITCHEN'
-  | 'STAFF_LOGIN';
+  | 'STAFF_LOGIN'
+  | 'STUDENT_HOME';
 
 const App: React.FC = () => {
-  const { user, profile, loading: authLoading, role } = useAuth();
+  const { user, profile: authProfile, loading: authLoading } = useAuth();
+  const [guestProfile, setGuestProfile] = useState<UserProfile | null>(null);
+  
+  const profile = authProfile || guestProfile;
+  const role = profile?.role || null;
+
+  // Initialize order notifications for students/guests
+  useOrderNotifications(profile?.uid || null);
 
   // Splash is shown while auth is resolving. Once authLoading is false we
   // apply a short (600ms) cosmetic delay so the splash animation completes
@@ -29,6 +39,8 @@ const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
+  const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR'>('HOME');
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
 
   // Dismiss splash only after auth has fully resolved
   useEffect(() => {
@@ -57,7 +69,7 @@ const App: React.FC = () => {
     // Wait until both guards are clear
     if (authLoading || showSplash) return;
 
-    if (!user) {
+    if (!profile) {
       // Not logged in → land on Welcome/Login gate
       if (view !== 'WELCOME' && view !== 'STAFF_LOGIN') {
         setView('WELCOME');
@@ -65,17 +77,15 @@ const App: React.FC = () => {
       return;
     }
 
-    // User is logged in and profile is confirmed (authLoading is false only
-    // when profile is also resolved — see useAuth).
-    // Only auto-redirect when on a neutral / login view to avoid interrupting
-    // kitchen/admin navigation.
-    if (profile && role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
+    // User is logged in and profile is confirmed
+    // Only auto-redirect when on a neutral / login view
+    if (role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
       if      (role === 'ADMIN')   setView('ADMIN');
       else if (role === 'CASHIER') setView('CASHIER');
       else if (role === 'SERVER')  setView('SERVING_COUNTER');
-      else                         setView('WELCOME'); // unknown role — safety
+      else if (role === 'STUDENT' || role === 'GUEST') setView('STUDENT_HOME');
     }
-  }, [authLoading, showSplash, user, profile, role, view]);
+  }, [authLoading, showSplash, profile, role, view]);
 
   // ─── HANDLERS ────────────────────────────────────────────────────────────
   const navigateToStaffLogin = () => setView('STAFF_LOGIN');
@@ -84,12 +94,26 @@ const App: React.FC = () => {
     if (googleSignInLoading) return;
     setGoogleSignInLoading(true);
     try {
-      await signInWithGoogle();
-      // Routing handled by the useEffect above once profile resolves
+      const { profile: newProfile } = await signInWithGoogle();
+      if (newProfile.role === 'STUDENT') {
+        setView('STUDENT_HOME');
+      }
     } catch (error: any) {
       console.error('❌ Google sign-in error:', error);
     } finally {
       setGoogleSignInLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      const { signInAsGuest } = await import('./services/auth');
+      const { profile: gProfile } = await signInAsGuest();
+      setGuestProfile(gProfile);
+      setStudentSubView('HOME');
+      setView('STUDENT_HOME');
+    } catch (error) {
+      console.error('❌ Guest login error:', error);
     }
   };
 
@@ -98,7 +122,9 @@ const App: React.FC = () => {
       const { signOut } = await import('./services/auth');
       await signOut();
     } catch (_) { /* ignore */ }
+    setGuestProfile(null);
     setView('WELCOME');
+    setStudentSubView('HOME');
   };
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
@@ -107,15 +133,15 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-textMain">
+    <div className="min-h-screen bg-background text-textMain overflow-x-hidden">
       {(() => {
         switch (view) {
           case 'WELCOME':
             return (
               <WelcomeView
-                onStart={() => {}}
-                onStaffLogin={handleGoogleLogin}
-                onAdminLogin={navigateToStaffLogin}
+                onGoogleLogin={handleGoogleLogin}
+                onGuestLogin={handleGuestLogin}
+                onStaffLogin={navigateToStaffLogin}
                 googleLoading={googleSignInLoading}
               />
             );
@@ -165,13 +191,80 @@ const App: React.FC = () => {
               />
             );
 
+          case 'STUDENT_HOME':
+            return (
+              <div className="h-full w-full">
+                {(() => {
+                  switch (studentSubView) {
+                    case 'HOME':
+                      const HomeView = React.lazy(() => import('./views/Student/HomeView'));
+                      return (
+                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
+                          <HomeView 
+                            profile={profile} 
+                            onLogout={handleLogout} 
+                            onProceed={() => setStudentSubView('PAYMENT')}
+                            onViewOrders={() => setStudentSubView('ORDERS')}
+                            onViewQR={(id) => {
+                              setActiveOrderId(id);
+                              setStudentSubView('QR');
+                            }}
+                          />
+                        </React.Suspense>
+                      );
+                    case 'PAYMENT':
+                      const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
+                      return (
+                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
+                          <PaymentView 
+                            profile={profile} 
+                            onBack={() => setStudentSubView('HOME')}
+                            onSuccess={(id) => {
+                              setActiveOrderId(id);
+                              setStudentSubView('QR');
+                            }}
+                          />
+                        </React.Suspense>
+                      );
+                    case 'ORDERS':
+                      const OrdersView = React.lazy(() => import('./views/Student/OrdersView'));
+                      return (
+                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
+                          <OrdersView 
+                            profile={profile} 
+                            onBack={() => setStudentSubView('HOME')}
+                            onQROpen={(id) => {
+                              setActiveOrderId(id);
+                              setStudentSubView('QR');
+                            }}
+                          />
+                        </React.Suspense>
+                      );
+                    case 'QR':
+                      const QRView = React.lazy(() => import('./views/Student/QRView'));
+                      return (
+                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
+                          <QRView 
+                            orderId={activeOrderId!} 
+                            onBack={() => setStudentSubView('HOME')}
+                          />
+                        </React.Suspense>
+                      );
+                    default:
+                      setStudentSubView('HOME');
+                      return null;
+                  }
+                })()}
+              </div>
+            );
+
           // STRICT: No student/default fallback that could mis-route
           default:
             return (
               <WelcomeView
-                onStart={() => {}}
-                onStaffLogin={handleGoogleLogin}
-                onAdminLogin={navigateToStaffLogin}
+                onGoogleLogin={handleGoogleLogin}
+                onGuestLogin={handleGuestLogin}
+                onStaffLogin={navigateToStaffLogin}
                 googleLoading={googleSignInLoading}
               />
             );

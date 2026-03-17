@@ -37,9 +37,9 @@ const safeToMillis = (timestamp: any): number | undefined => {
 const inferRoleFromEmail = (email: string): UserRole | null => {
   if (!email) return null;
   const emailLower = email.toLowerCase();
-  if (emailLower.includes('admin@joe.com') || emailLower === 'admin@joe.com') return 'ADMIN';
-  if (emailLower.includes('cashier@joe.com') || emailLower === 'cashier@joe.com') return 'CASHIER';
-  if (emailLower.includes('server@joe.com') || emailLower === 'server@joe.com') return 'SERVER';
+  if (emailLower.includes('admin@joecafe.com') || emailLower === 'admin@joecafe.com') return 'ADMIN';
+  if (emailLower.includes('cashier@joecafe.com') || emailLower === 'cashier@joecafe.com') return 'CASHIER';
+  if (emailLower.includes('server@joecafe.com') || emailLower === 'server@joecafe.com') return 'SERVER';
   return null;
 };
 
@@ -53,7 +53,7 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
       const data = userDoc.data();
       const email = data.email || '';
       
-      const validRoles: UserRole[] = ['ADMIN', 'CASHIER', 'SERVER'];
+      const validRoles: UserRole[] = ['ADMIN', 'CASHIER', 'SERVER', 'STUDENT', 'GUEST'];
       let userRole: UserRole | null = null;
       
       // Standardize input role to uppercase for check
@@ -100,12 +100,32 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
     
-    // Check if profile exists - WE DO NOT AUTO-CREATE HERE anymore
-    const profile = await getUserProfile(user.uid);
+    // Check if profile exists
+    let profile = await getUserProfile(user.uid);
+    
+    // CASE 1: NEW USER or MISSING PROFILE -> Auto-create as STUDENT
+    if (!profile) {
+      console.log('🆕 Creating new student profile for:', user.email);
+      const newProfile: Partial<UserProfile> = {
+        uid: user.uid,
+        name: user.displayName || 'Student',
+        email: user.email || '',
+        role: 'STUDENT',
+        active: true,
+        createdAt: Date.now(),
+      };
+      
+      await setDoc(doc(db, "users", user.uid), {
+        ...newProfile,
+        lastActive: serverTimestamp(),
+        createdAt: serverTimestamp()
+      });
+      
+      profile = await getUserProfile(user.uid);
+    }
     
     if (!profile) {
-      await firebaseSignOut(auth);
-      throw new Error("ACCESS_DENIED: Unauthorized staff login.");
+      throw new Error("FAILED_TO_CREATE_PROFILE");
     }
     
     if (!profile.active) {
@@ -152,6 +172,26 @@ export const signIn = async (email: string, password: string): Promise<{ user: F
 };
 
 /**
+ * Guest Login - Creates a temporary session profile
+ */
+export const signInAsGuest = async (): Promise<{ user: null; profile: UserProfile }> => {
+  // We use a mock guest profile as we don't want to create Firebase Auth users for every guest
+  // unless the system actually needs a signed-in anonymous user. 
+  // For "limit access (ordering only)", a mock profile is faster.
+  const guestId = `guest_${Math.random().toString(36).substr(2, 9)}`;
+  const guestProfile: UserProfile = {
+    uid: guestId,
+    name: 'Guest User',
+    email: 'guest@joecafe.com',
+    role: 'GUEST',
+    active: true,
+    createdAt: Date.now()
+  };
+  
+  return { user: null, profile: guestProfile };
+};
+
+/**
  * Sign out
  */
 export const signOut = async (): Promise<void> => {
@@ -176,13 +216,15 @@ export const onAuthStateChange = (
         const profile = await getUserProfile(firebaseUser.uid);
 
         if (!profile) {
-          console.error("🛑 UNAUTHORIZED: No staff profile found for", firebaseUser.email);
-          await firebaseSignOut(auth);
-          callback(null, null);
+          console.warn("⚠️ No profile found for", firebaseUser.email);
+          // If we want to allow students who were somehow created without profiles:
+          // But signInWithGoogle handles this now.
+          callback(firebaseUser, null);
           return;
         }
 
-        if (!['ADMIN', 'CASHIER', 'SERVER'].includes(profile.role)) {
+        const allowedRoles: UserRole[] = ['ADMIN', 'CASHIER', 'SERVER', 'STUDENT'];
+        if (!allowedRoles.includes(profile.role)) {
           console.error("🛑 INVALID ROLE detected for", firebaseUser.email);
           await firebaseSignOut(auth);
           callback(null, null);
