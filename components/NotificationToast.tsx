@@ -1,6 +1,11 @@
 import React, { useEffect } from 'react';
 import { X, Package, Clock } from 'lucide-react';
-import type { OrderReadyPayload } from '../services/fcm';
+export interface OrderReadyPayload {
+  orderId: string;
+  itemNames?: string;
+  pickupWindowStart?: string;
+  pickupWindowEnd?: string;
+}
 
 export interface NotificationToastData {
   title?: string;
