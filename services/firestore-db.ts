@@ -1425,6 +1425,81 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
   }
 };
 
+/**
+ * Serve an entire order in one atomic transaction.
+ * Marks orderStatus = 'SERVED' and qrStatus = 'DESTROYED'.
+ */
+export const serveFullOrder = async (orderId: string, servedBy: string): Promise<void> => {
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    await runTransaction(db, async (tx) => {
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists()) throw new Error("Order not found");
+      const data = orderSnap.data();
+      const order = firestoreToOrder(orderSnap.id, data);
+
+      if (order.orderStatus === 'SERVED') return;
+
+      const updatedItems = order.items.map(item => {
+        const remaining = item.remainingQty !== undefined ? item.remainingQty : (item.quantity - (item.servedQty || 0));
+        return {
+          ...item,
+          servedQty: item.quantity,
+          remainingQty: 0,
+          pendingServed: remaining
+        };
+      });
+
+      tx.update(orderRef, {
+        items: updatedItems.map(i => ({
+          id: i.id,
+          name: i.name,
+          price: i.price,
+          costPrice: i.costPrice,
+          category: i.category,
+          imageUrl: i.imageUrl,
+          quantity: i.quantity,
+          servedQty: i.quantity,
+          remainingQty: 0
+        })),
+        orderStatus: 'SERVED',
+        qrStatus: 'DESTROYED',
+        qrState: 'SERVED',
+        servedAt: serverTimestamp(),
+        serveFlowStatus: 'SERVED'
+      });
+
+      // Serve logs & Inventory Shards
+      const serveLogsRef = collection(db, "serveLogs");
+      for (const item of updatedItems) {
+        if (item.pendingServed > 0) {
+          const logRef = doc(serveLogsRef);
+          tx.set(logRef, {
+            orderId,
+            itemId: item.id,
+            itemName: item.name,
+            quantityServed: item.pendingServed,
+            servedBy,
+            servedAt: serverTimestamp()
+          });
+
+          const shardId = `shard_${Math.floor(Math.random() * 5)}`; // INVENTORY_SHARD_COUNT fallback
+          const shardRef = doc(db, "inventory_shards", item.id, "shards", shardId);
+          tx.set(shardRef, { 
+            count: increment(item.pendingServed),
+            lastUpdated: serverTimestamp() 
+          }, { merge: true });
+        }
+      }
+    });
+
+    console.log('🏁 Full order served successfully:', orderId);
+  } catch (error) {
+    console.error("Error serving full order:", error);
+    throw error;
+  }
+};
+
 export const serveItem = async (orderId: string, itemId: string, servedBy: string): Promise<void> => {
   if (useCallables()) {
     try {

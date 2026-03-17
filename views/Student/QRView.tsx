@@ -22,7 +22,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
   const [orderCount, setOrderCount] = useState<number>(1);
 
   useEffect(() => {
-    if (order?.orderStatus === 'REJECTED') {
+    if (order?.orderStatus === 'REJECTED' || order?.orderStatus === 'SERVED') {
       const timer = setTimeout(onBack, 3000);
       return () => clearTimeout(timer);
     }
@@ -106,18 +106,32 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
   }
 
 
-  if (isScanned) {
+  if (isScanned || uiState === 'COMPLETED') {
+    const isServed = uiState === 'COMPLETED';
     return (
       <div className="h-screen w-full flex flex-col bg-background max-w-md mx-auto">
         <div className="p-4 bg-white flex items-center gap-4 border-b">
           <button onClick={onBack} className="p-2 -ml-2 text-textMain"><ChevronLeft className="w-6 h-6" /></button>
-          <h2 className="text-xl font-bold text-textMain">Status</h2>
+          <h2 className="text-xl font-bold text-textMain">{isServed ? 'Fulfilled' : 'Validated'}</h2>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-          <CheckCircle2 className="w-16 h-16 text-success mb-4" />
-          <h3 className="text-xl font-bold text-textMain mb-2">Order Accepted!</h3>
-          <p className="text-textSecondary mb-8">Your order has been scanned and is being prepared.</p>
-          <button onClick={onBack} className="w-full bg-primary text-white font-bold py-4 rounded-2xl">View Orders</button>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in zoom-in duration-500">
+          <div className={`w-24 h-24 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-2xl ${isServed ? 'bg-primary text-white shadow-primary/30' : 'bg-success/10 text-success shadow-success/10'}`}>
+            <CheckCircle2 className="w-12 h-12" />
+          </div>
+          <h3 className="text-3xl font-black text-textMain tracking-tighter mb-2">
+            {isServed ? 'Order Served!' : 'Order Validated!'}
+          </h3>
+          <p className="text-textSecondary mb-10 font-medium">
+            {isServed 
+              ? 'Thank you for dining with JOE! Returning home...' 
+              : 'Your token has been scanned. Handing over your meal now.'}
+          </p>
+          <button 
+            onClick={onBack} 
+            className="w-full h-16 bg-primary text-white font-black uppercase tracking-widest text-sm rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all"
+          >
+            Go Home Now
+          </button>
         </div>
       </div>
     );

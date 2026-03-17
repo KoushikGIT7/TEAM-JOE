@@ -9,6 +9,7 @@ import {
   listenToPendingItems,
   serveItem,
   serveItemBatch,
+  serveFullOrder,
   validateQRForServing,
   PendingItem,
   rejectOrderFromCounter,
@@ -137,7 +138,7 @@ const ScanReviewModal: React.FC<ScanReviewModalProps> = ({
             {serving
               ? <RefreshCw className="w-6 h-6 animate-spin" />
               : <CheckCircle className="w-6 h-6" />}
-            {serving ? 'Serving…' : 'Serve All Items'}
+            {serving ? 'Serving…' : 'Serve Meal'}
           </button>
         </div>
       </div>
@@ -319,12 +320,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     setModalServing(true);
 
     try {
-      for (const item of scannedOrder.items) {
-        const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
-        if (remaining > 0) {
-          await serveItemBatch(scannedOrder.id, item.id, remaining, profile.uid);
-        }
-      }
+      await serveFullOrder(scannedOrder.id, profile.uid);
       // Modal clears; the listenToActiveOrders listener will remove from queue
       setScannedOrder(null);
       setScanRawData('');
