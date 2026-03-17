@@ -127,12 +127,7 @@ export const groupOrdersByStatus = (orders: Order[]): {
  * Determine if user can go back (or if locked to QR)
  */
 export const canNavigateBack = (order: Order): boolean => {
-  const state = getOrderUIState(order);
-  // Locked to QR view once in QR_ACTIVE state
-  if (state === 'QR_ACTIVE') {
-    return false;
-  }
-  return true;
+  return true; // Always allow navigating back for better UX
 };
 
 /**

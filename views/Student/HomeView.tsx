@@ -18,10 +18,11 @@ interface HomeViewProps {
   profile: UserProfile | null;
   onProceed: () => void;
   onViewOrders?: () => void;
+  onViewQR?: (orderId: string) => void;
   onLogout: () => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, onLogout }) => {
+const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, onViewQR, onLogout }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('Breakfast');
   const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [search, setSearch] = useState('');
@@ -303,12 +304,15 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
                 : 'Order received. We will notify when ready.'
             : 'Ready to Scan at Serving Counter';
         return (
-        <div className="p-4 animate-in slide-in-from-top-4 duration-500">
-           <div className={`p-5 rounded-[2rem] shadow-xl border-l-8 flex flex-col gap-4 relative overflow-hidden ${
-             activeOrder.paymentStatus === 'PENDING' 
-             ? 'bg-cash/5 border-cash' 
-             : 'bg-primary/5 border-primary'
-           }`}>
+         <div className="p-4 animate-in slide-in-from-top-4 duration-500">
+            <div 
+              onClick={() => onViewQR && onViewQR(activeOrder.id)}
+              className={`p-5 rounded-[2rem] shadow-xl border-l-8 flex flex-col gap-4 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all ${
+                activeOrder.paymentStatus === 'PENDING' 
+                ? 'bg-cash/5 border-cash' 
+                : 'bg-primary/5 border-primary'
+              }`}
+            >
              <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.03] -mr-8 -mt-8 rounded-full" />
              <div className="flex justify-between items-start">
                <div>

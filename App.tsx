@@ -67,18 +67,26 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  // Cross-session QR recovery for logged-in students
+  // Cross-session QR recovery for logged-in students (Initial Load Only)
   useEffect(() => {
-    if (authLoading) return;
-    if (!profile?.uid || role !== 'student') return;
+    if (authLoading || !profile?.uid || role !== 'student') return;
+    
+    // Only auto-recover if we are currently on the WELCOME screen
+    // This prevents "locking" the user to the QR view if they try to navigate away.
     const unsub = listenToLatestActiveQR(profile.uid, (order) => {
       if (!order) return;
-      if (view === 'PAYMENT') return;
-      setSelectedOrderId(order.id);
-      setView('QR');
+      
+      setView((currentView) => {
+        if (currentView === 'WELCOME') {
+          setSelectedOrderId(order.id);
+          return 'QR';
+        }
+        return currentView;
+      });
     });
+    
     return unsub;
-  }, [authLoading, profile?.uid, role, view]);
+  }, [authLoading, profile?.uid, role]);
 
   // Unified Routing & Auth Guards
   useEffect(() => {
@@ -170,7 +178,7 @@ const App: React.FC = () => {
         switch (view) {
           case 'WELCOME':
             return <WelcomeView onStart={handleStartOrdering} onStaffLogin={navigateToLogin} onAdminLogin={navigateToStaffLogin} googleLoading={googleSignInLoading} />;
-          case 'HOME': return <HomeView profile={profile} onProceed={navigateToPayment} onViewOrders={() => setView('ORDERS')} onLogout={handleLogout} />;
+          case 'HOME': return <HomeView profile={profile} onProceed={navigateToPayment} onViewOrders={() => setView('ORDERS')} onViewQR={navigateToQR} onLogout={handleLogout} />;
           case 'ORDERS': return <OrdersView profile={profile!} onBack={navigateToHome} onQROpen={navigateToQR} />;
           case 'PAYMENT': return <PaymentView profile={profile} onBack={navigateToHome} onSuccess={navigateToQR} />;
           case 'QR': return <QRView orderId={selectedOrderId!} onBack={navigateToHome} />;
