@@ -1308,10 +1308,6 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
       throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
     }
 
-    if (order.qrStatus === 'EXPIRED' || (payloadExpiresAt && Date.now() > payloadExpiresAt)) {
-      throw new Error("TOKEN_EXPIRED - This token is no longer valid.");
-    }
-
     // 4. Cryptographic Signature Verification
     if (secureHash !== 'MANUAL_OVERRIDE') {
       // Reconstruct components for verification using DB data

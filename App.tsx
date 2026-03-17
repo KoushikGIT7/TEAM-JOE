@@ -42,6 +42,17 @@ const App: React.FC = () => {
   // Hook for real-time order status notifications (Student App)
   useOrderNotifications(user?.uid || null);
 
+  // Initial load logic: Keep splash visible for at least 1500ms for "WOW" factor
+  // but only if it's the very first load of the session.
+  useEffect(() => {
+    if (!authLoading) {
+      const timer = setTimeout(() => {
+        setShowSplash(false);
+      }, 1500); 
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading]);
+
   // Initialize menu (non-blocking)
   useEffect(() => {
     initializeMenu().catch((error) => {
@@ -69,62 +80,35 @@ const App: React.FC = () => {
     return unsub;
   }, [authLoading, profile?.uid, role, view]);
 
-  // Routing Guards
+  // Unified Routing & Auth Guards
   useEffect(() => {
-    if (authLoading) return;
-    
-    const isAdminView = ['ADMIN_DASHBOARD', 'MENU_MANAGEMENT', 'USER_MANAGEMENT', 'ANALYTICS'].includes(view);
-    const isStaffView = ['CASHIER', 'KITCHEN', 'SCANNER', 'SERVING'].includes(view);
-    const isStudentProtectedView = ['ORDERS'].includes(view); 
-    
-    if (!user && (isAdminView || isStaffView || isStudentProtectedView)) {
+    if (authLoading || showSplash) return;
+
+    // 1. Protection for non-logged in users
+    const protectedViews: ViewState[] = ['HOME', 'PAYMENT', 'QR', 'ORDERS', 'CASHIER', 'ADMIN', 'SERVING_COUNTER', 'KITCHEN'];
+    if (!user && protectedViews.includes(view)) {
       setView('WELCOME');
       return;
     }
-    
-    if (user && profile && profile.role !== 'admin' && isAdminView) {
+
+    // 2. Role-based redirects (Prevent students in staff views)
+    const staffViews: ViewState[] = ['CASHIER', 'ADMIN', 'SERVING_COUNTER', 'KITCHEN'];
+    if (user && role === 'student' && staffViews.includes(view)) {
       setView('HOME');
       return;
     }
 
-    if (user && profile && profile.role === 'student' && isStaffView) {
-      setView('HOME');
-      return;
+    // 3. Auto-redirect from Welcome if logged in
+    if (user && profile && role && view === 'WELCOME') {
+      if (role === 'admin') setView('ADMIN');
+      else if (role === 'cashier') setView('CASHIER');
+      else if (role === 'server') setView('SERVING_COUNTER');
+      else setView('HOME');
     }
-  }, [authLoading, user, profile, view]);
-
-  useEffect(() => {
-    if (authLoading) return;
-
-    if (!user || !profile || !role) {
-      setView((prev) => {
-        const staffViews: ViewState[] = ['CASHIER', 'ADMIN', 'SERVING_COUNTER'];
-        if (staffViews.includes(prev)) return 'WELCOME';
-        return prev;
-      });
-      return;
-    }
-    
-    let targetView: ViewState;
-    if (role === 'admin') targetView = 'ADMIN';
-    else if (role === 'cashier') targetView = 'CASHIER';
-    else if (role === 'server') targetView = 'SERVING_COUNTER';
-    else targetView = 'HOME';
-
-    setView((prev) => {
-      if (prev === 'WELCOME') return targetView;
-      const protectedFlows: ViewState[] = ['PAYMENT', 'QR', 'ORDERS'];
-      if (protectedFlows.includes(prev)) return prev;
-      if (role === 'student' && prev === 'HOME') return prev;
-      const validViews: ViewState[] = ['ADMIN', 'CASHIER', 'SERVING_COUNTER', 'KITCHEN', 'HOME'];
-      if (!validViews.includes(prev)) return targetView;
-      return prev;
-    });
-  }, [authLoading, user, profile, role]);
+  }, [authLoading, showSplash, user, profile, role, view]);
 
   const handleSplashFinish = () => {
     setShowSplash(false);
-    try { sessionStorage.removeItem('joe_google_signin_pending'); } catch (_) {}
   };
 
   const handleStartOrdering = async () => {
@@ -165,8 +149,7 @@ const App: React.FC = () => {
     }
   };
 
-  if (showSplash) return <SplashScreen onFinish={handleSplashFinish} minDisplayTime={100} />;
-  if (authLoading) return <div className="h-screen w-full flex items-center justify-center bg-black z-40"><div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
+  if (showSplash || authLoading) return <SplashScreen onFinish={handleSplashFinish} />;
 
   const navigateToOrderFromNotification = (orderId: string) => {
     setSelectedOrderId(orderId);

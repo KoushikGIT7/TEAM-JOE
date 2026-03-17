@@ -11,51 +11,16 @@ interface SplashScreenProps {
   minDisplayTime?: number; // Minimum time to show splash (ms)
 }
 
-const SplashScreen: React.FC<SplashScreenProps> = ({ 
-  onFinish, 
-  minDisplayTime = 2500 
-}) => {
-  const [isVisible, setIsVisible] = useState(true);
-  const [isAnimatingOut, setIsAnimatingOut] = useState(false);
-
-  useEffect(() => {
-    // Ensure splash shows for minimum time
-    const minTimer = setTimeout(() => {
-      setIsAnimatingOut(true);
-      
-      // Wait for exit animation before calling onFinish
-      const exitTimer = setTimeout(() => {
-        setIsVisible(false);
-        onFinish();
-      }, 500); // Exit animation duration
-
-      return () => clearTimeout(exitTimer);
-    }, minDisplayTime);
-
-    return () => clearTimeout(minTimer);
-  }, [onFinish, minDisplayTime]);
-
-  if (!isVisible) return null;
-
+const SplashScreen: React.FC<SplashScreenProps> = () => {
   return (
     <div 
-      className={`
-        fixed inset-0 z-50 pointer-events-auto
-        bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#0F9D58]/10
-        flex flex-col items-center justify-center
-        transition-opacity duration-500 ease-out
-        ${isAnimatingOut ? 'opacity-0' : 'opacity-100'}
-      `}
+      className="fixed inset-0 z-50 pointer-events-auto bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#0F9D58]/10 flex flex-col items-center justify-center"
     >
       {/* Animated Logo */}
       <div className="relative">
         {/* Logo with scale + fade in animation */}
         <div
-          className={`
-            transform transition-all duration-700 ease-out
-            ${isAnimatingOut ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}
-            animate-[logoEntrance_0.7s_ease-out_0.1s_both]
-          `}
+          className="transform transition-all duration-700 ease-out scale-100 opacity-100 animate-[logoEntrance_0.7s_ease-out_0.1s_both]"
         >
           <img
             src="/JeoLogoFinal.png"
@@ -83,13 +48,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
 
         {/* Subtle glow pulse effect */}
         <div
-          className={`
-            absolute inset-0 -z-10
-            bg-primary/20 rounded-full blur-2xl
-            transition-opacity duration-1000
-            ${isAnimatingOut ? 'opacity-0' : 'opacity-100'}
-            animate-[glowPulse_2s_ease-in-out_infinite]
-          `}
+          className="absolute inset-0 -z-10 bg-primary/20 rounded-full blur-2xl transition-opacity duration-1000 opacity-100 animate-[glowPulse_2s_ease-in-out_infinite]"
           style={{
             width: '150%',
             height: '150%',
@@ -101,12 +60,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
 
       {/* Tagline with slide-up + fade animation */}
       <div
-        className={`
-          mt-8 text-center
-          transform transition-all duration-600 ease-out
-          ${isAnimatingOut ? 'translate-y-4 opacity-0' : 'translate-y-0 opacity-100'}
-          animate-[taglineEntrance_0.6s_ease-out_0.5s_both]
-        `}
+        className="mt-8 text-center transform transition-all duration-600 ease-out translate-y-0 opacity-100 animate-[taglineEntrance_0.6s_ease-out_0.5s_both]"
       >
         <p className="text-white text-lg sm:text-xl md:text-2xl font-medium tracking-tight px-4">
           Fast food. No chaos.

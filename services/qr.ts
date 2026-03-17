@@ -81,11 +81,7 @@ export const verifySecureHash = async (
   providedHash: string
 ): Promise<boolean> => {
   try {
-    // Check expiry first (fail fast)
-    if (Date.now() > expiresAt) {
-      console.warn('QR Token expired:', { now: Date.now(), expiresAt });
-      return false;
-    }
+    // Expiry check disabled (QR is valid until SERVED or REJECTED)
     
     // 1. Try modern HMAC verification first
     try {
@@ -115,10 +111,7 @@ export const verifySecureHashSync = (
   expiresAt: number,
   providedHash: string
 ): boolean => {
-  // Check expiry
-  if (Date.now() > expiresAt) {
-    return false;
-  }
+  // Expiry check disabled
   
   const expectedHash = generateSecureHashSync(orderId, userId, cafeteriaId, createdAt, expiresAt);
   return providedHash === expectedHash;
@@ -303,6 +296,5 @@ export const parseQRPayload = async (qrString: string): Promise<{
  * Check if QR code is expired
  */
 export const isQRExpired = (expiresAt?: number): boolean => {
-  if (!expiresAt) return false;
-  return Date.now() > expiresAt;
+  return false; // QR codes no longer expire based on time
 };

@@ -238,9 +238,18 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
       await signInWithRedirect(auth, provider);
       return new Promise(() => {}); // Page will reload; auth handler picks it up
     } else {
-      // Web (desktop or mobile browser): always use popup
-      console.log('🪟 Web context — using popup sign-in');
-      result = await signInWithPopup(auth, provider);
+      // Web (desktop or mobile browser): Try popup first, then fallback to redirect
+      try {
+        console.log('🪟 Web context — attempting popup sign-in');
+        result = await signInWithPopup(auth, provider);
+      } catch (error: any) {
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
+          console.warn('🚧 Popup blocked — falling back to redirect sign-in');
+          await signInWithRedirect(auth, provider);
+          return new Promise(() => {}); // Page will reload
+        }
+        throw error;
+      }
     }
     
     const user = result.user;

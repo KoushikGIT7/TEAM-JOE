@@ -105,24 +105,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
     );
   }
 
-  if (order?.serveFlowStatus === 'WAITING') {
-    return (
-        <div className="h-screen w-full flex flex-col bg-[#F8FAFC] max-w-md mx-auto">
-          <div className="p-4 bg-white flex items-center gap-4 border-b">
-            <button onClick={onBack} className="p-2 -ml-2 text-textMain"><ChevronLeft className="w-6 h-6" /></button>
-            <h2 className="text-xl font-bold text-textMain">Pickup Expired</h2>
-          </div>
-          <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-            <div className="w-24 h-24 bg-slate-200 rounded-3xl flex items-center justify-center mb-6">
-              <Clock className="w-12 h-12 text-slate-400" />
-            </div>
-            <h3 className="text-2xl font-black text-slate-900 mb-2">Timer Expired</h3>
-            <p className="text-slate-500 mb-8 font-medium">Please ask the server to re-activate your order.</p>
-            <button onClick={onBack} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl">Go Back</button>
-          </div>
-        </div>
-      );
-  }
 
   if (isScanned) {
     return (
@@ -170,25 +152,11 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
 
         {order?.serveFlowStatus === 'READY' && (
           <div className="w-full bg-green-50 text-green-600 p-5 rounded-3xl flex flex-col gap-1 mb-6 border border-green-100">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 shrink-0" />
-                    <p className="text-sm font-black uppercase tracking-tight">Ready for Pickup!</p>
-                </div>
-                <div className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-1 rounded-full">
-                    <Timer className="w-3 h-3" />
-                    <span className="text-[10px] font-black">
-                        <CountdownTimer 
-                            expiryTime={order.pickupWindowEnd || (Date.now() + 600000)} 
-                            onExpire={async () => {
-                                try {
-                                    await updateDoc(doc(db, "orders", order.id), { serveFlowStatus: 'WAITING' });
-                                } catch (e) {}
-                            }}
-                        />
-                    </span>
-                </div>
+            <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+                <p className="text-sm font-black uppercase tracking-tight">Ready for Pickup!</p>
             </div>
+            <p className="text-[10px] font-bold opacity-80">Please collect your items immediately from the counter.</p>
           </div>
         )}
 
@@ -219,22 +187,5 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
   );
 };
 
-const CountdownTimer: React.FC<{ expiryTime: number; onExpire: () => void }> = ({ expiryTime, onExpire }) => {
-    const [timeLeft, setTimeLeft] = useState<number>(Math.max(0, expiryTime - Date.now()));
-    useEffect(() => {
-        const timer = setInterval(() => {
-            const left = Math.max(0, expiryTime - Date.now());
-            setTimeLeft(left);
-            if (left === 0) {
-                clearInterval(timer);
-                onExpire();
-            }
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [expiryTime, onExpire]);
-    const mins = Math.floor(timeLeft / 60000);
-    const secs = Math.floor((timeLeft % 60000) / 1000);
-    return <span>{mins}:{secs.toString().padStart(2, '0')}</span>;
-};
 
 export default QRView;

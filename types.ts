@@ -36,11 +36,11 @@ export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJE
 /** Zero-wait: FAST_ITEM = instant serve at counter; PREPARATION_ITEM = kitchen flow + pickup window */
 export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
 
-/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. QUEUED = waiting for slot. WAITING = timer expired. */
-export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'READY' | 'SERVED' | 'WAITING';
+/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. QUEUED = waiting for slot. */
+export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'READY' | 'SERVED';
 
-/** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED (or EXPIRED) */
-export type QRState = 'ACTIVE' | 'SCANNED' | 'SERVED' | 'EXPIRED' | 'DESTROYED';
+/** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED */
+export type QRState = 'ACTIVE' | 'SCANNED' | 'SERVED' | 'DESTROYED';
 
 /** Kitchen workflow: PLACED → COOKING → READY → SERVED */
 export type KitchenStatus = 'PLACED' | 'COOKING' | 'READY' | 'SERVED';
