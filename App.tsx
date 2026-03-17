@@ -12,6 +12,7 @@ import CashierView from './views/Staff/CashierView';
 import AdminDashboard from './views/Admin/Dashboard';
 import ServingCounterView from './views/Staff/ServingCounterView';
 import KitchenView from './views/Staff/KitchenView';
+import UnifiedKitchenConsole from './views/Staff/UnifiedKitchenConsole';
 import LoginView from './views/Auth/LoginView';
 
 type ViewState =
@@ -82,7 +83,7 @@ const App: React.FC = () => {
     if (role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
       if      (role === 'ADMIN')   setView('ADMIN');
       else if (role === 'CASHIER') setView('CASHIER');
-      else if (role === 'SERVER')  setView('SERVING_COUNTER');
+      else if (role === 'SERVER')  setView('KITCHEN');
       else if (role === 'STUDENT' || role === 'GUEST') setView('STUDENT_HOME');
     }
   }, [authLoading, showSplash, profile, role, view]);
@@ -157,7 +158,7 @@ const App: React.FC = () => {
                   // be 'WELCOME' / 'STAFF_LOGIN' so it becomes a no-op.
                   if      (p.role === 'ADMIN')   setView('ADMIN');
                   else if (p.role === 'CASHIER') setView('CASHIER');
-                  else if (p.role === 'SERVER')  setView('SERVING_COUNTER');
+                  else if (p.role === 'SERVER')  setView('KITCHEN');
                 }}
               />
             );
@@ -175,19 +176,11 @@ const App: React.FC = () => {
             );
 
           case 'KITCHEN':
-            return (
-              <KitchenView
-                onBack={() => setView(role === 'ADMIN' ? 'ADMIN' : 'SERVING_COUNTER')}
-                user={user}
-              />
-            );
-
           case 'SERVING_COUNTER':
             return (
-              <ServingCounterView
-                profile={profile!}
-                onLogout={handleLogout}
-                onOpenKitchen={() => setView('KITCHEN')}
+              <UnifiedKitchenConsole 
+                profile={profile!} 
+                onLogout={handleLogout} 
               />
             );
 
@@ -247,6 +240,7 @@ const App: React.FC = () => {
                           <QRView 
                             orderId={activeOrderId!} 
                             onBack={() => setStudentSubView('HOME')}
+                            onViewOrders={() => setStudentSubView('ORDERS')}
                           />
                         </React.Suspense>
                       );

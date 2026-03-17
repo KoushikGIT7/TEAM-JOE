@@ -30,17 +30,17 @@ export interface CartItem extends MenuItem {
   remainingQty?: number;
 }
 
-export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED';
+export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'MISSED' | 'ABANDONED';
 export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED' | 'DESTROYED';
 
 /** Zero-wait: FAST_ITEM = instant serve at counter; PREPARATION_ITEM = kitchen flow + pickup window */
 export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
 
-/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. QUEUED = waiting for slot. */
-export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'READY' | 'SERVED';
+/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. */
+export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'SERVED_PARTIAL' | 'READY_SERVED' | 'SERVED' | 'MISSED' | 'EXPIRED' | 'ABANDONED';
 
 /** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED */
-export type QRState = 'ACTIVE' | 'SCANNED' | 'SERVED' | 'DESTROYED';
+export type QRState = 'ACTIVE' | 'SCANNED' | 'USED' | 'SERVED' | 'DESTROYED';
 
 /** Kitchen workflow: PLACED → COOKING → READY → SERVED */
 export type KitchenStatus = 'PLACED' | 'COOKING' | 'READY' | 'SERVED';
@@ -59,13 +59,23 @@ export interface Order {
   orderType?: OrderType;
   /** Serve flow: PAID | NEW | PREPARING | READY | SERVED */
   serveFlowStatus?: ServeFlowStatus;
-  /** Pickup window (preparation items): milliseconds */
-  pickupWindowStart?: number;
-  pickupWindowEnd?: number;
+  
+  /** ⏱️ NEW: Pickup window logic (timer starts when READY) */
+  pickupWindow?: {
+    startTime?: number; // ms, set when batch moves to READY
+    endTime?: number;   // ms, startTime + 7 mins
+    durationMs: number; // default 420000 (7 mins)
+    status: 'AWAITING_READY' | 'COLLECTING' | 'MISSED' | 'COMPLETED' | 'ABANDONED';
+  };
+
   /** Selected slot (dynamic items): e.g. 1230 for 12:30 PM. Stored as integer. */
   arrivalTime?: number;
   /** Link to batch preparation */
   batchId?: string;
+  /** Number of times this order has missed a window */
+  missedCount?: number;
+  /** Track history for MISSED items being moved */
+  missedFromBatchId?: string;
   estimatedReadyTime?: number;
   /** Set when pickup-reminder FCM was sent (scheduled function) */
   sentPickupReminderAt?: number;
@@ -79,7 +89,7 @@ export interface Order {
   qrState?: QRState;
   /** When QR was scanned (server) */
   qrScannedAt?: number;
-  /** When QR expires (for validation) */
+  /** When QR expires (for cryptographic validity, NOT pickup timeout) */
   qrExpiresAt?: number;
   qr?: {
     token: string;
@@ -199,7 +209,7 @@ export interface ServeLog {
   servedAt: number;
 }
 
-export type PrepBatchStatus = 'QUEUED' | 'PREPARING' | 'READY' | 'COMPLETED';
+export type PrepBatchStatus = 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'COMPLETED';
 
 export interface PrepBatch {
   id: string;

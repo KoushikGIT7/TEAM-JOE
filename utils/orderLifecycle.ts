@@ -14,14 +14,26 @@ export type OrderUIState =
   | 'SCANNED'              // Cashier scanned QR
   | 'COMPLETED'            // Order completed/served
   | 'REJECTED'             // Payment/order rejected
-  | 'CANCELLED';           // Order cancelled
+  | 'CANCELLED'            // Order cancelled
+  | 'MISSED'               // Missed current pickup window, reassigned
+  | 'ABANDONED'            // Too many missed windows (cleanup)
+  | 'EXPIRED';             // Cryptographic token expiry (rare)
 
-/**
- * Map Firestore order state to UI state
- * This is the ONLY function that determines what UI to show
- */
 export const getOrderUIState = (order: Order): OrderUIState => {
-  // Rejected states
+  // Abandoned (Too many misses)
+  if (order.orderStatus === 'ABANDONED' || order.pickupWindow?.status === 'ABANDONED') {
+      return 'ABANDONED';
+  }
+
+  // Missed pickup window logic
+  if (order.pickupWindow?.status === 'MISSED' || order.orderStatus === 'MISSED' || order.serveFlowStatus === 'MISSED') {
+    return 'MISSED';
+  }
+
+  if (order.orderStatus === 'EXPIRED') {
+    return 'EXPIRED';
+  }
+
   if (order.paymentStatus === 'FAILED' || (order.paymentStatus === 'PENDING' && order.qrStatus === 'REJECTED')) {
     return 'REJECTED';
   }
@@ -36,7 +48,17 @@ export const getOrderUIState = (order: Order): OrderUIState => {
     return 'PENDING_PAYMENT';
   }
 
-  // QR is active and visible (most important - show QR as soon as payment succeeds)
+  // QR was scanned but order not yet fully served
+  if (order.qrState === 'SCANNED' || order.serveFlowStatus === 'SERVED_PARTIAL') {
+    return 'SCANNED';
+  }
+
+  // Order fully served
+  if (order.orderStatus === 'SERVED' || order.qrState === 'SERVED' || order.serveFlowStatus === 'READY_SERVED') {
+    return 'COMPLETED';
+  }
+
+  // QR is active and visible (only if NOT expired/served)
   if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
     return 'QR_ACTIVE';
   }
@@ -46,16 +68,6 @@ export const getOrderUIState = (order: Order): OrderUIState => {
     return 'AWAITING_QR';
   }
 
-  // QR was scanned but order not yet fully served
-  if (order.qrState === 'SCANNED') {
-    return 'SCANNED';
-  }
-
-  // Order fully served
-  if (order.orderStatus === 'SERVED' || order.qrState === 'SERVED') {
-    return 'COMPLETED';
-  }
-
   // Default fallback
   return 'AWAITING_QR';
 };
@@ -63,9 +75,19 @@ export const getOrderUIState = (order: Order): OrderUIState => {
 /**
  * Determine if QR should be visible
  * QR visible ONLY when: paymentStatus === SUCCESS AND qrStatus === ACTIVE
- * orderStatus does not block QR visibility
+ * AND order is NOT in a terminal/spent state
  */
 export const shouldShowQR = (order: Order): boolean => {
+  // QR visible UNTIL order is SERVED or explicitly REJECTED/CANCELLED/ABANDONED
+  const terminalStates = ['SERVED', 'REJECTED', 'CANCELLED', 'ABANDONED'];
+  if (terminalStates.includes(order.orderStatus || '')) return false;
+  
+  // If fully served at items level
+  const remItems = order.items?.reduce((sum, item) => sum + (item.remainingQty ?? (item.quantity - (item.servedQty || 0))), 0);
+  if (remItems === 0) return false;
+
+  if (order.qrState === 'USED' || order.qrState === 'SERVED') return false;
+  
   return order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE';
 };
 
@@ -85,13 +107,19 @@ export const getOrderStatusMessage = (order: Order): string => {
     case 'QR_ACTIVE':
       return 'Ready for Pickup - Show QR';
     case 'SCANNED':
-      return 'Order Accepted';
+      return 'Processing at Counter';
     case 'COMPLETED':
       return 'Order Completed';
     case 'REJECTED':
       return 'Payment Rejected';
     case 'CANCELLED':
       return 'Order Cancelled';
+    case 'MISSED':
+      return 'Missed Window - Waiting for next Batch';
+    case 'ABANDONED':
+      return 'Pickup Overdue - Order Abandoned';
+    case 'EXPIRED':
+      return 'Token Expired';
     default:
       return 'Processing';
   }
@@ -135,5 +163,6 @@ export const canNavigateBack = (order: Order): boolean => {
  */
 export const isOrderTerminal = (order: Order): boolean => {
   const state = getOrderUIState(order);
-  return state === 'COMPLETED' || state === 'REJECTED' || state === 'CANCELLED';
+  const terminalStates = ['COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'ABANDONED'];
+  return terminalStates.includes(state);
 };

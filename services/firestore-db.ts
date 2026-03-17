@@ -41,9 +41,13 @@ import {
   OrderStatus,
   QRStatus,
   KitchenStatus,
-  PrepBatch
+  PrepBatch,
+  PrepBatchStatus
 } from "../types";
 import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT } from "../constants";
+
+export const MAX_BATCH_SIZE = 40;
+export const PICKUP_WINDOW_DURATION_MS = 7 * 60 * 1000;
 import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
   useCallables,
@@ -113,11 +117,17 @@ const orderToFirestore = (order: Order) => ({
   rejectedAt: order.rejectedAt ? Timestamp.fromMillis(order.rejectedAt) : null,
   orderType: order.orderType || null,
   serveFlowStatus: order.serveFlowStatus || null,
-  pickupWindowStart: order.pickupWindowStart != null ? Timestamp.fromMillis(order.pickupWindowStart) : null,
-  pickupWindowEnd: order.pickupWindowEnd != null ? Timestamp.fromMillis(order.pickupWindowEnd) : null,
+  pickupWindow: order.pickupWindow ? {
+    startTime: order.pickupWindow.startTime ? Timestamp.fromMillis(order.pickupWindow.startTime) : null,
+    endTime: order.pickupWindow.endTime ? Timestamp.fromMillis(order.pickupWindow.endTime) : null,
+    durationMs: order.pickupWindow.durationMs,
+    status: order.pickupWindow.status
+  } : null,
   estimatedReadyTime: order.estimatedReadyTime != null ? Timestamp.fromMillis(order.estimatedReadyTime) : null,
   arrivalTime: order.arrivalTime || null,
   batchId: order.batchId || null,
+  missedCount: order.missedCount || 0,
+  missedFromBatchId: order.missedFromBatchId || null,
   sentPickupReminderAt: order.sentPickupReminderAt != null ? Timestamp.fromMillis(order.sentPickupReminderAt) : null,
   preparationStationId: order.preparationStationId || null,
   queuePosition: order.queuePosition ?? null,
@@ -167,11 +177,17 @@ const firestoreToOrder = (id: string, data: any): Order => {
     rejectedAt: toMillis(data.rejectedAt),
     orderType: data.orderType || undefined,
     serveFlowStatus: data.serveFlowStatus || undefined,
-    pickupWindowStart: toMillis(data.pickupWindowStart),
-    pickupWindowEnd: toMillis(data.pickupWindowEnd),
+    pickupWindow: data.pickupWindow ? {
+      startTime: toMillis(data.pickupWindow.startTime),
+      endTime: toMillis(data.pickupWindow.endTime),
+      durationMs: data.pickupWindow.durationMs || 420000,
+      status: data.pickupWindow.status || 'AWAITING_READY'
+    } : undefined,
     estimatedReadyTime: toMillis(data.estimatedReadyTime),
     arrivalTime: data.arrivalTime || null,
     batchId: data.batchId || null,
+    missedCount: data.missedCount || 0,
+    missedFromBatchId: data.missedFromBatchId || null,
     sentPickupReminderAt: toMillis(data.sentPickupReminderAt),
     preparationStationId: data.preparationStationId || undefined,
     queuePosition: data.queuePosition ?? undefined,
@@ -905,25 +921,67 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       // 4. Batch Allocation Logic (for dynamic items)
       if (isDynamic && orderData.arrivalTime) {
         const slot = orderData.arrivalTime;
-        for (const item of orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM')) {
-          const batchId = `batch_${slot}_${item.id}`;
-          const batchRef = doc(db, "prepBatches", batchId);
-          // Note: In a real transaction we'd check if batch exists, but for speed 
-          // we use set with merge or separate logic. Here we'll append to an array.
-          transaction.set(batchRef, {
-            id: batchId,
-            itemId: item.id,
-            itemName: item.name,
-            arrivalTimeSlot: slot,
-            orderIds: arrayUnion(id),
-            quantity: increment(item.quantity),
-            status: 'QUEUED',
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+        const prepItems = orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM');
+        
+        for (const item of prepItems) {
+          // Find or create a batch for this item/slot respecting MAX_BATCH_SIZE
+          let assignedBatchId = "";
+          let index = 0;
+          let found = false;
+
+          while (!found && index < 20) {
+            const potentialId = `batch_${slot}_${item.id}_${index}`;
+            const bRef = doc(db, "prepBatches", potentialId);
+            const bSnap = await transaction.get(bRef);
+
+            if (!bSnap.exists()) {
+              transaction.set(bRef, {
+                id: potentialId,
+                itemId: item.id,
+                itemName: item.name,
+                arrivalTimeSlot: slot,
+                orderIds: [id],
+                quantity: item.quantity,
+                status: 'QUEUED',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+              assignedBatchId = potentialId;
+              found = true;
+            } else {
+              const bData = bSnap.data() as PrepBatch;
+              if (bData.status === 'QUEUED' && (bData.quantity + item.quantity) <= MAX_BATCH_SIZE) {
+                transaction.update(bRef, {
+                  orderIds: arrayUnion(id),
+                  quantity: increment(item.quantity),
+                  updatedAt: serverTimestamp()
+                });
+                assignedBatchId = potentialId;
+                found = true;
+              } else {
+                index++;
+              }
+            }
+          }
+
+          if (!found) {
+             // Fallback: create unique overflow batch
+             const overflowId = `batch_${slot}_${item.id}_ovf_${Date.now()}`;
+             transaction.set(doc(db, "prepBatches", overflowId), {
+                id: overflowId,
+                itemId: item.id,
+                itemName: item.name,
+                arrivalTimeSlot: slot,
+                orderIds: [id],
+                quantity: item.quantity,
+                status: 'QUEUED',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+             });
+             assignedBatchId = overflowId;
+          }
           
-          // Link order to this item's batch (simplification: last batch wins for multi-item prep)
-          newOrder.batchId = batchId;
+          newOrder.batchId = assignedBatchId; // Track the batch for the order
         }
       }
 
@@ -1303,9 +1361,13 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
     if (order.paymentStatus !== 'SUCCESS') {
       throw new Error("PAYMENT_REQUIRED - This order has not been paid for yet.");
     }
-
     if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED') {
       throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
+    }
+
+    // 4. Strict check: Only serve if READY (in collecting window)
+    if (order.pickupWindow?.status !== 'COLLECTING') {
+      throw new Error(`SERVE_BLOCKED - Item status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY items can be served.`);
     }
 
     // 4. Cryptographic Signature Verification
@@ -1315,7 +1377,7 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
       const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
 
       const isValid = await verifySecureHash(
-        orderId, 
+        order.id,
         order.userId, 
         order.cafeteriaId, 
         verifCreatedAt, 
@@ -1359,6 +1421,11 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
 
       if (order.orderStatus === 'SERVED') throw new Error("Order already served");
       if (order.paymentStatus !== 'SUCCESS') throw new Error("Payment not verified");
+
+      // Strict check: Only serve if READY (in collecting window)
+      if (order.pickupWindow?.status !== 'COLLECTING') {
+        throw new Error(`SERVE_BLOCKED - Item status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY items can be served.`);
+      }
 
       const itemIndex = order.items.findIndex(i => i.id === itemId);
       if (itemIndex === -1) throw new Error("Item not found in order");
@@ -1439,6 +1506,10 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
       const order = firestoreToOrder(orderSnap.id, data);
 
       if (order.orderStatus === 'SERVED') return;
+
+      if (order.pickupWindow?.status !== 'COLLECTING') {
+        throw new Error(`SERVE_BLOCKED - Order status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY orders can be served.`);
+      }
 
       const updatedItems = order.items.map(item => {
         const remaining = item.remainingQty !== undefined ? item.remainingQty : (item.quantity - (item.servedQty || 0));
@@ -1922,6 +1993,31 @@ export const startBatchPreparation = async (batchId: string): Promise<void> => {
   }
 };
 
+export const markBatchAlmostReady = async (batchId: string): Promise<void> => {
+  const batchRef = doc(db, "prepBatches", batchId);
+  try {
+    const batchSnap = await getDoc(batchRef);
+    if (!batchSnap.exists()) return;
+    const data = batchSnap.data() as PrepBatch;
+
+    await runTransaction(db, async (tx) => {
+      tx.update(batchRef, { 
+        status: 'ALMOST_READY', 
+        updatedAt: serverTimestamp() 
+      });
+      
+      for (const orderId of (data.orderIds || [])) {
+        tx.update(doc(db, "orders", orderId), { 
+          serveFlowStatus: 'ALMOST_READY'
+        });
+      }
+    });
+  } catch (err) {
+    console.error("Error marking batch almost ready:", err);
+    throw err;
+  }
+};
+
 export const markBatchReady = async (batchId: string): Promise<void> => {
   const batchRef = doc(db, "prepBatches", batchId);
   try {
@@ -1930,25 +2026,35 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
     const data = batchSnap.data() as PrepBatch;
 
     const now = Date.now();
-    const pickupWindowEnd = now + (10 * 60 * 1000); // 10 minute window
+    const durationMs = 7 * 60 * 1000; // 7 minute window
+    const pickupWindowEnd = now + durationMs;
 
     await runTransaction(db, async (tx) => {
+      const batchSnap = await tx.get(batchRef);
+      if (!batchSnap.exists()) return;
+      const bData = batchSnap.data() as PrepBatch;
+      
+      // Double action protection
+      if (bData.status === 'READY') return;
+
       tx.update(batchRef, { 
         status: 'READY', 
         readyAt: now, 
         updatedAt: serverTimestamp() 
       });
       
-      for (const orderId of (data.orderIds || [])) {
+      for (const orderId of (bData.orderIds || [])) {
         tx.update(doc(db, "orders", orderId), { 
           serveFlowStatus: 'READY',
-          pickupWindowStart: now,
-          pickupWindowEnd: pickupWindowEnd
+          pickupWindow: {
+            startTime: now,
+            endTime: now + PICKUP_WINDOW_DURATION_MS,
+            durationMs: PICKUP_WINDOW_DURATION_MS,
+            status: 'COLLECTING'
+          }
         });
       }
     });
-
-    console.log(`🔔 Notifications triggered for ${data.orderIds?.length} students in batch ${batchId}`);
   } catch (err) {
     console.error("Error marking batch ready:", err);
     throw err;
@@ -1960,6 +2066,140 @@ export const markBatchCompleted = async (batchId: string): Promise<void> => {
      status: 'COMPLETED', 
      updatedAt: serverTimestamp() 
    });
+};
+
+// ─── Slot Level Controllers (Batch Operations) ───
+
+export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): Promise<void> => {
+    const q = query(
+        collection(db, "prepBatches"),
+        where("arrivalTimeSlot", "==", slot),
+        where("status", "!=", "COMPLETED")
+    );
+    
+    const snap = await getDocs(q);
+    if (snap.empty) return;
+
+    for (const d of snap.docs) {
+        if (status === 'PREPARING') await startBatchPreparation(d.id);
+        else if (status === 'ALMOST_READY') await markBatchAlmostReady(d.id);
+        else if (status === 'READY') await markBatchReady(d.id);
+    }
+};
+
+export const flushMissedPickups = async (): Promise<number> => {
+  const now = Date.now();
+  const qWithItems = query(
+    collection(db, "orders"),
+    where("pickupWindow.status", "==", "COLLECTING"),
+    where("orderStatus", "==", "PAID")
+  );
+
+  try {
+    const snap = await getDocs(qWithItems);
+    if (snap.empty) return 0;
+
+    let reassignedCount = 0;
+    
+    // Calculate the logical next slot (30-45 mins from now to avoid overlaps)
+    const getNextAvailableSlot = (baseTime: number) => {
+      const d = new Date(baseTime + 30 * 60 * 1000);
+      const h = d.getHours();
+      const m = Math.ceil(d.getMinutes() / 15) * 15;
+      const finalH = m >= 60 ? h + 1 : h;
+      const finalM = m >= 60 ? 0 : m;
+      return finalH * 100 + finalM;
+    };
+
+    const targetSlot = getNextAvailableSlot(now);
+
+    await runTransaction(db, async (tx) => {
+      for (const d of snap.docs) {
+        const orderData = d.data();
+        const order = firestoreToOrder(d.id, orderData);
+        
+        // 1. Time Check (Hard Consistency)
+        const windowEnd = order.pickupWindow?.endTime || 0;
+        if (windowEnd > now) continue;
+
+        const currentMissedCount = (order.missedCount || 0) + 1;
+
+        // 2. Prevent Infinite Reassignment
+        if (currentMissedCount >= 2) {
+          tx.update(doc(db, "orders", d.id), {
+            "pickupWindow.status": 'ABANDONED',
+            "serveFlowStatus": 'ABANDONED',
+            "orderStatus": 'ABANDONED',
+            "missedCount": currentMissedCount,
+            "updatedAt": serverTimestamp()
+          });
+          continue;
+        }
+
+        // 3. Batch Size Control & Reassignment
+        // We must find a batch in the target slot for EACH item in the order actually being prepared.
+        // Simplification: We look for a batch for the FIRST PREPARATION_ITEM.
+        const prepItem = order.items.find(it => it.orderType === 'PREPARATION_ITEM');
+        
+        if (prepItem) {
+          let assignedBatchId = "";
+          let index = 0;
+          let foundBatch = false;
+
+          while (!foundBatch && index < 20) {
+            const potentialId = `batch_${targetSlot}_${prepItem.id}_${index}`;
+            const bRef = doc(db, "prepBatches", potentialId);
+            const bSnap = await tx.get(bRef);
+
+            if (!bSnap.exists()) {
+              tx.set(bRef, {
+                id: potentialId,
+                itemId: prepItem.id,
+                itemName: prepItem.name,
+                arrivalTimeSlot: targetSlot,
+                orderIds: [d.id],
+                quantity: prepItem.quantity,
+                status: 'QUEUED',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+              assignedBatchId = potentialId;
+              foundBatch = true;
+            } else {
+              const bData = bSnap.data() as PrepBatch;
+              if (bData.status === 'QUEUED' && (bData.quantity + prepItem.quantity) <= MAX_BATCH_SIZE) {
+                tx.update(bRef, {
+                  orderIds: arrayUnion(d.id),
+                  quantity: increment(prepItem.quantity),
+                  updatedAt: serverTimestamp()
+                });
+                assignedBatchId = potentialId;
+                foundBatch = true;
+              } else {
+                index++;
+              }
+            }
+          }
+
+          tx.update(doc(db, "orders", d.id), {
+            "pickupWindow.status": 'MISSED',
+            "serveFlowStatus": 'MISSED',
+            "missedFromBatchId": order.batchId || null,
+            "batchId": assignedBatchId || null,
+            "missedCount": currentMissedCount,
+            "arrivalTime": targetSlot,
+            "updatedAt": serverTimestamp()
+          });
+          reassignedCount++;
+        }
+      }
+    });
+
+    return reassignedCount;
+  } catch (err) {
+    console.error("Error flushing missed pickups:", err);
+    throw err;
+  }
 };
 
 export const getOrderById = async (orderId: string): Promise<Order | null> => {

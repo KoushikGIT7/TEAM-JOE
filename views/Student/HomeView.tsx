@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LogOut, ShoppingBag, Plus, Minus, Search, Loader2, 
   Menu, X as CloseIcon, User, Clock, ShieldCheck, 
-  ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle
+  ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
 import { CATEGORIES } from '../../constants';
@@ -289,85 +289,94 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <p className="text-xs text-error/80">Please review and place a new order.</p>
           </div>
         </div>
-      )}
-
-      {/* Live Order Tracker Banner */}
+      )}      {/* Live Order Tracker Banner (Senior UX) */}
       {activeOrder && (() => {
         const isPrep = activeOrder.orderType === 'PREPARATION_ITEM';
         const flow = activeOrder.serveFlowStatus || (activeOrder.paymentStatus === 'SUCCESS' ? 'PAID' : 'NEW');
-        const pickupStart = activeOrder.pickupWindowStart != null ? new Date(activeOrder.pickupWindowStart).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
-        const pickupEnd = activeOrder.pickupWindowEnd != null ? new Date(activeOrder.pickupWindowEnd).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
-        const pickupText = pickupStart && pickupEnd ? `${pickupStart} – ${pickupEnd}` : null;
-        const statusLine = activeOrder.paymentStatus === 'PENDING'
-          ? 'Awaiting Cash at Counter'
-          : isPrep
-            ? flow === 'READY'
-              ? `Ready for pickup${pickupText ? `. Window: ${pickupText}` : ''}`
-              : flow === 'PREPARING'
-                ? `Being prepared${pickupText ? `. Pickup window: ${pickupText}` : ''}`
-                : 'Order received. We will notify when ready.'
-            : 'Ready to Scan at Serving Counter';
+        
+        // Haptic Feedback for READY state (triggered by flow change)
+        useEffect(() => {
+            if (flow === 'READY' && ('vibrate' in navigator)) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        }, [flow]);
+
+        const getStatusColor = () => {
+            if (activeOrder.paymentStatus === 'PENDING') return 'border-amber-500 bg-amber-500/5 shadow-amber-900/10';
+            if (flow === 'READY') return 'border-green-500 bg-green-500/5 shadow-green-900/20';
+            if (flow === 'ALMOST_READY') return 'border-orange-500 bg-orange-500/5 shadow-orange-900/10';
+            return 'border-primary bg-primary/5 shadow-primary-900/10';
+        };
+
+        const getProgressWidth = () => {
+            if (activeOrder.paymentStatus === 'PENDING') return 'w-1/4';
+            if (flow === 'READY') return 'w-full';
+            if (flow === 'ALMOST_READY') return 'w-5/6';
+            if (flow === 'PREPARING') return 'w-2/3';
+            return 'w-1/2';
+        };
+
         return (
-         <div className="p-4 animate-in slide-in-from-top-4 duration-500">
+         <div className="p-4 animate-in slide-in-from-top-4 duration-700">
             <div 
               onClick={() => onViewQR && onViewQR(activeOrder.id)}
-              className={`p-5 rounded-[2rem] shadow-xl border-l-8 flex flex-col gap-4 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all ${
-                activeOrder.paymentStatus === 'PENDING' 
-                ? 'bg-cash/5 border-cash' 
-                : 'bg-primary/5 border-primary'
-              }`}
+              className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all duration-500 group ${getStatusColor()}`}
             >
-             <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.03] -mr-8 -mt-8 rounded-full" />
-             <div className="flex justify-between items-start">
-               <div>
-                 <div className="flex items-center gap-2 mb-1">
-                   <Zap className={`w-3 h-3 ${
-                     activeOrder.paymentStatus === 'PENDING' ? 'text-cash' : 'text-primary'
-                   } animate-pulse`} />
-                   <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary">Active Order Status</p>
-                 </div>
-                 <h4 className="text-xl font-black text-textMain tracking-tighter">
-                   {statusLine}
-                 </h4>
-               </div>
-               <div className="bg-white/80 backdrop-blur px-4 py-2 rounded-2xl border border-black/5 shadow-sm text-center">
-                  <p className="text-[8px] font-black text-textSecondary uppercase tracking-widest mb-0.5">Token</p>
-                  <p className="text-xs font-black text-textMain">#{activeOrder.id.slice(-6).toUpperCase()}</p>
-               </div>
-             </div>
-             {isPrep && activeOrder.paymentStatus === 'SUCCESS' && (
-               <MotivationalHeadline visible={showHeadline} headline={headline} variant="inline" />
-             )}
-             <div className="flex items-center gap-4 mt-2">
-                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                   <div 
-                    className={`h-full transition-all duration-1000 ${activeOrder.paymentStatus === 'PENDING' ? 'w-1/3 bg-cash' : flow === 'READY' ? 'w-full bg-primary' : 'w-2/3 bg-primary'}`} 
-                   />
+              {/* Ready State Pulsing Glow */}
+              {flow === 'READY' && (
+                <div className="absolute inset-0 bg-green-500/10 animate-pulse-slow pointer-events-none" />
+              )}
+              
+              <div className="flex justify-between items-center relative z-10">
+                <div className="flex items-center gap-3">
+                  <div className={`p-3 rounded-2xl ${flow === 'READY' ? 'bg-green-500 text-white animate-bounce' : 'bg-white shadow-sm'}`}>
+                    {flow === 'READY' ? <Sparkles className="w-5 h-5" /> : <Clock className="w-5 h-5 text-primary" />}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary opacity-60">Real-time Order Tracking</p>
+                    <h4 className="text-xl font-black text-textMain tracking-tighter">
+                      {activeOrder.paymentStatus === 'PENDING' ? 'Pay to Start Cooking' : 
+                       flow === 'READY' ? '🎉 Food is Ready!' : 
+                       flow === 'ALMOST_READY' ? '🔥 Almost Ready...' : '🥣 Preparing Meal'}
+                    </h4>
+                  </div>
                 </div>
-                <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest whitespace-nowrap">
-                   {activeOrder.paymentStatus === 'PENDING' ? '1 of 3 Steps' : flow === 'READY' ? 'Ready' : '2 of 3 Steps'}
-                </p>
-             </div>
+                <div className="text-right">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Queue ID</p>
+                    <p className="text-sm font-black text-textMain">#{activeOrder.id.slice(-4).toUpperCase()}</p>
+                </div>
+              </div>
 
-             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-xl ${
-                activeOrder.paymentStatus === 'PENDING' ? 'bg-cash/10 text-cash' : 'bg-primary/10 text-primary'
-              }`}>
-                 <CheckCircle2 className="w-4 h-4" />
-               </div>
-               <p className="text-[10px] font-bold text-textSecondary leading-tight">
-                 {activeOrder.paymentStatus === 'PENDING' 
-                   ? 'Please visit the cashier counter to complete your cash payment.' 
-                   : isPrep && flow === 'READY'
-                     ? (pickupText ? `Pickup window: ${pickupText}. Come to the counter and scan your QR.` : 'Come to the counter and scan your QR.')
-                     : isPrep
-                       ? 'You will get a notification when your order is ready. Arrive during your pickup window.'
-                       : 'Payment confirmed! Head to the serving counter to scan your QR token.'}
-               </p>
-             </div>
-           </div>
-        </div>
-      ); })()}
+              {/* Multi-item Preview */}
+              <div className="flex flex-wrap gap-2 relative z-10">
+                 {activeOrder.items.slice(0, 3).map((item, idx) => (
+                    <div key={idx} className="px-3 py-1.5 bg-white/50 backdrop-blur rounded-xl border border-black/5 flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${flow === 'READY' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
+                        <span className="text-[9px] font-black text-textMain">{item.name}</span>
+                    </div>
+                 ))}
+                 {activeOrder.items.length > 3 && (
+                    <div className="px-3 py-1.5 bg-black/5 rounded-xl border border-black/5 text-[9px] font-black text-textSecondary">
+                        +{activeOrder.items.length - 3} more
+                    </div>
+                 )}
+              </div>
+
+              <div className="space-y-3 relative z-10">
+                <div className="flex justify-between items-end">
+                    <p className="text-[10px] font-bold text-textSecondary flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full ${flow === 'READY' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-primary'}`} />
+                        {flow === 'READY' ? 'Collect from counter' : 'Optimal arrival in ~8m'}
+                    </p>
+                    <ChevronRight className="w-4 h-4 text-textSecondary opacity-30 group-hover:translate-x-1 transition-transform" />
+                </div>
+                <div className="h-2 bg-black/5 rounded-full overflow-hidden">
+                    <div className={`h-full transition-all duration-1000 ease-out rounded-full ${flow === 'READY' ? 'bg-green-500' : 'bg-primary'} ${getProgressWidth()}`} />
+                </div>
+              </div>
+            </div>
+         </div>
+        ); })()}
 
       {/* Dynamic Menu Container */}
       {loading ? (

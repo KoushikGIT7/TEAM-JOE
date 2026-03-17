@@ -66,103 +66,110 @@ const ScanReviewModal: React.FC<ScanReviewModalProps> = ({
   const busy = serving || rejecting || !!servingItem;
   const orderRef = order.id.slice(-8).toUpperCase();
 
-  return (
-    <div className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-[#0d0d0d] border border-white/10 rounded-[3rem] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-300">
+  // Trigger feedback on mount
+  useEffect(() => {
+    if ('vibrate' in navigator) navigator.vibrate(50);
+  }, []);
 
-        {/* Header */}
-        <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-primary/10">
-          <div>
-            <p className="text-[10px] font-black text-primary uppercase tracking-[0.4em] mb-1">Token Verified ✓</p>
-            <h2 className="text-2xl font-black tracking-tight">#{orderRef}</h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-2xl border border-white/10">
-              <User className="w-4 h-4 text-primary" />
-              <p className="font-bold text-sm truncate max-w-[120px]">{order.userName}</p>
+  return (
+    <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+      <div className="w-full max-w-2xl bg-[#0a0a0a] border border-white/10 rounded-[4rem] overflow-hidden shadow-[0_0_120px_rgba(0,0,0,1)] animate-in zoom-in-95 duration-500">
+
+        {/* Dynamic Header */}
+        <div className="px-10 py-8 border-b border-white/5 flex items-center justify-between bg-primary/5">
+          <div className="flex items-center gap-6">
+            <div className="w-16 h-16 rounded-3xl bg-primary/20 flex items-center justify-center border border-primary/30 shadow-[0_0_30px_rgba(249,115,22,0.1)]">
+                <CheckCircle className="w-8 h-8 text-primary" />
             </div>
-            <button
-              onClick={onDismiss}
-              disabled={busy}
-              className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors disabled:opacity-40"
-              aria-label="Dismiss"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div>
+              <p className="text-[10px] font-black text-primary uppercase tracking-[0.5em] mb-1">Authenticating Token...</p>
+              <h2 className="text-4xl font-black tracking-tighter italic">#{orderRef}</h2>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="px-5 py-2.5 bg-white/5 rounded-2xl border border-white/10 flex items-center gap-3">
+              <User className="w-4 h-4 text-primary" />
+              <p className="font-black text-sm tracking-tight">{order.userName}</p>
+            </div>
+            <p className="text-[10px] font-black text-white/20 uppercase tracking-widest px-2">Counter Verification</p>
           </div>
         </div>
 
-        {/* Items List */}
-        <div className="p-6 max-h-[50vh] overflow-y-auto space-y-3 custom-scrollbar">
-          <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-4 flex items-center gap-2">
-            <ShoppingBag className="w-3.5 h-3.5" />
-            Order Contents ({order.items.length} {order.items.length === 1 ? 'item' : 'items'})
-          </p>
+        {/* Detailed Items List */}
+        <div className="p-8 max-h-[55vh] overflow-y-auto space-y-4 custom-scrollbar">
           {order.items.map((item) => {
-            const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
+            const remaining = item.remainingQty ?? item.quantity;
             const isServed = remaining <= 0;
             const isItemServing = servingItem === item.id;
 
             return (
-              <div key={item.id} className={`flex items-center gap-4 border rounded-2xl p-4 transition-all ${isServed ? 'bg-success/5 border-success/20 opacity-60' : 'bg-white/[0.03] border-white/5'}`}>
-                <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-white/10">
-                  <img
-                    src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop'}
-                    alt={item.name}
-                    className="w-full h-full object-cover"
-                  />
+              <div key={item.id} className={`group flex items-center gap-6 border-2 rounded-[2.5rem] p-6 transition-all duration-500 ${
+                isServed ? 'bg-green-500/5 border-green-500/20 opacity-40' : 'bg-white/[0.03] border-white/5 hover:border-white/10'
+              }`}>
+                <div className="w-24 h-24 rounded-[1.5rem] overflow-hidden flex-shrink-0 border-2 border-white/5 shadow-2xl relative">
+                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  {isServed && <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center"><CheckCircle className="w-10 h-10 text-white" /></div>}
                 </div>
+                
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-black text-lg tracking-tight truncate">{item.name}</h4>
-                  <p className="text-xs font-bold text-gray-500 mt-0.5">{item.category}</p>
-                  {isServed && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-success uppercase mt-1">
-                      <CheckCircle className="w-3 h-3" /> Fully Served
-                    </span>
-                  )}
-                </div>
-                <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
-                  <div className="flex items-baseline gap-1">
-                    <p className={`text-3xl font-black ${isServed ? 'text-success' : 'text-primary'}`}>{isServed ? '✓' : `×${remaining}`}</p>
-                    {!isServed && <p className="text-[10px] font-black text-gray-600 uppercase tracking-wider">to serve</p>}
+                  <h4 className="font-black text-2xl tracking-tighter truncate mb-1">{item.name}</h4>
+                  <div className="flex items-center gap-3">
+                    <span className="px-3 py-1 bg-white/5 rounded-lg border border-white/5 text-[9px] font-black text-gray-400 uppercase tracking-widest">{item.category}</span>
+                    <span className="text-xl font-black text-primary">×{item.quantity} units</span>
                   </div>
-                  
-                  {!isServed && (
+                </div>
+
+                {!isServed && (
+                  <div className="flex flex-col gap-2">
                     <button
                       onClick={() => onServeItem(item.id, remaining)}
                       disabled={busy}
-                      className="px-4 py-2 bg-primary/20 hover:bg-primary/30 border border-primary/30 rounded-xl text-[10px] font-black text-primary uppercase tracking-widest transition-all active:scale-95 disabled:opacity-40"
+                      className="h-16 px-8 bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl shadow-xl shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3"
                     >
-                      {isItemServing ? <RefreshCw className="w-3 h-3 animate-spin" /> : 'Serve Item'}
+                      {isItemServing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Zap className="w-4 h-4" /> Bulk Serve</>}
                     </button>
-                  )}
-                </div>
+                    {remaining > 1 && (
+                        <button
+                            onClick={() => onServeItem(item.id, 1)}
+                            disabled={busy}
+                            className="h-10 px-6 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white font-black uppercase tracking-[0.1em] text-[8px] rounded-xl border border-white/5 transition-all active:scale-95"
+                        >
+                            Serve Single Unit
+                        </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* Action Footer */}
-        <div className="px-6 pb-6 pt-2 flex gap-3">
+        {/* Global Action Footer */}
+        <div className="px-8 pb-10 pt-4 flex gap-4">
           <button
             onClick={onReject}
             disabled={busy}
-            className="flex-1 h-16 rounded-2xl bg-red-600/10 hover:bg-red-600/20 border border-red-600/20 font-black uppercase tracking-widest text-xs text-red-500 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40"
+            className="flex-1 h-20 rounded-3xl bg-red-600/5 hover:bg-red-600/10 border border-red-600/20 font-black uppercase tracking-widest text-[10px] text-red-500/60 hover:text-red-500 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-30"
           >
-            {rejecting
-              ? <RefreshCw className="w-5 h-5 animate-spin" />
-              : <XCircle className="w-5 h-5" />}
-            {rejecting ? 'Rejecting…' : 'Reject Order'}
+            {rejecting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <XCircle className="w-5 h-5 opacity-40" />}
+            {rejecting ? 'Terminating...' : 'Reject Token'}
           </button>
+          
           <button
             onClick={onServeAll}
             disabled={busy}
-            className="flex-[2] h-16 rounded-2xl bg-primary hover:bg-primary/90 font-black uppercase tracking-widest text-sm text-white flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(249,115,22,0.25)] transition-all active:scale-95 disabled:opacity-50"
+            className="flex-[2.5] h-20 rounded-[2rem] bg-white text-black hover:bg-white/90 font-black uppercase tracking-[0.3em] text-sm flex items-center justify-center gap-4 shadow-[0_0_80px_rgba(255,255,255,0.15)] transition-all active:scale-95 disabled:opacity-50"
           >
-            {serving
-              ? <RefreshCw className="w-6 h-6 animate-spin" />
-              : <CheckCircle className="w-6 h-6" />}
-            {serving ? 'Serving…' : 'Serve Meal'}
+            {serving ? <RefreshCw className="w-6 h-6 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
+            {serving ? 'Processing...' : 'Complete Fulfillment'}
+          </button>
+          
+          <button
+            onClick={onDismiss}
+            disabled={busy}
+            className="w-20 h-20 rounded-[2rem] bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center transition-all active:scale-95 disabled:opacity-30"
+          >
+            <X className="w-6 h-6" />
           </button>
         </div>
       </div>
