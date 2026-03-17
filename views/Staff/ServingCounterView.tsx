@@ -45,21 +45,25 @@ interface ScanReviewModalProps {
   order: Order;
   qrDataRaw: string;
   onServeAll: () => Promise<void>;
+  onServeItem: (itemId: string, qty: number) => Promise<void>;
   onReject: () => Promise<void>;
   onDismiss: () => void;
   serving: boolean;
+  servingItem: string | null;
   rejecting: boolean;
 }
 
 const ScanReviewModal: React.FC<ScanReviewModalProps> = ({
   order,
   onServeAll,
+  onServeItem,
   onReject,
   onDismiss,
   serving,
+  servingItem,
   rejecting,
 }) => {
-  const busy = serving || rejecting;
+  const busy = serving || rejecting || !!servingItem;
   const orderRef = order.id.slice(-8).toUpperCase();
 
   return (
@@ -96,8 +100,11 @@ const ScanReviewModal: React.FC<ScanReviewModalProps> = ({
           </p>
           {order.items.map((item) => {
             const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
+            const isServed = remaining <= 0;
+            const isItemServing = servingItem === item.id;
+
             return (
-              <div key={item.id} className="flex items-center gap-4 bg-white/[0.03] border border-white/5 rounded-2xl p-4">
+              <div key={item.id} className={`flex items-center gap-4 border rounded-2xl p-4 transition-all ${isServed ? 'bg-success/5 border-success/20 opacity-60' : 'bg-white/[0.03] border-white/5'}`}>
                 <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-white/10">
                   <img
                     src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop'}
@@ -108,10 +115,27 @@ const ScanReviewModal: React.FC<ScanReviewModalProps> = ({
                 <div className="flex-1 min-w-0">
                   <h4 className="font-black text-lg tracking-tight truncate">{item.name}</h4>
                   <p className="text-xs font-bold text-gray-500 mt-0.5">{item.category}</p>
+                  {isServed && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-success uppercase mt-1">
+                      <CheckCircle className="w-3 h-3" /> Fully Served
+                    </span>
+                  )}
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-3xl font-black text-primary">×{remaining}</p>
-                  <p className="text-[10px] font-black text-gray-600 uppercase tracking-wider">to serve</p>
+                <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
+                  <div className="flex items-baseline gap-1">
+                    <p className={`text-3xl font-black ${isServed ? 'text-success' : 'text-primary'}`}>{isServed ? '✓' : `×${remaining}`}</p>
+                    {!isServed && <p className="text-[10px] font-black text-gray-600 uppercase tracking-wider">to serve</p>}
+                  </div>
+                  
+                  {!isServed && (
+                    <button
+                      onClick={() => onServeItem(item.id, remaining)}
+                      disabled={busy}
+                      className="px-4 py-2 bg-primary/20 hover:bg-primary/30 border border-primary/30 rounded-xl text-[10px] font-black text-primary uppercase tracking-widest transition-all active:scale-95 disabled:opacity-40"
+                    >
+                      {isItemServing ? <RefreshCw className="w-3 h-3 animate-spin" /> : 'Serve Item'}
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -157,6 +181,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
   const [scannedOrder, setScannedOrder]   = useState<Order | null>(null);
   const [scanRawData, setScanRawData]     = useState('');
   const [modalServing, setModalServing]   = useState(false);
+  const [modalServingItem, setModalServingItem] = useState<string | null>(null);
   const [modalRejecting, setModalRejecting] = useState(false);
 
   const [servingKey, setServingKey]       = useState<string | null>(null);
@@ -333,6 +358,49 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
   };
 
   /**
+   * SERVE ITEM: marks a specific item/quantity as served.
+   * If all items are served, the modal will eventually close via user dismiss 
+   * or we can auto-dismiss if remainingQty across all items hits zero.
+   */
+  const handleModalServeItem = async (itemId: string, qty: number) => {
+    if (!scannedOrder || modalServingItem) return;
+    setModalServingItem(itemId);
+
+    try {
+      await serveItemBatch(scannedOrder.id, itemId, qty, profile.uid);
+      
+      // Update local modal state so the UI reflects the change immediately
+      setScannedOrder(prev => {
+        if (!prev) return null;
+        const newItems = prev.items.map(item => {
+          if (item.id === itemId) {
+            const currentServed = item.servedQty || 0;
+            return {
+              ...item,
+              servedQty: currentServed + qty,
+              remainingQty: 0
+            };
+          }
+          return item;
+        });
+        
+        const allDone = newItems.every(i => (i.remainingQty ?? (i.quantity - (i.servedQty || 0))) <= 0);
+        if (allDone) {
+          // If the whole order is now served, we could auto-dismiss, 
+          // but let's keep it for a moment so the user sees all green.
+        }
+
+        return { ...prev, items: newItems };
+      });
+    } catch (err: any) {
+      showError(err.message || 'Failed to serve item');
+    } finally {
+      setModalServingItem(null);
+      refocusScanner();
+    }
+  };
+
+  /**
    * REJECT: marks order status = REJECTED, qrState = REJECTED
    * Student's listener sees the status change and is notified.
    */
@@ -458,9 +526,11 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
           order={scannedOrder}
           qrDataRaw={scanRawData}
           onServeAll={handleModalServeAll}
+          onServeItem={handleModalServeItem}
           onReject={handleModalReject}
           onDismiss={handleModalDismiss}
           serving={modalServing}
+          servingItem={modalServingItem}
           rejecting={modalRejecting}
         />
       )}

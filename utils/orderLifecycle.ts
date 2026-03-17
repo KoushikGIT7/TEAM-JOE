@@ -46,13 +46,13 @@ export const getOrderUIState = (order: Order): OrderUIState => {
     return 'AWAITING_QR';
   }
 
-  // QR was scanned
-  if (order.qrStatus === 'USED' || order.orderStatus === 'COMPLETED') {
+  // QR was scanned but order not yet fully served
+  if (order.qrState === 'SCANNED') {
     return 'SCANNED';
   }
 
-  // Order marked as served
-  if (order.orderStatus === 'SERVED') {
+  // Order fully served
+  if (order.orderStatus === 'SERVED' || order.qrState === 'SERVED') {
     return 'COMPLETED';
   }
 

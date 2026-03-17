@@ -112,25 +112,57 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
       <div className="h-screen w-full flex flex-col bg-background max-w-md mx-auto">
         <div className="p-4 bg-white flex items-center gap-4 border-b">
           <button onClick={onBack} className="p-2 -ml-2 text-textMain"><ChevronLeft className="w-6 h-6" /></button>
-          <h2 className="text-xl font-bold text-textMain">{isServed ? 'Fulfilled' : 'Validated'}</h2>
+          <h2 className="text-xl font-bold text-textMain">{isServed ? 'Fulfilled' : 'Serving...'}</h2>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in zoom-in duration-500">
-          <div className={`w-24 h-24 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-2xl ${isServed ? 'bg-primary text-white shadow-primary/30' : 'bg-success/10 text-success shadow-success/10'}`}>
-            <CheckCircle2 className="w-12 h-12" />
+        
+        <div className="flex-1 overflow-y-auto px-6 py-8">
+          <div className="flex flex-col items-center text-center mb-10">
+            <div className={`w-24 h-24 rounded-[2.5rem] flex items-center justify-center mb-6 shadow-2xl animate-in zoom-in duration-500 ${isServed ? 'bg-primary text-white shadow-primary/30' : 'bg-success/10 text-success shadow-success/10'}`}>
+              {isServed ? <CheckCircle2 className="w-12 h-12" /> : <div className="w-10 h-10 border-4 border-success border-t-transparent rounded-full animate-spin" />}
+            </div>
+            <h3 className="text-3xl font-black text-textMain tracking-tighter mb-2">
+              {isServed ? 'Complete!' : 'Handing over...'}
+            </h3>
+            <p className="text-textSecondary font-medium">
+              {isServed 
+                ? 'Thank you for dining with JOE!' 
+                : 'Your token is verified. Please collect the ready items.'}
+            </p>
           </div>
-          <h3 className="text-3xl font-black text-textMain tracking-tighter mb-2">
-            {isServed ? 'Order Served!' : 'Order Validated!'}
-          </h3>
-          <p className="text-textSecondary mb-10 font-medium">
-            {isServed 
-              ? 'Thank you for dining with JOE! Returning home...' 
-              : 'Your token has been scanned. Handing over your meal now.'}
-          </p>
+
+          <div className="space-y-4">
+            <p className="text-[10px] font-black text-textSecondary uppercase tracking-[0.2em] mb-4">Meal Components</p>
+            {order.items.map((item, idx) => {
+              const remaining = item.remainingQty !== undefined ? item.remainingQty : (item.quantity - (item.servedQty || 0));
+              const served = item.servedQty || 0;
+              const isDone = remaining <= 0;
+              
+              return (
+                <div key={idx} className={`flex items-center gap-4 p-5 rounded-3xl border transition-all ${isDone ? 'bg-gray-50 border-black/5 opacity-60' : 'bg-white border-primary/20 shadow-lg'}`}>
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden flex-shrink-0 bg-gray-100">
+                    <img src={item.imageUrl} className="w-full h-full object-cover" alt={item.name} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-black text-sm text-textMain truncate">{item.name}</h4>
+                    <p className="text-[10px] font-bold text-textSecondary mt-1">
+                      {isDone ? 'Item Received ✓' : `Qty: ${item.quantity} • Remaining: ${remaining}`}
+                    </p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDone ? 'text-success' : 'text-primary bg-primary/5'}`}>
+                    {isDone ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-5 h-5 animate-pulse" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="p-6">
           <button 
             onClick={onBack} 
             className="w-full h-16 bg-primary text-white font-black uppercase tracking-widest text-sm rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all"
           >
-            Go Home Now
+            {isServed ? 'Back to Menu' : 'Dismiss'}
           </button>
         </div>
       </div>
