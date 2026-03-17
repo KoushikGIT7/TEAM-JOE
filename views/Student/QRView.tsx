@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, CheckCircle2, Info, Share2, Clock, Loader2, AlertCircle, ChefHat, Timer } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Info, Share2, Clock, Loader2, AlertCircle, ChefHat, Timer, ChevronRight } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order } from '../../types';
@@ -182,6 +182,15 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack }) => {
         )}
 
         <QuoteDisplay order={order} orderCount={orderCount} forceRevenge={true} />
+
+        <div className="w-full mt-Auto pt-8">
+           <button 
+             onClick={onBack}
+             className="w-full bg-gray-50 text-textSecondary font-black py-5 rounded-3xl border border-black/5 active:scale-95 transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+           >
+             Order More Items <ChevronRight className="w-4 h-4" />
+           </button>
+        </div>
       </div>
     </div>
   );

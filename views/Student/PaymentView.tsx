@@ -11,7 +11,7 @@ interface PaymentViewProps {
 
 const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'CASH_WAITING' | 'REJECTED'>('IDLE');
+  const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'CASH_WAITING' | 'REJECTED' | 'SUCCESS'>('IDLE');
   const [selectedMethod, setSelectedMethod] = useState<string>('UPI');
   const [orderId, setOrderId] = useState<string | null>(null);
   const [orderStatus, setOrderStatus] = useState<'PENDING' | 'APPROVED' | null>(null);
@@ -46,6 +46,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           }
         }
         
+        // For cash waiting, we still auto-navigate to QR once approved because it's a "gate"
         if (order && order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE' && !hasNavigated) {
           hasNavigated = true;
           onSuccess(orderId);
@@ -86,7 +87,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   }, []);
 
   const handlePayment = async () => {
+    if (state === 'PROCESSING') return;
     setState('PROCESSING');
+    
+    // Slight delay for "processing" feel
     await new Promise(resolve => setTimeout(resolve, 1500));
 
     try {
@@ -115,7 +119,8 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       if (isCash) {
         setState('CASH_WAITING');
       } else {
-        onSuccess(newOrderId);
+        // Instead of immediate trigger, show success state
+        setState('SUCCESS');
       }
     } catch (err: any) {
       setState('IDLE');
@@ -129,6 +134,36 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     { id: 'NET', name: 'Net Banking', icon: Landmark, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
     { id: 'CASH', name: 'Pay with Cash', icon: Banknote, color: 'bg-amber-50 text-amber-600 border-amber-100' }
   ];
+
+  if (state === 'SUCCESS') {
+    return (
+      <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-8 text-center animate-in fade-in zoom-in duration-500">
+        <div className="flex-1 flex flex-col items-center justify-center">
+            <div className="w-24 h-24 bg-success/10 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl shadow-success/10">
+                <CheckCircle2 className="w-12 h-12 text-success" />
+            </div>
+            <h2 className="text-3xl font-black text-textMain mb-4 tracking-tighter">Payment Success!</h2>
+            <p className="text-textSecondary mb-10 text-lg font-medium">Your order has been placed and is being processed.</p>
+            
+            <div className="w-full space-y-4">
+              <button 
+                onClick={() => orderId && onSuccess(orderId)}
+                className="w-full bg-primary text-white font-black py-5 rounded-2xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-lg"
+              >
+                Show Meal Token <ChevronRight className="w-6 h-6" />
+              </button>
+              
+              <button 
+                onClick={onBack}
+                className="w-full bg-gray-50 text-textSecondary font-black py-5 rounded-2xl border border-black/5 active:scale-95 transition-all text-sm uppercase tracking-widest"
+              >
+                Back to Menu
+              </button>
+            </div>
+        </div>
+      </div>
+    );
+  }
 
   if (state === 'CASH_WAITING') {
       return (
