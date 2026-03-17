@@ -55,11 +55,15 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         const sorted = [...orders].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setMyOrders(sorted);
 
-        // Show reject banner if any rejected/cancelled visible in snapshot
-        const hasRejected = orders.some(o => o.paymentStatus === 'REJECTED' || o.orderStatus === 'CANCELLED');
+        // Show reject banner only for NEW rejections (not yet notified)
+        const hasRejected = orders.some(o => 
+          (o.paymentStatus === 'REJECTED' || o.orderStatus === 'CANCELLED') && 
+          !o.notifiedAt
+        );
         if (hasRejected) {
           setShowRejectNotice(true);
-          setTimeout(() => setShowRejectNotice(false), 3000);
+          // Banner stays for 5s then hides
+          setTimeout(() => setShowRejectNotice(false), 5000);
         }
       });
 
