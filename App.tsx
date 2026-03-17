@@ -98,12 +98,20 @@ const App: React.FC = () => {
       return;
     }
 
-    // 3. Auto-redirect from Welcome if logged in
-    if (user && profile && role && view === 'WELCOME') {
+    // 3. Auto-redirect from Welcome/Login if logged in
+    if (user && profile && role && ['WELCOME', 'STAFF_LOGIN'].includes(view)) {
       if (role === 'admin') setView('ADMIN');
       else if (role === 'cashier') setView('CASHIER');
       else if (role === 'server') setView('SERVING_COUNTER');
       else setView('HOME');
+      return;
+    }
+
+    // 4. Prevent staff/admins from being on HomeView (Student view)
+    if (user && role && role !== 'student' && view === 'HOME') {
+      if (role === 'admin') setView('ADMIN');
+      else if (role === 'cashier') setView('CASHIER');
+      else if (role === 'server') setView('SERVING_COUNTER');
     }
   }, [authLoading, showSplash, user, profile, role, view]);
 
@@ -161,18 +169,12 @@ const App: React.FC = () => {
       {(() => {
         switch (view) {
           case 'WELCOME':
-            if (user && profile && role) {
-              if (role === 'admin') return <AdminDashboard profile={profile} onLogout={handleLogout} />;
-              if (role === 'cashier') return <CashierView profile={profile} onLogout={handleLogout} />;
-              if (role === 'server') return <ServingCounterView profile={profile} onLogout={handleLogout} />;
-              return <HomeView profile={profile} onProceed={navigateToPayment} onLogout={handleLogout} />;
-            }
             return <WelcomeView onStart={handleStartOrdering} onStaffLogin={navigateToLogin} onAdminLogin={navigateToStaffLogin} googleLoading={googleSignInLoading} />;
           case 'HOME': return <HomeView profile={profile} onProceed={navigateToPayment} onViewOrders={() => setView('ORDERS')} onLogout={handleLogout} />;
           case 'ORDERS': return <OrdersView profile={profile!} onBack={navigateToHome} onQROpen={navigateToQR} />;
           case 'PAYMENT': return <PaymentView profile={profile} onBack={navigateToHome} onSuccess={navigateToQR} />;
           case 'QR': return <QRView orderId={selectedOrderId!} onBack={navigateToHome} />;
-          case 'STAFF_LOGIN': return <LoginView onBack={() => setView('WELCOME')} onSuccess={() => { setView('HOME'); }} />;
+          case 'STAFF_LOGIN': return <LoginView onBack={() => setView('WELCOME')} onSuccess={() => setView('WELCOME')} />;
           case 'CASHIER': return <CashierView profile={profile!} onLogout={handleLogout} />;
           case 'ADMIN': return <AdminDashboard profile={profile!} onLogout={handleLogout} onOpenKitchen={() => setView('KITCHEN')} />;
           case 'KITCHEN': return <KitchenView onBack={() => setView(role === 'admin' ? 'ADMIN' : 'SERVING_COUNTER')} user={user} />;
