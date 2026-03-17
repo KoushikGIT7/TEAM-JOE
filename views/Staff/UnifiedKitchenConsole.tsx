@@ -51,6 +51,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   // --- REFS ---
   const scanReviewRef = useRef<HTMLDivElement>(null);
+  const lastScanTimestamp = useRef<number>(0);
 
   // --- TIME, SCANNER & MAINTENANCE ---
   useEffect(() => {
@@ -85,6 +86,12 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // --- HANDLERS ---
   const handleQRScan = async (data: string) => {
     if (!data?.trim() || isScanning) return;
+    
+    // 🛡️ SCAN THROTTLING: Prevent repeated scans within 2 seconds
+    const now = Date.now();
+    if (now - lastScanTimestamp.current < 2000) return;
+    lastScanTimestamp.current = now;
+
     setIsScanning(true);
     setError(null);
     try {
@@ -360,13 +367,16 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                              {(scannedOrder.pickupWindow?.status === 'ABANDONED' || scannedOrder.pickupWindow?.status === 'MISSED') && !scannedOrder.qrRedeemable && (
                                  <button
                                     onClick={async () => {
-                                        if (confirm("OVERRIDE PROTECTION? Only do this if student is present and payment is verified.")) {
+                                        const reason = prompt("REASON FOR OVERRIDE (REQUIRED):", "Student missed window due to class delay");
+                                        if (reason && reason.trim().length > 10) {
                                             try {
-                                                await toggleQrRedeemable(scannedOrder.id, true);
+                                                await toggleQrRedeemable(scannedOrder.id, true, profile.uid, reason.trim());
                                                 if ('vibrate' in navigator) navigator.vibrate([100, 100, 500]);
                                             } catch (err: any) {
                                                 setError(err.message || "Override failed");
                                             }
+                                        } else if (reason !== null) {
+                                            alert("Minimum 10 characters required for audit reason.");
                                         }
                                     }}
                                     className="h-20 px-8 bg-amber-500 text-black font-black uppercase tracking-[0.2em] text-[10px] rounded-[2rem] hover:bg-amber-400 transition-all active:scale-95 flex items-center gap-3"

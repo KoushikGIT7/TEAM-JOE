@@ -109,6 +109,8 @@ export interface Order {
   rejectedAt?: number;
   /** Manual override for abandoned orders */
   qrRedeemable?: boolean;
+  /** Audit trail of manual overrides */
+  overrides?: OverrideLog[];
   /** When the student was successfully alerted (deduplication) */
   notifiedAt?: number;
 }
@@ -134,6 +136,14 @@ export interface SystemSettings {
   servingRatePerMin?: number;
   /** QR validity in minutes. Default 30. */
   qrExpiryMinutes?: number;
+  /** Max volume per arrival slot across all items. Default 200. */
+  maxItemsPerSlot?: number;
+}
+
+export interface OverrideLog {
+  staffId: string;
+  reason: string;
+  timestamp: number;
 }
 
 export interface TransactionRecord {

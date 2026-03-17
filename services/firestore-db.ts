@@ -48,6 +48,7 @@ import {
 import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT } from "../constants";
 
 export const MAX_BATCH_SIZE = 40;
+export const MAX_TOTAL_SLOT_CAPACITY = 200;
 export const PICKUP_WINDOW_DURATION_MS = 7 * 60 * 1000;
 import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
@@ -135,6 +136,7 @@ const orderToFirestore = (order: Order) => ({
   preparationStationId: order.preparationStationId || null,
   queuePosition: order.queuePosition ?? null,
   estimatedQueueStartTime: order.estimatedQueueStartTime != null ? Timestamp.fromMillis(order.estimatedQueueStartTime) : null,
+  overrides: order.overrides || []
 });
 
 const firestoreToOrder = (id: string, data: any): Order => {
@@ -197,6 +199,7 @@ const firestoreToOrder = (id: string, data: any): Order => {
     preparationStationId: data.preparationStationId || undefined,
     queuePosition: data.queuePosition ?? undefined,
     estimatedQueueStartTime: toMillis(data.estimatedQueueStartTime),
+    overrides: data.overrides || []
   };
 };
 
@@ -925,8 +928,26 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
 
       // 4. Batch Allocation Logic (for dynamic items)
       if (isDynamic && orderData.arrivalTime) {
-        const slot = orderData.arrivalTime;
+        let slot = orderData.arrivalTime;
         const prepItems = orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM');
+        
+        // 🚨 CAPACITY CHECK: If slot volume > 200, shift to next 15m
+        const slotStatsRef = doc(db, "slot_stats", slot.toString());
+        const statsSnap = await transaction.get(slotStatsRef);
+        const currentVolume = statsSnap.exists() ? (statsSnap.data().totalVolume || 0) : 0;
+        const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
+
+        if (currentVolume + requestedQty > MAX_TOTAL_SLOT_CAPACITY) {
+            slot = getNextLogicalSlot(slot);
+        }
+
+        // Reserve capacity
+        transaction.set(slotStatsRef, {
+            totalVolume: increment(requestedQty),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        newOrder.arrivalTime = slot;
         
         for (const item of prepItems) {
           // Find or create a batch for this item/slot respecting MAX_BATCH_SIZE
@@ -1411,6 +1432,14 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
   }
 };
 
+export const getNextLogicalSlot = (slot: number): number => {
+    const h = Math.floor(slot / 100);
+    const m = slot % 100;
+    const nextM = m + 15;
+    if (nextM >= 60) return ((h + 1) % 24) * 100;
+    return h * 100 + nextM;
+};
+
 // Batch serve multiple quantities of an item
 export const serveItemBatch = async (orderId: string, itemId: string, quantity: number, servedBy: string): Promise<void> => {
   try {
@@ -1581,12 +1610,25 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
   }
 };
 
-export const toggleQrRedeemable = async (orderId: string, redeemable: boolean): Promise<void> => {
+export const toggleQrRedeemable = async (orderId: string, redeemable: boolean, staffId: string, reason: string): Promise<void> => {
   try {
     const orderRef = doc(db, "orders", orderId);
-    await updateDoc(orderRef, {
-      qrRedeemable: redeemable,
-      updatedAt: serverTimestamp()
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(orderRef);
+      if (!snap.exists()) throw new Error("Order not found");
+      const order = snap.data() as Order;
+      
+      const newOverride = {
+        staffId,
+        reason,
+        timestamp: Date.now()
+      };
+
+      tx.update(orderRef, {
+        qrRedeemable: redeemable,
+        overrides: arrayUnion(newOverride),
+        updatedAt: serverTimestamp()
+      });
     });
   } catch (error) {
     console.error("Error toggling qrRedeemable:", error);
@@ -2103,11 +2145,34 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
     const snap = await getDocs(q);
     if (snap.empty) return;
 
-    for (const d of snap.docs) {
-        if (status === 'PREPARING') await startBatchPreparation(d.id);
-        else if (status === 'ALMOST_READY') await markBatchAlmostReady(d.id);
-        else if (status === 'READY') await markBatchReady(d.id);
-    }
+    // 🚀 BATCHED WRITE: Update all batches and their orders in one transaction
+    await runTransaction(db, async (tx) => {
+        const now = Date.now();
+        for (const d of snap.docs) {
+            const batchData = d.data() as PrepBatch;
+            if (batchData.status === status) continue;
+
+            const batchRef = doc(db, "prepBatches", d.id);
+            const updateObj: any = { status, updatedAt: serverTimestamp() };
+            if (status === 'READY') updateObj.readyAt = now;
+
+            tx.update(batchRef, updateObj);
+
+            for (const orderId of (batchData.orderIds || [])) {
+                const orderRef = doc(db, "orders", orderId);
+                const orderUpdate: any = { serveFlowStatus: status };
+                if (status === 'READY') {
+                    orderUpdate.pickupWindow = {
+                        startTime: now,
+                        endTime: now + PICKUP_WINDOW_DURATION_MS,
+                        durationMs: PICKUP_WINDOW_DURATION_MS,
+                        status: 'COLLECTING'
+                    };
+                }
+                tx.update(orderRef, orderUpdate);
+            }
+        }
+    });
 };
 
 export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean> => {
@@ -2123,8 +2188,8 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
       }
       
       const data = snap.data() as SystemMaintenance;
-      // If last heartbeat was > 45s ago, assume the role
-      if (now - data.lastHeartbeatAt > 45000) {
+      // If last heartbeat was > 30s ago, assume the role (Harder 30s expiry)
+      if (now - data.lastHeartbeatAt > 30000) {
         tx.update(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId });
         return true;
       }
@@ -2173,6 +2238,8 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
       return finalH * 100 + finalM;
     };
 
+    // 5-second Grace Buffer for Timer Consistency
+    const graceNow = now - 5000;
     const targetSlot = getNextAvailableSlot(now);
 
     await runTransaction(db, async (tx) => {
@@ -2180,9 +2247,9 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
         const orderData = d.data();
         const order = firestoreToOrder(d.id, orderData);
         
-        // 1. Time Check (Hard Consistency)
+        // 1. Time Check (Hard Consistency with Grace)
         const windowEnd = order.pickupWindow?.endTime || 0;
-        if (windowEnd > now) continue;
+        if (windowEnd > graceNow) continue;
 
         const currentMissedCount = (order.missedCount || 0) + 1;
 
@@ -2204,7 +2271,10 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
           continue;
         }
 
-        // 3. Batch Size Control & Reassignment
+        // 3. Penalty Logic: Missed users get shifted to a LATER slot to prioritize first-timers
+        const penalizedSlot = currentMissedCount > 0 ? getNextLogicalSlot(targetSlot) : targetSlot;
+
+        // 4. Batch Size Control & Reassignment
         // We must find a batch in the target slot for EACH item in the order actually being prepared.
         // Simplification: We look for a batch for the FIRST PREPARATION_ITEM.
         const prepItem = order.items.find(it => it.orderType === 'PREPARATION_ITEM');
@@ -2215,7 +2285,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
           let foundBatch = false;
 
           while (!foundBatch && index < 20) {
-            const potentialId = `batch_${targetSlot}_${prepItem.id}_${index}`;
+            const potentialId = `batch_${penalizedSlot}_${prepItem.id}_${index}`;
             const bRef = doc(db, "prepBatches", potentialId);
             const bSnap = await tx.get(bRef);
 
@@ -2224,7 +2294,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
                 id: potentialId,
                 itemId: prepItem.id,
                 itemName: prepItem.name,
-                arrivalTimeSlot: targetSlot,
+                arrivalTimeSlot: penalizedSlot,
                 orderIds: [d.id],
                 quantity: prepItem.quantity,
                 status: 'QUEUED',
@@ -2255,7 +2325,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
             "missedFromBatchId": order.batchId || null,
             "batchId": assignedBatchId || null,
             "missedCount": currentMissedCount,
-            "arrivalTime": targetSlot,
+            "arrivalTime": penalizedSlot,
             "updatedAt": serverTimestamp()
           });
           reassignedCount++;
