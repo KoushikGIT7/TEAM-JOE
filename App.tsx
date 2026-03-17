@@ -42,16 +42,23 @@ const App: React.FC = () => {
   // Hook for real-time order status notifications (Student App)
   useOrderNotifications(user?.uid || null);
 
-  // Initial load logic: Keep splash visible for at least 1500ms for "WOW" factor
-  // but only if it's the very first load of the session.
+  // Initial load logic: Fast intro (800ms) once auth is resolved
   useEffect(() => {
     if (!authLoading) {
       const timer = setTimeout(() => {
         setShowSplash(false);
-      }, 1500); 
+      }, 800); 
       return () => clearTimeout(timer);
     }
   }, [authLoading]);
+
+  // CRITICAL SAFETY: Force hide splash after 5s no matter what
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 5000);
+    return () => clearTimeout(safetyTimer);
+  }, []);
 
   // Initialize menu (non-blocking)
   useEffect(() => {
