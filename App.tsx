@@ -4,7 +4,7 @@ import SplashScreen from './components/SplashScreen';
 import { signInWithGoogle } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
 
-// Views
+// Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
 import CashierView from './views/Staff/CashierView';
 import AdminDashboard from './views/Admin/Dashboard';
@@ -22,111 +22,159 @@ type ViewState =
 
 const App: React.FC = () => {
   const { user, profile, loading: authLoading, role } = useAuth();
+
+  // Splash is shown while auth is resolving. Once authLoading is false we
+  // apply a short (600ms) cosmetic delay so the splash animation completes
+  // gracefully. We do NOT start routing until both are false.
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
 
-  // Initial load logic: Fast intro (800ms) once auth is resolved
+  // Dismiss splash only after auth has fully resolved
   useEffect(() => {
     if (!authLoading) {
-      const timer = setTimeout(() => {
-        setShowSplash(false);
-      }, 800); 
+      // Short cosmetic delay so logo animation can finish
+      const timer = setTimeout(() => setShowSplash(false), 600);
       return () => clearTimeout(timer);
     }
   }, [authLoading]);
 
-  // CRITICAL SAFETY: Force hide splash after 5s no matter what
+  // Absolute safety net — never hang beyond 6s
   useEffect(() => {
-    const safetyTimer = setTimeout(() => {
-      setShowSplash(false);
-    }, 5000);
-    return () => clearTimeout(safetyTimer);
+    const safety = setTimeout(() => setShowSplash(false), 6000);
+    return () => clearTimeout(safety);
   }, []);
 
-  // Request notification permission on login
+  // Request push notification permission once logged in
   useEffect(() => {
-    if (user) {
-      requestNotificationPermission();
-    }
+    if (user) requestNotificationPermission();
   }, [user]);
 
-  // Unified Routing & Auth Guards (Strict RBAC)
+  // ─── ROLE-BASED ROUTING ──────────────────────────────────────────────────
+  // Only runs after splash is gone AND auth is fully resolved (including profile).
+  // This eliminates the 1st-login wrong-redirect bug.
   useEffect(() => {
+    // Wait until both guards are clear
     if (authLoading || showSplash) return;
 
-    // 1. Protection for non-logged in users
-    const protectedViews: ViewState[] = ['CASHIER', 'ADMIN', 'SERVING_COUNTER', 'KITCHEN'];
-    if (!user && protectedViews.includes(view)) {
-      setView('WELCOME');
-      return;
-    }
-
-    // 2. Role-based redirects & Auto-Login from Welcome/Login
-    if (user && profile && role && ['WELCOME', 'STAFF_LOGIN'].includes(view)) {
-      if (role === 'ADMIN') setView('ADMIN');
-      else if (role === 'CASHIER') setView('CASHIER');
-      else if (role === 'SERVER') setView('SERVING_COUNTER');
-      else {
-        // Should not happen due to onAuthStateChange check, but safety first
+    if (!user) {
+      // Not logged in → land on Welcome/Login gate
+      if (view !== 'WELCOME' && view !== 'STAFF_LOGIN') {
         setView('WELCOME');
       }
       return;
     }
+
+    // User is logged in and profile is confirmed (authLoading is false only
+    // when profile is also resolved — see useAuth).
+    // Only auto-redirect when on a neutral / login view to avoid interrupting
+    // kitchen/admin navigation.
+    if (profile && role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
+      if      (role === 'ADMIN')   setView('ADMIN');
+      else if (role === 'CASHIER') setView('CASHIER');
+      else if (role === 'SERVER')  setView('SERVING_COUNTER');
+      else                         setView('WELCOME'); // unknown role — safety
+    }
   }, [authLoading, showSplash, user, profile, role, view]);
 
-  const handleSplashFinish = () => {
-    setShowSplash(false);
-  };
-
+  // ─── HANDLERS ────────────────────────────────────────────────────────────
   const navigateToStaffLogin = () => setView('STAFF_LOGIN');
-  const navigateToLogin = async () => {
+
+  const handleGoogleLogin = async () => {
     if (googleSignInLoading) return;
     setGoogleSignInLoading(true);
     try {
       await signInWithGoogle();
-      setGoogleSignInLoading(false);
+      // Routing handled by the useEffect above once profile resolves
     } catch (error: any) {
-      setGoogleSignInLoading(false);
       console.error('❌ Google sign-in error:', error);
+    } finally {
+      setGoogleSignInLoading(false);
     }
   };
 
   const handleLogout = async () => {
     try {
-      if (user) {
-          const { signOut } = await import('./services/auth');
-          await signOut();
-      }
-      setView('WELCOME');
-    } catch (error) {
-      setView('WELCOME');
-    }
+      const { signOut } = await import('./services/auth');
+      await signOut();
+    } catch (_) { /* ignore */ }
+    setView('WELCOME');
   };
 
-  if (showSplash || authLoading) return <SplashScreen onFinish={handleSplashFinish} />;
+  // ─── RENDER ──────────────────────────────────────────────────────────────
+  if (showSplash || authLoading) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
 
   return (
     <div className="min-h-screen bg-background text-textMain">
       {(() => {
         switch (view) {
           case 'WELCOME':
-            return <WelcomeView onStart={() => {}} onStaffLogin={navigateToLogin} onAdminLogin={navigateToStaffLogin} googleLoading={googleSignInLoading} />;
-          case 'STAFF_LOGIN': return (
-            <LoginView 
-              onBack={() => setView('WELCOME')} 
-              onSuccess={(p) => {
-                if (p.role === 'ADMIN') setView('ADMIN');
-                else if (p.role === 'CASHIER') setView('CASHIER');
-                else if (p.role === 'SERVER') setView('SERVING_COUNTER');
-              }} 
-            />
-          );
-          case 'CASHIER': return <CashierView profile={profile!} onLogout={handleLogout} />;
-          case 'ADMIN': return <AdminDashboard profile={profile!} onLogout={handleLogout} onOpenKitchen={() => setView('KITCHEN')} />;
-          case 'KITCHEN': return <KitchenView onBack={() => setView(role === 'ADMIN' ? 'ADMIN' : 'SERVING_COUNTER')} user={user} />;
-          case 'SERVING_COUNTER': return <ServingCounterView profile={profile!} onLogout={handleLogout} onOpenKitchen={() => setView('KITCHEN')} />;
-          default: return <WelcomeView onStart={() => {}} onStaffLogin={navigateToLogin} onAdminLogin={navigateToStaffLogin} />;
+            return (
+              <WelcomeView
+                onStart={() => {}}
+                onStaffLogin={handleGoogleLogin}
+                onAdminLogin={navigateToStaffLogin}
+                googleLoading={googleSignInLoading}
+              />
+            );
+
+          case 'STAFF_LOGIN':
+            return (
+              <LoginView
+                onBack={() => setView('WELCOME')}
+                onSuccess={(p) => {
+                  // Direct nav from LoginView — profile comes from the signIn()
+                  // call which already validated the role. We set the view
+                  // immediately; the useEffect will also fire but view won't
+                  // be 'WELCOME' / 'STAFF_LOGIN' so it becomes a no-op.
+                  if      (p.role === 'ADMIN')   setView('ADMIN');
+                  else if (p.role === 'CASHIER') setView('CASHIER');
+                  else if (p.role === 'SERVER')  setView('SERVING_COUNTER');
+                }}
+              />
+            );
+
+          case 'CASHIER':
+            return <CashierView profile={profile!} onLogout={handleLogout} />;
+
+          case 'ADMIN':
+            return (
+              <AdminDashboard
+                profile={profile!}
+                onLogout={handleLogout}
+                onOpenKitchen={() => setView('KITCHEN')}
+              />
+            );
+
+          case 'KITCHEN':
+            return (
+              <KitchenView
+                onBack={() => setView(role === 'ADMIN' ? 'ADMIN' : 'SERVING_COUNTER')}
+                user={user}
+              />
+            );
+
+          case 'SERVING_COUNTER':
+            return (
+              <ServingCounterView
+                profile={profile!}
+                onLogout={handleLogout}
+                onOpenKitchen={() => setView('KITCHEN')}
+              />
+            );
+
+          // STRICT: No student/default fallback that could mis-route
+          default:
+            return (
+              <WelcomeView
+                onStart={() => {}}
+                onStaffLogin={handleGoogleLogin}
+                onAdminLogin={navigateToStaffLogin}
+                googleLoading={googleSignInLoading}
+              />
+            );
         }
       })()}
     </div>
