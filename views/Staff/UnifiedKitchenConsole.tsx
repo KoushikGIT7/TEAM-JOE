@@ -6,16 +6,17 @@ import {
   PackageCheck, Flame, Sparkles, LogOut, LayoutDashboard, XCircle
 } from 'lucide-react';
 import { UserProfile, Order, PrepBatch, PrepBatchStatus, CartItem } from '../../types';
-import { 
-  listenToBatches, 
-  updateSlotStatus, 
-  validateQRForServing, 
-  serveItemBatch, 
+import {
+  listenToBatches,
+  updateSlotStatus,
+  validateQRForServing,
+  serveItemBatch,
   serveFullOrder,
   rejectOrderFromCounter,
   listenToActiveOrders,
-  flushMissedPickups
- } from '../../services/firestore-db';
+  flushMissedPickups,
+  toggleQrRedeemable
+} from '../../services/firestore-db';
 import { initializeScanner, getScanner } from '../../services/scanner';
 import QRScanner from '../../components/QRScanner';
 
@@ -54,11 +55,11 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // --- TIME, SCANNER & MAINTENANCE ---
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
-    
+
     // 🤖 Autonomous Maintenance Heartbeat (Runs every 30s)
     const maintenance = setInterval(async () => {
         try {
-            await flushMissedPickups();
+            await flushMissedPickups(profile.uid);
         } catch (err) {}
     }, 30000);
 
@@ -105,7 +106,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     try {
         await serveItemBatch(orderId, itemId, qty, profile.uid);
         if ('vibrate' in navigator) navigator.vibrate(50);
-        
+
         // The local state update is no longer needed as the listener updates the DB state
         // and our memoized scannedOrder will reflect it automatically.
         if (scannedOrder?.id === orderId) {
@@ -156,7 +157,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   };
 
   // --- DERIVED DATA ---
-  
+
   // 1. Current Active Batch (Nearest slot that is not READY)
   const activeBatchSlot = useMemo(() => {
     const preparing = batches.find(b => b.status === 'PREPARING' || b.status === 'ALMOST_READY');
@@ -165,12 +166,23 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     return queued?.arrivalTimeSlot || null;
   }, [batches]);
 
-  const activeBatchItems = useMemo(() => {
+  const activeBatchSlotBatches = useMemo(() => {
     if (!activeBatchSlot) return [];
     return batches.filter(b => b.arrivalTimeSlot === activeBatchSlot);
   }, [batches, activeBatchSlot]);
 
-  const activeBatchStatus = activeBatchItems[0]?.status || 'QUEUED';
+  const activeBatchStatus = activeBatchSlotBatches[0]?.status || 'QUEUED';
+
+  const activeBatchItems = useMemo(() => {
+    if (!activeBatchSlot) return [];
+    // Aggregate by itemId
+    const agg: Record<string, { id: string; itemName: string; quantity: number; imageUrl: string }> = {};
+    activeBatchSlotBatches.forEach(b => {
+        if (!agg[b.itemId]) agg[b.itemId] = { id: b.itemId, itemName: b.itemName, quantity: 0, imageUrl: '' };
+        agg[b.itemId].quantity += b.quantity;
+    });
+    return Object.values(agg);
+  }, [activeBatchSlotBatches]);
 
   // 2. Ready to Serve Aggregation (Grouped by item name for server)
   const readyPool = useMemo(() => {
@@ -199,7 +211,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // --- RENDER ---
   return (
     <div className="h-screen w-screen bg-[#050505] text-white flex flex-col overflow-hidden font-sans selection:bg-primary/30">
-      
+
       {/* 🔴 QR SCANNER (TOP - ALWAYS FIXED) */}
       <div className="bg-black/80 backdrop-blur-xl border-b border-white/5 px-8 py-4 flex items-center justify-between z-50">
         <div className="flex items-center gap-6">
@@ -207,12 +219,12 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                 <h1 className="text-3xl font-black tracking-tighter italic">JOE</h1>
                 <span className="text-[10px] font-black text-primary uppercase tracking-[0.4em] px-3 py-1 border border-primary/30 rounded-full bg-primary/10">Console</span>
             </div>
-            
+
             <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl px-6 py-2.5 focus-within:border-primary/50 transition-all">
                 <Search className="w-5 h-5 text-gray-500" />
-                <input 
-                    type="text" 
-                    placeholder="SCAN MEAL TOKEN..." 
+                <input
+                    type="text"
+                    placeholder="SCAN MEAL TOKEN..."
                     className="bg-transparent border-none outline-none font-black text-xl placeholder:text-white/10 tracking-widest uppercase w-64"
                     autoFocus
                     onKeyDown={(e) => {
@@ -223,7 +235,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                     }}
                 />
             </div>
-            <button 
+            <button
                 onClick={() => setIsCameraOpen(true)}
                 className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 transition-all text-primary"
             >
@@ -241,16 +253,16 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">System Live: {profile.name}</p>
                 </div>
             </div>
-            
-            <button 
+
+            <button
                 onClick={handleFlushMissed}
                 disabled={isFlushing}
                 className={`p-3 rounded-2xl border transition-all flex items-center gap-2 group ${
                     flushCount !== null ? 'bg-green-500 border-green-500 text-white' : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:border-white/20'
                 }`}
             >
-                {isFlushing ? <RefreshCw className="w-5 h-5 animate-spin" /> : 
-                 flushCount !== null ? <CheckCircle className="w-5 h-5" /> : 
+                {isFlushing ? <RefreshCw className="w-5 h-5 animate-spin" /> :
+                 flushCount !== null ? <CheckCircle className="w-5 h-5" /> :
                  <Clock className="w-5 h-5 group-hover:rotate-12 transition-transform" />}
                 <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
                     {isFlushing ? 'Checking...' : flushCount !== null ? `${flushCount} REASSIGNED` : 'CLEANUP MISSED'}
@@ -265,13 +277,13 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
       <main className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar bg-[#080808]">
         <div className="max-w-[1600px] mx-auto p-8 space-y-12">
-            
+
             {/* 🧾 SCAN RESULT UI (AUTO-FOCUS PANEL) */}
             {scannedOrder && (
                 <section ref={scanReviewRef} className="animate-in slide-in-from-top duration-500">
                     <div className="bg-primary/10 border-2 border-primary/40 rounded-[3.5rem] p-10 shadow-[0_40px_100px_rgba(249,115,22,0.15)] relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/20 blur-[150px] -mr-[300px] -mt-[300px] rounded-full pointer-events-none" />
-                        
+
                         <div className="flex items-center justify-between mb-10 relative z-10">
                             <div className="flex items-center gap-6">
                                 <div className="w-20 h-20 rounded-[2rem] bg-primary flex items-center justify-center shadow-[0_0_40px_rgba(249,115,22,0.4)] animate-bounce">
@@ -323,15 +335,15 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                                             </div>
                                         </div>
                                         {!done && (
-                                            <button 
+                                            <button
                                                 onClick={() => handleServeItem(scannedOrder.id, item.id, rem)}
-                                                disabled={scannedOrder.pickupWindow?.status !== 'COLLECTING'}
+                                                disabled={scannedOrder.pickupWindow?.status !== 'COLLECTING' && !scannedOrder.qrRedeemable}
                                                 className={`w-full h-16 text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${
-                                                    scannedOrder.pickupWindow?.status === 'COLLECTING' ? 'bg-primary shadow-primary/20' : 'bg-white/5 text-white/20 cursor-not-allowed border border-white/5'
+                                                    (scannedOrder.pickupWindow?.status === 'COLLECTING' || scannedOrder.qrRedeemable) ? 'bg-primary shadow-primary/20' : 'bg-white/5 text-white/20 cursor-not-allowed border border-white/5'
                                                 }`}
                                             >
-                                                {scannedOrder.pickupWindow?.status === 'COLLECTING' ? <Zap className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                                                {scannedOrder.pickupWindow?.status === 'COLLECTING' ? 'Bulk Serve' : scannedOrder.pickupWindow?.status || 'Awaiting Ready'}
+                                                {(scannedOrder.pickupWindow?.status === 'COLLECTING' || scannedOrder.qrRedeemable) ? <Zap className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                                                {(scannedOrder.pickupWindow?.status === 'COLLECTING' || scannedOrder.qrRedeemable) ? 'Bulk Serve' : scannedOrder.pickupWindow?.status || 'Awaiting Ready'}
                                             </button>
                                         )}
                                         {done && (
@@ -343,9 +355,26 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                                 );
                             })}
                         </div>
-                        
+
                         <div className="mt-8 flex justify-end gap-4">
-                             <button 
+                             {(scannedOrder.pickupWindow?.status === 'ABANDONED' || scannedOrder.pickupWindow?.status === 'MISSED') && !scannedOrder.qrRedeemable && (
+                                 <button
+                                    onClick={async () => {
+                                        if (confirm("OVERRIDE PROTECTION? Only do this if student is present and payment is verified.")) {
+                                            try {
+                                                await toggleQrRedeemable(scannedOrder.id, true);
+                                                if ('vibrate' in navigator) navigator.vibrate([100, 100, 500]);
+                                            } catch (err: any) {
+                                                setError(err.message || "Override failed");
+                                            }
+                                        }
+                                    }}
+                                    className="h-20 px-8 bg-amber-500 text-black font-black uppercase tracking-[0.2em] text-[10px] rounded-[2rem] hover:bg-amber-400 transition-all active:scale-95 flex items-center gap-3"
+                                 >
+                                    <ShieldCheck className="w-5 h-5" /> Override & Activate
+                                 </button>
+                             )}
+                             <button
                                 onClick={async () => {
                                     if (confirm('REJECT THIS ORDER? This will destroy the token and cancel the pickup.')) {
                                         try {

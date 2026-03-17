@@ -28,6 +28,7 @@ export interface CartItem extends MenuItem {
   quantity: number;
   servedQty?: number;
   remainingQty?: number;
+  status?: 'PENDING' | 'SERVED' | 'ABANDONED';
 }
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'MISSED' | 'ABANDONED';
@@ -106,6 +107,8 @@ export interface Order {
   confirmedAt?: number;
   rejectedBy?: string;
   rejectedAt?: number;
+  /** Manual override for abandoned orders */
+  qrRedeemable?: boolean;
   /** When the student was successfully alerted (deduplication) */
   notifiedAt?: number;
 }
@@ -223,4 +226,9 @@ export interface PrepBatch {
   readyAt?: number;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SystemMaintenance {
+  lastHeartbeatAt: number;
+  activeNodeId: string;
 }

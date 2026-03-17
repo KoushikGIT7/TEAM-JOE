@@ -42,7 +42,8 @@ import {
   QRStatus,
   KitchenStatus,
   PrepBatch,
-  PrepBatchStatus
+  PrepBatchStatus,
+  SystemMaintenance
 } from "../types";
 import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT } from "../constants";
 
@@ -91,13 +92,15 @@ const orderToFirestore = (order: Order) => ({
     imageUrl: item.imageUrl,
     quantity: item.quantity,
     servedQty: item.servedQty || 0,
-    remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity
+    remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity,
+    status: item.status || 'PENDING'
   })),
   totalAmount: order.totalAmount,
   paymentType: order.paymentType,
   paymentStatus: order.paymentStatus,
   orderStatus: order.orderStatus,
   qrStatus: order.qrStatus,
+  qrRedeemable: order.qrRedeemable ?? null,
   qr: order.qr ? {
     token: order.qr.token,
     status: order.qr.status,
@@ -151,7 +154,8 @@ const firestoreToOrder = (id: string, data: any): Order => {
     items: data.items.map((item: any) => ({
       ...item,
       servedQty: item.servedQty || 0,
-      remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity
+      remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity,
+      status: item.status || 'PENDING'
     })),
     totalAmount: data.totalAmount,
     paymentType: data.paymentType,
@@ -175,6 +179,7 @@ const firestoreToOrder = (id: string, data: any): Order => {
     confirmedAt: toMillis(data.confirmedAt),
     rejectedBy: data.rejectedBy,
     rejectedAt: toMillis(data.rejectedAt),
+    qrRedeemable: data.qrRedeemable ?? false,
     orderType: data.orderType || undefined,
     serveFlowStatus: data.serveFlowStatus || undefined,
     pickupWindow: data.pickupWindow ? {
@@ -1422,28 +1427,31 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
       if (order.orderStatus === 'SERVED') throw new Error("Order already served");
       if (order.paymentStatus !== 'SUCCESS') throw new Error("Payment not verified");
 
-      // Strict check: Only serve if READY (in collecting window)
-      if (order.pickupWindow?.status !== 'COLLECTING') {
-        throw new Error(`SERVE_BLOCKED - Item status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY items can be served.`);
+      // Strict check: Only serve if READY (in collecting window) or Overridden
+      if (order.pickupWindow?.status !== 'COLLECTING' && !order.qrRedeemable) {
+        throw new Error(`SERVE_BLOCKED - Item status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY items or Overridden orders can be served.`);
       }
 
       const itemIndex = order.items.findIndex(i => i.id === itemId);
       if (itemIndex === -1) throw new Error("Item not found in order");
-
       const item = order.items[itemIndex];
       if (item.remainingQty < quantity) throw new Error("Not enough remaining quantity");
 
-      // Update item quantities
+      // Update item quantities and status
       const updatedItems = [...order.items];
+      const newServedQty = (item.servedQty || 0) + quantity;
+      const newRemainingQty = item.remainingQty - quantity;
+      
       updatedItems[itemIndex] = {
         ...item,
-        servedQty: (item.servedQty || 0) + quantity,
-        remainingQty: item.remainingQty - quantity
+        servedQty: newServedQty,
+        remainingQty: newRemainingQty,
+        status: newRemainingQty <= 0 ? 'SERVED' : 'PENDING'
       };
 
-      // Check if all items are completed
-      const allItemsServed = updatedItems.every(i => i.remainingQty <= 0);
-      const newOrderStatus = allItemsServed ? 'SERVED' : order.orderStatus;
+      // Check if all items are completed (SERVED or ABANDONED)
+      const allResolved = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED');
+      const newOrderStatus = allResolved ? 'SERVED' : order.orderStatus;
 
       // Update order
       tx.update(orderRef, {
@@ -1456,12 +1464,14 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
           imageUrl: item.imageUrl,
           quantity: item.quantity,
           servedQty: item.servedQty || 0,
-          remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity
+          remainingQty: item.remainingQty,
+          status: item.status
         })),
         orderStatus: newOrderStatus,
-        qrStatus: allItemsServed ? 'DESTROYED' : order.qrStatus,
-        qrState: allItemsServed ? 'SERVED' : 'SCANNED',
-        servedAt: allItemsServed ? serverTimestamp() : order.servedAt ? Timestamp.fromMillis(order.servedAt) : null
+        servedAt: allResolved ? Date.now() : null,
+        updatedAt: serverTimestamp(),
+        qrStatus: allResolved ? 'DESTROYED' : order.qrStatus,
+        qrState: allResolved ? 'SERVED' : 'SCANNED',
       });
 
       // Create serve log
@@ -1507,8 +1517,8 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
 
       if (order.orderStatus === 'SERVED') return;
 
-      if (order.pickupWindow?.status !== 'COLLECTING') {
-        throw new Error(`SERVE_BLOCKED - Order status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY orders can be served.`);
+      if (order.pickupWindow?.status !== 'COLLECTING' && !order.qrRedeemable) {
+        throw new Error(`SERVE_BLOCKED - Order status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY orders or Overridden orders can be served.`);
       }
 
       const updatedItems = order.items.map(item => {
@@ -1567,6 +1577,19 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
     console.log('🏁 Full order served successfully:', orderId);
   } catch (error) {
     console.error("Error serving full order:", error);
+    throw error;
+  }
+};
+
+export const toggleQrRedeemable = async (orderId: string, redeemable: boolean): Promise<void> => {
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    await updateDoc(orderRef, {
+      qrRedeemable: redeemable,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Error toggling qrRedeemable:", error);
     throw error;
   }
 };
@@ -2087,8 +2110,47 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
     }
 };
 
-export const flushMissedPickups = async (): Promise<number> => {
+export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean> => {
+  const maintenanceRef = doc(db, "system", "maintenance");
   const now = Date.now();
+  
+  try {
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(maintenanceRef);
+      if (!snap.exists()) {
+        tx.set(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId });
+        return true;
+      }
+      
+      const data = snap.data() as SystemMaintenance;
+      // If last heartbeat was > 45s ago, assume the role
+      if (now - data.lastHeartbeatAt > 45000) {
+        tx.update(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId });
+        return true;
+      }
+      
+      // If we are already the owner, update the timestamp
+      if (data.activeNodeId === nodeId) {
+        tx.update(maintenanceRef, { lastHeartbeatAt: now });
+        return true;
+      }
+      
+      return false;
+    });
+  } catch (err) {
+    return false;
+  }
+};
+
+export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
+  const now = Date.now();
+
+  // If a nodeId is provided, try to acquire the lock first
+  if (nodeId) {
+     const hasLock = await tryAcquireMaintenanceLock(nodeId);
+     if (!hasLock) return 0;
+  }
+
   const qWithItems = query(
     collection(db, "orders"),
     where("pickupWindow.status", "==", "COLLECTING"),
@@ -2126,11 +2188,17 @@ export const flushMissedPickups = async (): Promise<number> => {
 
         // 2. Prevent Infinite Reassignment
         if (currentMissedCount >= 2) {
+          const abandonedItems = order.items.map(it => ({
+            ...it,
+            status: it.status === 'SERVED' ? 'SERVED' : 'ABANDONED'
+          }));
+          
           tx.update(doc(db, "orders", d.id), {
             "pickupWindow.status": 'ABANDONED',
             "serveFlowStatus": 'ABANDONED',
             "orderStatus": 'ABANDONED',
             "missedCount": currentMissedCount,
+            "items": abandonedItems,
             "updatedAt": serverTimestamp()
           });
           continue;
