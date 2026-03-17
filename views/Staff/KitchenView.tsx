@@ -59,7 +59,7 @@ const BatchCard: React.FC<BatchCardProps> = ({ batch, updating, onStartPrep, onM
         <div className="flex items-center gap-4 mb-5 pt-4 border-t border-black/5">
           <div className="flex items-center gap-1.5">
             <Users className="w-4 h-4 text-textSecondary" />
-            <span className="text-xs font-bold text-textSecondary">{batch.orderIds?.length || 0} Students</span>
+            <span className="text-xs font-bold text-textSecondary">{batch.orderIds?.length || 0} Users</span>
           </div>
           {isReady && (
             <div className="flex items-center gap-1.5 ml-auto">
@@ -87,7 +87,7 @@ const BatchCard: React.FC<BatchCardProps> = ({ batch, updating, onStartPrep, onM
             className="w-full py-4 rounded-2xl bg-green-600 text-white font-black uppercase tracking-widest shadow-lg shadow-green-200 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Bell className="w-5 h-5" />}
-            Notify Students (Ready)
+            Notify Users (Ready)
           </button>
         )}
 

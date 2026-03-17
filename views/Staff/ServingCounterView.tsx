@@ -4,7 +4,6 @@ import { UserProfile, Order } from '../../types';
 import { listenToActiveOrders, listenToPendingItems, serveItem, serveItemBatch, validateQRForServing, PendingItem, scanAndServeOrder, rejectOrderFromCounter, getOrderById } from '../../services/firestore-db';
 import { initializeScanner, getScanner } from '../../services/scanner';
 import { offlineDetector } from '../../utils/offlineDetector';
-import SyncStatus from '../../components/SyncStatus';
 import QRScanner from '../../components/QRScanner';
 import { seedReadyOrders } from '../../services/test-utils';
 
@@ -508,7 +507,6 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                </div>
                <div className="flex items-center gap-3">
                  <span className="text-xs font-black text-white/40 uppercase tracking-widest">{readyItems.length} active tokens</span>
-                 <SyncStatus showLabel={false} />
                </div>
             </div>
 

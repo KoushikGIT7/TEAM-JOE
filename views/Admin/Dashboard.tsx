@@ -23,7 +23,6 @@ import { CATEGORIES } from '../../constants';
 import Logo from '../../components/Logo';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
 import { offlineDetector } from '../../utils/offlineDetector';
-import SyncStatus from '../../components/SyncStatus';
 
 const COLORS = ['#0F9D58', '#34D399', '#FBBF24', '#6B7280', '#EF4444'];
 
@@ -546,7 +545,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                 // Safety checks for user properties
                 const userName = u.name || 'Unknown';
                 const userEmail = u.email || 'No email';
-                const userRole = u.role || 'student';
+                const userRole = u.role || 'SERVER';
                 const userActive = u.active ?? true;
                 
                 return (
@@ -554,7 +553,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                     <td className="px-10 py-6">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-2xl bg-primary/5 text-primary flex items-center justify-center font-black text-lg">
-                          {userName[0]?.toUpperCase() || 'U'}
+                          {userName[0]?.toUpperCase() || 'S'}
                         </div>
                         <div>
                           <p className="font-bold text-textMain">{userName}</p>
@@ -576,10 +575,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                         }}
                         className="text-xs font-black uppercase px-4 py-2 rounded-xl bg-white border border-black/5 focus:ring-primary outline-none"
                       >
-                        <option value="student">Student</option>
-                        <option value="cashier">Cashier</option>
-                        <option value="server">Server</option>
-                        <option value="admin">Admin</option>
+                        <option value="CASHIER">Cashier</option>
+                        <option value="SERVER">Server</option>
+                        <option value="ADMIN">Admin</option>
                       </select>
                     </td>
                     <td className="px-10 py-6">
@@ -1130,7 +1128,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
             <h1 className="text-xl sm:text-2xl font-black text-textMain tracking-tighter uppercase truncate">{activeTab}</h1>
           </div>
           <div className="flex items-center gap-4 sm:gap-8">
-            <SyncStatus showLabel={true} />
             <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-success/5 text-success rounded-full text-[10px] font-black uppercase tracking-widest border border-success/10">
               <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               Node Active

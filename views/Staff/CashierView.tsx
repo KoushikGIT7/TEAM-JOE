@@ -10,7 +10,6 @@ import { UserProfile, Order } from '../../types';
 import { listenToPendingCashOrders, confirmCashPayment, rejectCashPayment, listenToAllOrders } from '../../services/firestore-db';
 import Logo from '../../components/Logo';
 import { offlineDetector } from '../../utils/offlineDetector';
-import SyncStatus from '../../components/SyncStatus';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
 
@@ -314,7 +313,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <h2 className="text-3xl font-black uppercase tracking-tight">Active Requests</h2>
-            <p className="text-amber-100 font-bold text-sm opacity-90">Verify and confirm individual student cash payments</p>
+            <p className="text-amber-100 font-bold text-sm opacity-90">Verify and confirm individual user cash payments</p>
           </div>
           <div className="flex items-center gap-4 bg-white/20 backdrop-blur-md px-6 py-4 rounded-3xl border border-white/20">
             <div className="relative">
@@ -367,7 +366,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   </div>
                 </div>
 
-                {/* 👤 Student & Total */}
+                {/* 👤 User & Total */}
                 <div className="flex-1 min-w-0 space-y-4">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center border-2 border-amber-200">
@@ -952,9 +951,6 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             </div>
             
             <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-              <div className="hidden sm:block">
-                <SyncStatus showLabel={true} />
-              </div>
               <div className="hidden sm:block text-right">
                 <p className="text-xs font-black text-textSecondary uppercase">Cashier</p>
                 <p className="text-sm font-black text-textMain truncate">{profile.name}</p>
