@@ -466,42 +466,59 @@ export const onAuthStateChange = (
     if (firebaseUser) {
       try {
         let profile: UserProfile | null = await getUserProfile(firebaseUser.uid);
+        const email = firebaseUser.email || '';
 
         // Auto-create profile if missing
         if (!profile) {
-          await createUserProfile(firebaseUser.uid, firebaseUser.email || '', firebaseUser.displayName || 'Student', 'student');
+          // IMPORTANT: Check for staff roles from email pattern before defaulting to student
+          const inferredRole = inferRoleFromEmail(email) || 'student';
+          console.log(`📝 onAuthStateChange: Creating new user profile for ${email} with role: ${inferredRole}`);
+          
+          await createUserProfile(
+            firebaseUser.uid, 
+            email, 
+            firebaseUser.displayName || (inferredRole === 'student' ? 'Student' : 'Staff'), 
+            inferredRole
+          );
           profile = await getUserProfile(firebaseUser.uid);
         }
 
-        // onAuthStateChanged handles routing - foreground alerts are handled by useOrderNotifications hook
+        // Final check to handle edge cases or slow Firestore indexing
+        if (profile && !profile.role) {
+           profile.role = inferRoleFromEmail(email) || 'student';
+        }
 
         callback(firebaseUser, profile);
       } catch (error) {
         // Firestore read failed - log but don't block auth or routing
         console.error("❌ onAuthStateChange: Failed to fetch user profile:", error);
 
-        // FALLBACK: construct an in-memory student profile so routing can proceed
+        const email = firebaseUser.email || '';
+        const inferredRole = inferRoleFromEmail(email) || 'student';
+
+        // FALLBACK: construct an in-memory profile using inferred role so routing can proceed
         const fallbackProfile: UserProfile = {
           uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'Student',
-          email: firebaseUser.email || '',
-          role: 'student',
+          name: firebaseUser.displayName || (inferredRole === 'student' ? 'Student' : 'Staff'),
+          email: email,
+          role: inferredRole,
           active: true,
           createdAt: Date.now(),
           lastActive: Date.now(),
         };
 
-        // Try to upsert this fallback profile to Firestore in the background (non-blocking)
-        createUserProfile(
-          firebaseUser.uid,
-          fallbackProfile.email,
-          fallbackProfile.name,
-          fallbackProfile.role
-        ).catch((err) => {
-          console.error('❌ onAuthStateChange: Failed to upsert fallback profile:', err);
-        });
+        // Try to upsert this fallback profile (non-blocking) - but ONLY if non-null
+        if (email) {
+          createUserProfile(
+            firebaseUser.uid,
+            fallbackProfile.email,
+            fallbackProfile.name,
+            fallbackProfile.role
+          ).catch((err) => {
+            console.error('❌ onAuthStateChange: Failed to upsert fallback profile:', err);
+          });
+        }
 
-        // Continue with authenticated user + fallback profile so the app can route out of Welcome
         callback(firebaseUser, fallbackProfile);
       }
     } else {
