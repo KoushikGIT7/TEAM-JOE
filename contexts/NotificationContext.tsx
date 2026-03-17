@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { onForegroundMessage, type OrderReadyPayload } from '../services/fcm';
+import { onForegroundMessage } from '../services/notificationService';
 import type { NotificationToastData } from '../components/NotificationToast';
 import NotificationToast from '../components/NotificationToast';
 
@@ -30,21 +30,23 @@ export function NotificationProvider({ children, onViewOrder }: NotificationProv
 
   useEffect(() => {
     const unsub = onForegroundMessage((payload) => {
-      if (payload.orderReady) {
-        showToast({
-          title: payload.title || 'Order Ready',
-          body: payload.body,
-          orderReady: payload.orderReady as OrderReadyPayload,
-        });
-      } else if (payload.title || payload.body) {
-        showToast({
-          title: payload.title,
-          body: payload.body,
-        });
-      }
+      console.log('🔔 Toast received:', payload);
+      const notification = payload.notification || {};
+      const data = payload.data || {};
+
+      showToast({
+        title: notification.title || 'Notification',
+        body: notification.body || '',
+        orderReady: data.type === 'ORDER_READY' ? {
+          type: 'ORDER_READY',
+          orderId: data.orderId,
+          pickupWindowStart: data.pickupWindowStart,
+          pickupWindowEnd: data.pickupWindowEnd
+        } as any : undefined
+      });
     });
     return () => {
-      if (unsub) unsub();
+      if (typeof unsub === 'function') unsub();
     };
   }, [showToast]);
 

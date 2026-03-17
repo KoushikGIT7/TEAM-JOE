@@ -21,7 +21,8 @@ import {
   serverTimestamp,
   Timestamp,
   writeBatch,
-  increment
+  increment,
+  arrayUnion
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -39,7 +40,8 @@ import {
   DailyReport,
   OrderStatus,
   QRStatus,
-  KitchenStatus
+  KitchenStatus,
+  PrepBatch
 } from "../types";
 import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT } from "../constants";
 import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
@@ -114,6 +116,8 @@ const orderToFirestore = (order: Order) => ({
   pickupWindowStart: order.pickupWindowStart != null ? Timestamp.fromMillis(order.pickupWindowStart) : null,
   pickupWindowEnd: order.pickupWindowEnd != null ? Timestamp.fromMillis(order.pickupWindowEnd) : null,
   estimatedReadyTime: order.estimatedReadyTime != null ? Timestamp.fromMillis(order.estimatedReadyTime) : null,
+  arrivalTime: order.arrivalTime || null,
+  batchId: order.batchId || null,
   sentPickupReminderAt: order.sentPickupReminderAt != null ? Timestamp.fromMillis(order.sentPickupReminderAt) : null,
   preparationStationId: order.preparationStationId || null,
   queuePosition: order.queuePosition ?? null,
@@ -166,6 +170,8 @@ const firestoreToOrder = (id: string, data: any): Order => {
     pickupWindowStart: toMillis(data.pickupWindowStart),
     pickupWindowEnd: toMillis(data.pickupWindowEnd),
     estimatedReadyTime: toMillis(data.estimatedReadyTime),
+    arrivalTime: data.arrivalTime || null,
+    batchId: data.batchId || null,
     sentPickupReminderAt: toMillis(data.sentPickupReminderAt),
     preparationStationId: data.preparationStationId || undefined,
     queuePosition: data.queuePosition ?? undefined,
@@ -874,18 +880,51 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       }
 
       // 3. Prepare order
+      const isDynamic = orderData.items.some(it => it.orderType === 'PREPARATION_ITEM');
+      const orderType = isDynamic ? 'PREPARATION_ITEM' : 'FAST_ITEM';
+      
       const newOrder: Order = {
         ...orderData,
         items: itemsWithQty,
         id,
         createdAt,
-        orderStatus: 'PENDING'
+        orderStatus: 'PENDING',
+        orderType,
+        serveFlowStatus: isDynamic ? 'NEW' : 'READY',
+        // Default pickup window for FAST_ITEMS is immediate
+        pickupWindowStart: !isDynamic ? createdAt : undefined,
+        pickupWindowEnd: !isDynamic ? createdAt + (60 * 60 * 1000) : undefined
       } as Order;
 
       if (newOrder.paymentStatus === 'SUCCESS') {
         newOrder.qrStatus = 'ACTIVE';
         const token = generateQRPayloadSync(newOrder);
         newOrder.qr = { token, status: 'ACTIVE', createdAt };
+      }
+
+      // 4. Batch Allocation Logic (for dynamic items)
+      if (isDynamic && orderData.arrivalTime) {
+        const slot = orderData.arrivalTime;
+        for (const item of orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM')) {
+          const batchId = `batch_${slot}_${item.id}`;
+          const batchRef = doc(db, "prepBatches", batchId);
+          // Note: In a real transaction we'd check if batch exists, but for speed 
+          // we use set with merge or separate logic. Here we'll append to an array.
+          transaction.set(batchRef, {
+            id: batchId,
+            itemId: item.id,
+            itemName: item.name,
+            arrivalTimeSlot: slot,
+            orderIds: arrayUnion(id),
+            quantity: increment(item.quantity),
+            status: 'QUEUED',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          
+          // Link order to this item's batch (simplification: last batch wins for multi-item prep)
+          newOrder.batchId = batchId;
+        }
       }
 
       // 4. Update Inventory Shards (Atomic count increment)
@@ -1759,5 +1798,120 @@ export const getPopularMenuItems = async (limitOrders: number = 500): Promise<{ 
   } catch (error) {
     console.error("Error getPopularMenuItems:", error);
     return [];
+  }
+};
+
+// ============================================================================
+// 7. BATCH PREPARATION SYSTEM (Smart Queue)
+// ============================================================================
+
+export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
+  return onSnapshot(
+    query(
+      collection(db, "prepBatches"), 
+      orderBy("arrivalTimeSlot", "asc"), 
+      where("status", "in", ["QUEUED", "PREPARING", "READY"]),
+      limit(50)
+    ),
+    (snapshot) => {
+      const batches = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          ...data,
+          id: doc.id,
+          createdAt: data.createdAt?.toMillis?.() || Date.now(),
+          updatedAt: data.updatedAt?.toMillis?.() || Date.now()
+        } as PrepBatch;
+      });
+      callback(batches);
+    },
+    (error) => {
+      console.error("Error listening to batches:", error);
+      callback([]);
+    }
+  );
+};
+
+export const startBatchPreparation = async (batchId: string): Promise<void> => {
+  const batchRef = doc(db, "prepBatches", batchId);
+  try {
+    const batchSnap = await getDoc(batchRef);
+    if (!batchSnap.exists()) return;
+    const data = batchSnap.data() as PrepBatch;
+
+    await runTransaction(db, async (tx) => {
+      tx.update(batchRef, { status: 'PREPARING', updatedAt: serverTimestamp() });
+      for (const orderId of (data.orderIds || [])) {
+        tx.update(doc(db, "orders", orderId), { serveFlowStatus: 'PREPARING' });
+      }
+    });
+  } catch (err) {
+    console.error("Error starting batch prep:", err);
+    throw err;
+  }
+};
+
+export const markBatchReady = async (batchId: string): Promise<void> => {
+  const batchRef = doc(db, "prepBatches", batchId);
+  try {
+    const batchSnap = await getDoc(batchRef);
+    if (!batchSnap.exists()) return;
+    const data = batchSnap.data() as PrepBatch;
+
+    const now = Date.now();
+    const pickupWindowEnd = now + (10 * 60 * 1000); // 10 minute window
+
+    await runTransaction(db, async (tx) => {
+      tx.update(batchRef, { 
+        status: 'READY', 
+        readyAt: now, 
+        updatedAt: serverTimestamp() 
+      });
+      
+      for (const orderId of (data.orderIds || [])) {
+        tx.update(doc(db, "orders", orderId), { 
+          serveFlowStatus: 'READY',
+          pickupWindowStart: now,
+          pickupWindowEnd: pickupWindowEnd
+        });
+      }
+    });
+
+    console.log(`🔔 Notifications triggered for ${data.orderIds?.length} students in batch ${batchId}`);
+  } catch (err) {
+    console.error("Error marking batch ready:", err);
+    throw err;
+  }
+};
+
+export const markBatchCompleted = async (batchId: string): Promise<void> => {
+   await updateDoc(doc(db, "prepBatches", batchId), { 
+     status: 'COMPLETED', 
+     updatedAt: serverTimestamp() 
+   });
+};
+
+export const getOrderById = async (orderId: string): Promise<Order | null> => {
+  try {
+    const docSnap = await getDoc(doc(db, "orders", orderId));
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const toMillis = (val: any) => {
+        if (!val) return Date.now();
+        if (typeof val.toMillis === 'function') return val.toMillis();
+        return val;
+      };
+      return {
+        id: docSnap.id,
+        ...data,
+        createdAt: toMillis(data.createdAt),
+        scannedAt: data.scannedAt ? toMillis(data.scannedAt) : undefined,
+        servedAt: data.servedAt ? toMillis(data.servedAt) : undefined
+      } as Order;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting order by id:", error);
+    return null;
   }
 };

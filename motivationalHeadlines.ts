@@ -115,4 +115,7 @@ export const MOTIVATIONAL_HEADLINES: string[] = [
   'Outgrow every old version.',
   'Turn underestimation into edge.',
   'Keep moving. Let them watch.',
+  'Success is the best revenge.',
 ];
+
+export const REVENGE_QUOTES = MOTIVATIONAL_HEADLINES.slice(56);

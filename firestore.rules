@@ -54,12 +54,13 @@ service cloud.firestore {
         request.resource.data.userId.matches("guest_.*")
       );
 
-      // Allow cashier/admin to update orders (confirm/reject cash payments)
-      // Allow servers to mark ready/served
+      // Allow cashier/admin/server to update orders
+      // Allow students to update 'notifiedAt' (persistent acknowledgment)
       allow update: if isAuthenticated() && (
         getUserRole() == 'admin' || 
         getUserRole() == 'cashier' || 
-        getUserRole() == 'server'
+        getUserRole() == 'server' ||
+        (request.auth.uid == resource.data.userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt']))
       );
 
       allow delete: if hasRole('admin');
@@ -159,6 +160,14 @@ service cloud.firestore {
     match /idempotency_keys/{keyId} {
       // Allow read/create for everyone (including guests) to support duplicate check in transactions
       allow read, create: if true;
+    }
+
+    // ========================================================================
+    // PREPARATION BATCHES (Smart Kitchen)
+    // ========================================================================
+    match /prepBatches/{batchId} {
+      allow read: if true; // Students need to read status for notifications
+      allow write: if isAdminOrRole('server');
     }
   }
 }

@@ -36,3 +36,17 @@ build
 # OS files
 Thumbs.db
 .DS_Store
+
+# Credentials
+server/serviceAccount.json
+
+# Extra backend files
+server/
+
+# Log and temporary files
+*.txt
+*.ps1
+old_*.tsx
+dist/
+node_modules/
+.env*

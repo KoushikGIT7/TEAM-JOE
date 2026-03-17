@@ -24,6 +24,8 @@ if (getApps().length === 0) {
 
 // Initialize Firebase Auth
 export const auth: Auth = getAuth(app);
+import { getMessaging, Messaging } from "firebase/messaging";
+export const messaging: Messaging = getMessaging(app);
 
 // Initialize Firestore with memoryLocalCache.
 //

@@ -28,11 +28,22 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
         const html5QrCode = new Html5Qrcode(regionId);
         qrCodeInstance.current = html5QrCode;
 
+        // Optimization for performance and accuracy during rush hours
         const config = {
-          fps: 15,
-          qrbox: { width: 280, height: 280 },
+          fps: 10, // Lower FPS for better per-frame stability
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+             const size = Math.floor(minEdge * 0.7);
+             return { width: size, height: size };
+          },
           aspectRatio: 1.0,
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          videoConstraints: {
+            facingMode: "environment",
+            focusMode: "continuous",
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 }
+          }
         };
 
         // Preference: back camera
@@ -41,10 +52,12 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
           config,
           (decodedText) => {
             console.log(`[QR-SCANNER] Success: ${decodedText}`);
+            // Small vibration feedback if supported
+            if (navigator.vibrate) navigator.vibrate(50);
             onScan(decodedText);
           },
           (errorMessage) => {
-            // Noise from frame-by-frame missing QR
+            // Noise from frame-by-frame missing QR (expected)
           }
         );
         
@@ -85,7 +98,7 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <p className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-400">Secure AI Scanner</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-400">Secure AI Scanner Active</p>
             </div>
           </div>
         </div>
@@ -181,10 +194,10 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
             animation: laser 2.5s ease-in-out infinite;
         }
         #qr-reader-region video {
-            object-fit: cover !important;
             width: 100% !important;
             height: 100% !important;
-            transform: scale(1.1); /* Slight zoom to fill frame better */
+            object-fit: contain !important; /* Changed from cover to contain to avoid cropping */
+            background: black;
         }
       `}</style>
     </div>
@@ -192,3 +205,4 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
 };
 
 export default QRScanner;
+

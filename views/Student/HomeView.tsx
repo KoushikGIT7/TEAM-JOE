@@ -118,7 +118,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     );
   }, [selectedCategory, search, menu]);
 
-  const updateCart = (item: MenuItem, delta: number) => {
+  const updateCart = React.useCallback((item: MenuItem, delta: number) => {
     if (delta > 0 && isOutOfStock(item.id)) return;
     setCart(prev => {
       const newCart = { ...prev };
@@ -136,7 +136,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       if (profile?.uid) saveCartDraft(profile.uid, cartArray);
       return newCart;
     });
-  };
+  }, [profile?.uid, isOutOfStock, stockByItemId]);
 
   const formatTime = (ts?: number) => {
     if (!ts) return '';

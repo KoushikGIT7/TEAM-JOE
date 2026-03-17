@@ -1,61 +1,134 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Clock, ChefHat, CheckCircle2, Loader2, UtensilsCrossed, ListOrdered } from 'lucide-react';
-import { listenToPreparationOrders, updateServeFlowStatus } from '../../services/firestore-db';
+import { ChevronLeft, Clock, ChefHat, CheckCircle2, Loader2, UtensilsCrossed, Users, Timer, Bell, Zap } from 'lucide-react';
+import { listenToBatches, startBatchPreparation, markBatchReady } from '../../services/firestore-db';
+import { requestNotificationPermission } from '../../services/notificationService';
 import { SERVER_LABELS } from '../../constants';
-import type { Order } from '../../types';
-import type { ServeFlowStatus } from '../../types';
+import type { PrepBatch, PrepBatchStatus } from '../../types';
 
 interface KitchenViewProps {
   onBack: () => void;
-  /** Language for labels: 'en' | 'kn' */
   lang?: 'en' | 'kn';
+  user?: any;
 }
 
 const LABEL = (key: keyof typeof SERVER_LABELS, lang: 'en' | 'kn') => SERVER_LABELS[key][lang];
 
-function CountdownLabel({ readyAtMs, lang }: { readyAtMs: number | undefined; lang: 'en' | 'kn' }) {
-  const [secLeft, setSecLeft] = useState<number | null>(null);
-  useEffect(() => {
-    if (readyAtMs == null) {
-      setSecLeft(null);
-      return;
-    }
-    const tick = () => setSecLeft(Math.max(0, Math.round((readyAtMs - Date.now()) / 1000)));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [readyAtMs]);
-  if (secLeft == null || secLeft <= 0) return null;
-  return <span className="text-[10px] font-bold">{Math.ceil(secLeft / 60)} {LABEL('minLeft', lang)}</span>;
+interface BatchCardProps {
+  batch: PrepBatch;
+  updating: string | null;
+  onStartPrep: (id: string) => void;
+  onMarkReady: (id: string) => void;
 }
 
-const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = 'en' }) => {
+const formatSlotLabel = (slot: number) => {
+    const s = slot.toString().padStart(4, '0');
+    return `${s.slice(0, 2)}:${s.slice(2)}`;
+};
+
+const BatchCard: React.FC<BatchCardProps> = ({ batch, updating, onStartPrep, onMarkReady }) => {
+    const isUpdating = updating === batch.id;
+    const isUpcoming = batch.status === 'QUEUED';
+    const isPreparing = batch.status === 'PREPARING';
+    const isReady = batch.status === 'READY';
+
+    return (
+      <div className={`rounded-3xl p-5 border-2 transition-all shadow-sm ${
+        isPreparing ? 'bg-amber-50 border-amber-300 ring-4 ring-amber-100' : 
+        isReady ? 'bg-green-50 border-green-300' : 'bg-white border-gray-100'
+      }`}>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-3 py-1 bg-black text-white text-[10px] font-black rounded-full uppercase tracking-widest">
+                Slot {formatSlotLabel(batch.arrivalTimeSlot)}
+              </span>
+              {isPreparing && (
+                <span className="flex items-center gap-1 text-[10px] font-black text-amber-600 uppercase animate-pulse">
+                  <Zap className="w-3 h-3 fill-current" /> Cooking
+                </span>
+              )}
+            </div>
+            <h3 className="text-xl font-black text-textMain leading-tight">{batch.itemName}</h3>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-black text-textSecondary uppercase tracking-tighter">Quantity</p>
+            <p className="text-2xl font-black text-textMain leading-none">{batch.quantity}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 mb-5 pt-4 border-t border-black/5">
+          <div className="flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-textSecondary" />
+            <span className="text-xs font-bold text-textSecondary">{batch.orderIds?.length || 0} Students</span>
+          </div>
+          {isReady && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Timer className="w-4 h-4 text-green-600" />
+              <span className="text-xs font-black text-green-600">10m Window</span>
+            </div>
+          )}
+        </div>
+
+        {isUpcoming && (
+          <button
+            disabled={isUpdating}
+            onClick={() => onStartPrep(batch.id)}
+            className="w-full py-4 rounded-2xl bg-amber-500 text-white font-black uppercase tracking-widest shadow-lg shadow-amber-200 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChefHat className="w-5 h-5" />}
+            Start Preparation
+          </button>
+        )}
+
+        {isPreparing && (
+          <button
+            disabled={isUpdating}
+            onClick={() => onMarkReady(batch.id)}
+            className="w-full py-4 rounded-2xl bg-green-600 text-white font-black uppercase tracking-widest shadow-lg shadow-green-200 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Bell className="w-5 h-5" />}
+            Notify Students (Ready)
+          </button>
+        )}
+
+        {isReady && (
+          <div className="text-center p-3 bg-white/50 rounded-xl border border-green-200">
+            <p className="text-[10px] font-black text-green-700 uppercase tracking-widest">Awaiting Pickup Scan</p>
+          </div>
+        )}
+      </div>
+    );
+};
+
+const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = 'en', user }) => {
   const [lang, setLang] = useState<'en' | 'kn'>(initialLang);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [updating, setUpdating] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = listenToPreparationOrders((list) => setOrders(list), 80);
+    const unsub = listenToBatches((list) => setBatches(list));
     return unsub;
   }, []);
 
-  const byStatus = useMemo(() => {
-    const map: Record<string, Order[]> = { NEW: [], QUEUED: [], PREPARING: [], READY: [] };
-    orders.forEach((o) => {
-      const status = (o.serveFlowStatus || 'NEW') as ServeFlowStatus;
-      if (status in map) map[status].push(o);
-    });
-    map.NEW.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    map.QUEUED.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-    map.PREPARING.sort((a, b) => (a.estimatedReadyTime || 0) - (b.estimatedReadyTime || 0));
-    map.READY.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    return map;
-  }, [orders]);
+  useEffect(() => {
+    if (user) {
+      requestNotificationPermission();
+    }
+  }, [user]);
 
-  const setStatus = async (orderId: string, status: 'PREPARING' | 'READY') => {
-    setUpdating(orderId);
+  const byStatus = useMemo(() => {
+    const map: Record<PrepBatchStatus, PrepBatch[]> = { QUEUED: [], PREPARING: [], READY: [], COMPLETED: [] };
+    batches.forEach(b => {
+      if (b.status in map) map[b.status].push(b);
+    });
+    Object.values(map).forEach(list => list.sort((a, b) => a.arrivalTimeSlot - b.arrivalTimeSlot));
+    return map;
+  }, [batches]);
+
+  const handleStartPrep = async (batchId: string) => {
+    setUpdating(batchId);
     try {
-      await updateServeFlowStatus(orderId, status);
+      await startBatchPreparation(batchId);
     } catch (e) {
       console.error(e);
     } finally {
@@ -63,211 +136,118 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
     }
   };
 
-  const formatPickup = (order: Order) => {
-    const start = order.pickupWindowStart;
-    const end = order.pickupWindowEnd;
-    if (start == null || end == null) return null;
-    const s = new Date(start).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const e = new Date(end).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
-    return `${s} – ${e}`;
+  const handleMarkReady = async (batchId: string) => {
+      setUpdating(batchId);
+      try {
+        await markBatchReady(batchId);
+        // Firebase-only: Student listeners will detect the 'READY' status change automatically
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setUpdating(null);
+      }
   };
 
   return (
-    <div className="min-h-screen bg-background max-w-md mx-auto pb-8">
-      <header className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-black/5 px-4 py-4 flex items-center gap-4">
-        <button onClick={onBack} className="p-2 rounded-xl bg-gray-100" aria-label="Back">
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-xl font-bold text-textMain flex items-center gap-2">
-          <UtensilsCrossed className="w-5 h-5 text-primary" />
-          {lang === 'kn' ? 'ಪ್ರಸ್ತುತಿ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್' : 'Preparation Dashboard'}
-        </h1>
-        <div className="flex rounded-xl overflow-hidden border border-black/10">
+    <div className="min-h-screen bg-[#F8FAFC] max-w-md mx-auto pb-20">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-black/5 px-4 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+            <button onClick={onBack} className="p-2.5 rounded-2xl bg-gray-50 border border-black/5" aria-label="Back">
+                <ChevronLeft className="w-5 h-5 text-textSecondary" />
+            </button>
+            <div>
+                <h1 className="text-lg font-black text-textMain leading-none">Kitchen Pro</h1>
+                <p className="text-[10px] font-bold text-textSecondary uppercase tracking-widest mt-1">Batch Preparation</p>
+            </div>
+        </div>
+        
+        <div className="flex bg-gray-100 p-1 rounded-xl border border-black/5">
           <button
-            type="button"
             onClick={() => setLang('en')}
-            className={`px-3 py-2 text-xs font-bold ${lang === 'en' ? 'bg-primary text-white' : 'bg-gray-100 text-textSecondary'}`}
-          >
-            EN
-          </button>
+            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${lang === 'en' ? 'bg-white text-textMain shadow-sm' : 'text-textSecondary'}`}
+          >EN</button>
           <button
-            type="button"
             onClick={() => setLang('kn')}
-            className={`px-3 py-2 text-xs font-bold ${lang === 'kn' ? 'bg-primary text-white' : 'bg-gray-100 text-textSecondary'}`}
-          >
-            ಕನ್
-          </button>
+            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${lang === 'kn' ? 'bg-white text-textMain shadow-sm' : 'text-textSecondary'}`}
+          >ಕನ್</button>
         </div>
       </header>
 
-      <div className="p-4 space-y-6">
-        {/* NEW */}
-        <section>
-          <h2 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            {LABEL('new', lang)} ({byStatus.NEW.length})
-          </h2>
-          <ul className="space-y-3">
-            {byStatus.NEW.map((order) => {
-              const isUpdating = updating === order.id;
-              return (
-                <li
-                  key={order.id}
-                  className="bg-white rounded-2xl p-4 border-2 border-gray-200 flex flex-col gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-sm font-black text-textMain">#{order.id.slice(-8)}</p>
-                    <p className="text-xs text-textSecondary">{order.userName} · ₹{order.totalAmount}</p>
-                    <p className="text-xs text-textMain mt-1 font-medium">
-                      {order.items.map((i) => `${i.name} x${i.quantity}`).join(', ')}
-                    </p>
-                  </div>
-                  <button
-                    disabled={isUpdating}
-                    onClick={() => setStatus(order.id, 'PREPARING')}
-                    className="w-full py-4 rounded-xl bg-amber-500 text-white text-base font-black uppercase tracking-wide flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
-                  >
-                    {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChefHat className="w-5 h-5" />}
-                    {LABEL('startPreparing', lang)}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+      <div className="p-4 space-y-8">
+        {(byStatus.PREPARING.length > 0 || byStatus.READY.length > 0) && (
+          <section>
+            <div className="flex items-center justify-between mb-4 px-1">
+                <h2 className="text-xs font-black text-textSecondary uppercase tracking-widest flex items-center gap-2">
+                    <Zap className="w-3 h-3 text-amber-500 fill-current" /> 
+                    Live Production ({byStatus.PREPARING.length + byStatus.READY.length})
+                </h2>
+            </div>
+            <div className="space-y-4">
+              {byStatus.PREPARING.map(batch => (
+                <BatchCard 
+                  key={batch.id} 
+                  batch={batch} 
+                  updating={updating} 
+                  onStartPrep={handleStartPrep} 
+                  onMarkReady={handleMarkReady} 
+                />
+              ))}
+              {byStatus.READY.map(batch => (
+                <BatchCard 
+                  key={batch.id} 
+                  batch={batch} 
+                  updating={updating} 
+                  onStartPrep={handleStartPrep} 
+                  onMarkReady={handleMarkReady} 
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
-        {/* QUEUED (slot full; auto-advances when PREPARING → READY) */}
         <section>
-          <h2 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-2">
-            <ListOrdered className="w-4 h-4" />
-            {LABEL('queued', lang)} ({byStatus.QUEUED.length})
-          </h2>
-          <ul className="space-y-3">
-            {byStatus.QUEUED.map((order, idx) => {
-              const isFirst = idx === 0;
-              const isUpdating = updating === order.id;
-              const pos = order.queuePosition ?? idx + 1;
-              return (
-                <li
-                  key={order.id}
-                  className={`rounded-2xl p-4 border-2 flex flex-col gap-3 ${isFirst ? 'bg-slate-100 border-slate-400' : 'bg-white border-slate-200'}`}
-                >
-                  <div className="min-w-0 flex items-start justify-between gap-2">
-                    <div>
-                      {isFirst && (
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black bg-primary text-white uppercase mb-1">
-                          {LABEL('nextInQueue', lang)}
-                        </span>
-                      )}
-                      <p className="font-mono text-sm font-black text-textMain">#{order.id.slice(-8)}</p>
-                      <p className="text-xs text-textSecondary">{order.userName} · ₹{order.totalAmount}</p>
-                      <p className="text-xs text-textMain mt-1 font-medium">
-                        {order.items.map((i) => `${i.name} x${i.quantity}`).join(', ')}
-                      </p>
-                      <p className="text-[10px] text-slate-600 mt-1 font-bold flex items-center gap-1 flex-wrap">
-                        {LABEL('queuePos', lang)} {pos}
-                        {(order.estimatedQueueStartTime ?? order.estimatedReadyTime) != null && (
-                          <> · <CountdownLabel readyAtMs={order.estimatedQueueStartTime ?? order.estimatedReadyTime} lang={lang} /></>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  {isFirst && (
-                    <button
-                      disabled={isUpdating}
-                      onClick={() => setStatus(order.id, 'PREPARING')}
-                      className="w-full py-3 rounded-xl bg-slate-600 text-white text-sm font-black uppercase flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChefHat className="w-4 h-4" />}
-                      {LABEL('startPreparing', lang)}
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="flex items-center justify-between mb-4 px-1">
+              <h2 className="text-xs font-black text-textSecondary uppercase tracking-widest flex items-center gap-2">
+                  <Clock className="w-3 h-3" /> 
+                  Upcoming Batches ({byStatus.QUEUED.length})
+              </h2>
+          </div>
+          {byStatus.QUEUED.length === 0 ? (
+            <div className="p-10 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                <UtensilsCrossed className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                <p className="text-sm font-bold text-textSecondary">No upcoming batches</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {byStatus.QUEUED.map(batch => (
+                <BatchCard 
+                  key={batch.id} 
+                  batch={batch} 
+                  updating={updating} 
+                  onStartPrep={handleStartPrep} 
+                  onMarkReady={handleMarkReady} 
+                />
+              ))}
+            </div>
+          )}
         </section>
+      </div>
 
-        {/* PREPARING (active slots) */}
-        <section>
-          <h2 className="text-sm font-bold text-amber-700 uppercase tracking-wider mb-2 flex items-center gap-2">
-            <ChefHat className="w-4 h-4" />
-            {LABEL('preparing', lang)} ({byStatus.PREPARING.length})
-          </h2>
-          <ul className="space-y-3">
-            {byStatus.PREPARING.map((order) => {
-              const isUpdating = updating === order.id;
-              const pickup = formatPickup(order);
-              return (
-                <li
-                  key={order.id}
-                  className="bg-white rounded-2xl p-4 border-2 border-amber-300 flex flex-col gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-sm font-black text-textMain">#{order.id.slice(-8)}</p>
-                    <p className="text-xs text-textSecondary">{order.userName} · ₹{order.totalAmount}</p>
-                    <p className="text-xs text-textMain mt-1 font-medium">
-                      {order.items.map((i) => `${i.name} x${i.quantity}`).join(', ')}
-                    </p>
-                    {(order.estimatedReadyTime != null) && (
-                      <p className="text-[10px] text-amber-700 mt-1 font-bold">
-                        <CountdownLabel readyAtMs={order.estimatedReadyTime} lang={lang} />
-                      </p>
-                    )}
-                    {pickup && (
-                      <p className="text-[10px] text-amber-700 mt-0.5 font-bold">
-                        {LABEL('pickupWindow', lang)}: {pickup}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    disabled={isUpdating}
-                    onClick={() => setStatus(order.id, 'READY')}
-                    className="w-full py-4 rounded-xl bg-green-600 text-white text-base font-black uppercase tracking-wide flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
-                  >
-                    {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-                    {LABEL('ready', lang)}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-
-        {/* READY (waiting for student to scan QR) */}
-        <section>
-          <h2 className="text-sm font-bold text-green-700 uppercase tracking-wider mb-2 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            {LABEL('readyStatus', lang)} ({byStatus.READY.length})
-          </h2>
-          <ul className="space-y-3">
-            {byStatus.READY.map((order) => {
-              const pickup = formatPickup(order);
-              return (
-                <li
-                  key={order.id}
-                  className="bg-green-50 rounded-2xl p-4 border-2 border-green-400"
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-sm font-black text-textMain">#{order.id.slice(-8)}</p>
-                    <p className="text-xs text-textSecondary">{order.userName} · ₹{order.totalAmount}</p>
-                    <p className="text-xs text-textMain mt-1 font-medium">
-                      {order.items.map((i) => `${i.name} x${i.quantity}`).join(', ')}
-                    </p>
-                    {pickup && (
-                      <p className="text-[10px] text-green-700 mt-1 font-bold">
-                        {LABEL('pickupWindow', lang)}: {pickup}
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-xs text-green-700 font-bold mt-2">
-                    {lang === 'kn' ? 'ವಿದ್ಯಾರ್ಥಿ QR ಸ್ಕ್ಯಾನ್ ಮಾಡಲು ಕಾಯಿರಿ' : 'Waiting for student to scan QR'}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-textMain text-white p-4 flex justify-around items-center rounded-t-[2.5rem] shadow-2xl z-40">
+        <div className="text-center">
+            <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest">In Queue</p>
+            <p className="text-lg font-black">{byStatus.QUEUED.length}</p>
+        </div>
+        <div className="h-8 w-px bg-white/10" />
+        <div className="text-center">
+            <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Cooking</p>
+            <p className="text-lg font-black">{byStatus.PREPARING.length}</p>
+        </div>
+        <div className="h-8 w-px bg-white/10" />
+        <div className="text-center">
+            <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Ready</p>
+            <p className="text-lg font-black">{byStatus.READY.length}</p>
+        </div>
       </div>
     </div>
   );

@@ -36,8 +36,8 @@ export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJE
 /** Zero-wait: FAST_ITEM = instant serve at counter; PREPARATION_ITEM = kitchen flow + pickup window */
 export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
 
-/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. QUEUED = waiting for slot. */
-export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'READY' | 'SERVED';
+/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. QUEUED = waiting for slot. WAITING = timer expired. */
+export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'READY' | 'SERVED' | 'WAITING';
 
 /** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED (or EXPIRED) */
 export type QRState = 'ACTIVE' | 'SCANNED' | 'SERVED' | 'EXPIRED' | 'DESTROYED';
@@ -62,6 +62,10 @@ export interface Order {
   /** Pickup window (preparation items): milliseconds */
   pickupWindowStart?: number;
   pickupWindowEnd?: number;
+  /** Selected slot (dynamic items): e.g. 1230 for 12:30 PM. Stored as integer. */
+  arrivalTime?: number;
+  /** Link to batch preparation */
+  batchId?: string;
   estimatedReadyTime?: number;
   /** Set when pickup-reminder FCM was sent (scheduled function) */
   sentPickupReminderAt?: number;
@@ -92,6 +96,8 @@ export interface Order {
   confirmedAt?: number;
   rejectedBy?: string;
   rejectedAt?: number;
+  /** When the student was successfully alerted (deduplication) */
+  notifiedAt?: number;
 }
 
 export interface QRData {
@@ -191,4 +197,20 @@ export interface ServeLog {
   quantityServed: number;
   servedBy: string;
   servedAt: number;
+}
+
+export type PrepBatchStatus = 'QUEUED' | 'PREPARING' | 'READY' | 'COMPLETED';
+
+export interface PrepBatch {
+  id: string;
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  orderIds: string[];
+  /** Slot representation: e.g. 1100, 1115, 1130... */
+  arrivalTimeSlot: number;
+  status: PrepBatchStatus;
+  readyAt?: number;
+  createdAt: number;
+  updatedAt: number;
 }

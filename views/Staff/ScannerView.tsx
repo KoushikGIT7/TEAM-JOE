@@ -29,7 +29,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setScannedOrder(null);
 
     const rawData = prompt("JOE V2.0 Scanner Interface\nPaste QR Token Data:");
-    
+
     if (!rawData) {
       setScanning(false);
       return;
@@ -52,7 +52,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
 
   const handleServeOrder = async () => {
     if (!scannedOrder || !lastScannedRaw) return;
-    
+
     setServing(true);
     try {
       await scanAndServeOrder(lastScannedRaw, profile.uid);
@@ -73,7 +73,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
 
   const handleRejectOrder = async () => {
     if (!scannedOrder || !lastScannedRaw) return;
-    
+
     setRejecting(true);
     try {
       // For now, we just reset the terminal if they reject as per user flow
@@ -115,9 +115,9 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
                 <Smartphone className="w-7 h-7" />
               </div>
             </div>
-            
+
             <div className="text-center space-y-4">
-              <h2 className="text-4xl font-black tracking-tighter uppercase leading-none">Terminal<br/><span className="text-primary">Ready</span></h2>
+              <h2 className="text-4xl font-black tracking-tighter uppercase leading-none">Terminal<br /><span className="text-primary">Ready</span></h2>
               <p className="text-white/30 text-xs font-bold uppercase tracking-[0.2em] px-8">Align meal token in center of capture lens</p>
             </div>
 
@@ -135,20 +135,20 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
         {scannedOrder && (
           <div className="flex-1 flex flex-col space-y-6 animate-in slide-in-from-bottom-10 duration-500">
             <div className="text-center space-y-2">
-               <div className="inline-flex items-center gap-2 bg-success/20 text-success px-4 py-1.5 rounded-full border border-success/30">
-                  <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Token Authorized</span>
-               </div>
-               <h2 className="text-3xl font-black uppercase tracking-tighter">Order Contents</h2>
+              <div className="inline-flex items-center gap-2 bg-success/20 text-success px-4 py-1.5 rounded-full border border-success/30">
+                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Token Authorized</span>
+              </div>
+              <h2 className="text-3xl font-black uppercase tracking-tighter">Order Contents</h2>
             </div>
-            
+
             {/* LARGE ITEM VIEW */}
             <div className="flex-1 space-y-4">
               {scannedOrder.items.map((item) => (
                 <div key={item.id} className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden flex items-center p-3 gap-4">
                   <div className="w-28 h-28 rounded-3xl overflow-hidden bg-gray-900 flex-shrink-0 border border-white/10 shadow-inner">
-                    <img 
-                      src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'} 
+                    <img
+                      src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'}
                       alt={item.name}
                       className="w-full h-full object-cover"
                     />
@@ -157,8 +157,8 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
                     <p className="text-[10px] font-black text-primary uppercase tracking-[0.15em]">Prepare Now</p>
                     <h3 className="text-2xl font-black tracking-tight leading-tight">{item.name}</h3>
                     <div className="flex items-center gap-2 mt-2">
-                       <span className="text-3xl font-black text-white/90">x{item.quantity}</span>
-                       <span className="bg-white/10 px-3 py-0.5 rounded-lg text-[10px] font-black text-white/40 uppercase tracking-widest">Quantity</span>
+                      <span className="text-3xl font-black text-white/90">x{item.quantity}</span>
+                      <span className="bg-white/10 px-3 py-0.5 rounded-lg text-[10px] font-black text-white/40 uppercase tracking-widest">Quantity</span>
                     </div>
                   </div>
                 </div>
@@ -167,50 +167,49 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
 
             {/* ACTION FOOTER */}
             <div className="pt-4 space-y-4">
-                <div className="flex items-center gap-4 bg-white/5 p-5 rounded-3xl border border-white/10">
-                   <div className="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
-                      <User className="w-6 h-6 text-white" />
-                   </div>
-                   <div className="flex-1 overflow-hidden">
-                      <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Meal Provision For</p>
-                      <p className="font-bold text-xl truncate tracking-tight">{scannedOrder.userName}</p>
-                   </div>
+              <div className="flex items-center gap-4 bg-white/5 p-5 rounded-3xl border border-white/10">
+                <div className="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
+                  <User className="w-6 h-6 text-white" />
                 </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Meal Provision For</p>
+                  <p className="font-bold text-xl truncate tracking-tight">{scannedOrder.userName}</p>
+                </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    onClick={handleRejectOrder}
-                    disabled={rejecting || serving}
-                    className="bg-white/5 hover:bg-white/10 py-6 rounded-[2rem] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 border border-white/10 text-white/60"
-                  >
-                    {rejecting ? <RefreshCw className="animate-spin w-5 h-5" /> : <Trash2 className="w-5 h-5 text-error" />}
-                    Reject
-                  </button>
-                  <button
-                    onClick={handleServeOrder}
-                    disabled={serving || rejecting}
-                    className="bg-success hover:bg-success/90 py-6 rounded-[2rem] font-black uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-success/30 flex items-center justify-center gap-2"
-                  >
-                    {serving ? <RefreshCw className="animate-spin w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
-                    Serve
-                  </button>
-                </div>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={handleRejectOrder}
+                  disabled={rejecting || serving}
+                  className="bg-white/5 hover:bg-white/10 py-6 rounded-[2rem] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 border border-white/10 text-white/60"
+                >
+                  {rejecting ? <RefreshCw className="animate-spin w-5 h-5" /> : <Trash2 className="w-5 h-5 text-error" />}
+                  Reject
+                </button>
+                <button
+                  onClick={handleServeOrder}
+                  disabled={serving || rejecting}
+                  className="bg-success hover:bg-success/90 py-6 rounded-[2rem] font-black uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-success/30 flex items-center justify-center gap-2"
+                >
+                  {serving ? <RefreshCw className="animate-spin w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                  Serve
+                </button>
+              </div>
             </div>
           </div>
         )}
 
         {result && (
           <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-300">
-            <div className={`w-32 h-32 rounded-[3rem] flex items-center justify-center shadow-2xl ${
-              result.type === 'SUCCESS' ? 'bg-success shadow-success/40' : 'bg-error shadow-error/40'
-            }`}>
+            <div className={`w-32 h-32 rounded-[3rem] flex items-center justify-center shadow-2xl ${result.type === 'SUCCESS' ? 'bg-success shadow-success/40' : 'bg-error shadow-error/40'
+              }`}>
               {result.type === 'SUCCESS' ? (
                 <CheckCircle className="w-16 h-16 text-white" />
               ) : (
                 <AlertCircle className="w-16 h-16 text-white" />
               )}
             </div>
-            
+
             <div className="text-center space-y-3">
               <h2 className={`text-5xl font-black tracking-tighter uppercase ${result.type === 'SUCCESS' ? 'text-success' : 'text-error'}`}>
                 {result.type === 'SUCCESS' ? 'Ready' : 'Rejected'}

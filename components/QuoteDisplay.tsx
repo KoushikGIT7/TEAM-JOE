@@ -5,12 +5,13 @@ import { Order } from '../types';
 interface QuoteDisplayProps {
   order: Order | null;
   orderCount: number;
+  forceRevenge?: boolean;
 }
 
-const QuoteDisplay: React.FC<QuoteDisplayProps> = ({ order, orderCount }) => {
-  const { quote, isSpecial, loading } = useSmartQuote(order, orderCount);
+const QuoteDisplay: React.FC<QuoteDisplayProps> = ({ order, orderCount, forceRevenge = false }) => {
+  const { quote, isSpecial } = useSmartQuote(order, orderCount, forceRevenge);
 
-  if (loading || !quote) return null;
+  if (!quote) return null;
 
   return (
     <div className="w-full mt-8 flex flex-col items-center justify-center -mb-2">

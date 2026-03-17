@@ -244,10 +244,13 @@ export const parseQRPayload = async (qrString: string): Promise<{
   expiresAt: number;
   version: string;
 } | null> => {
+  if (!qrString) return null;
+  const trimmedData = qrString.trim();
+
   try {
-    // Check if it matches new dot-separated format
-    if (qrString.startsWith('v1.')) {
-      const parts = qrString.split('.');
+    // 1. Check if it matches new dot-separated format (Compact)
+    if (trimmedData.startsWith('v1.')) {
+      const parts = trimmedData.split('.');
       if (parts.length === 4) {
         return {
           version: parts[0],
@@ -258,30 +261,43 @@ export const parseQRPayload = async (qrString: string): Promise<{
       }
     }
     
-    // Fallback to legacy JSON/Encrypted formats (for transition)
-    let payload = qrString;
-    if (!qrString.trim().startsWith('{')) {
+    // 2. Identify and handle JSON formats (Legacy/Manual)
+    let payload = trimmedData;
+    const isJson = trimmedData.startsWith('{') && trimmedData.endsWith('}');
+    
+    if (!isJson) {
+      // Try decrypting - decryptData returns original string if it fails
       try {
-        payload = await decryptData(qrString);
+        payload = await decryptData(trimmedData);
       } catch (e) {
         return null;
       }
     }
     
-    const parsed = JSON.parse(payload);
-    if (!parsed.orderId || !parsed.secureHash) return null;
+    // Final check for JSON after decryption
+    if (payload.trim().startsWith('{')) {
+      const parsed = JSON.parse(payload);
+      // Support multiple naming conventions for orderId/secureHash
+      const orderId = parsed.orderId || parsed.id;
+      const secureHash = parsed.secureHash || parsed.hash || parsed.token;
+      
+      if (!orderId || !secureHash) return null;
+      
+      return {
+        orderId,
+        secureHash,
+        expiresAt: parsed.expiresAt || parsed.expiry || 0,
+        version: parsed.v || 'legacy'
+      };
+    }
     
-    return {
-      orderId: parsed.orderId,
-      secureHash: parsed.secureHash,
-      expiresAt: parsed.expiresAt || 0,
-      version: parsed.v || 'legacy'
-    };
+    return null;
   } catch (err) {
     console.error('QR Parse Error:', err);
     return null;
   }
 };
+
 
 /**
  * Check if QR code is expired
