@@ -22,7 +22,7 @@ export const useOrderNotifications = (userId: string | null) => {
         const q = query(
             collection(db, 'orders'),
             where('userId', '==', userId),
-            where('orderStatus', 'in', ['PENDING', 'ACCEPTED', 'REJECTED'])
+            where('orderStatus', 'in', ['PENDING', 'PAID', 'REJECTED'])
         );
 
         const unsub = onSnapshot(q, (snapshot) => {
