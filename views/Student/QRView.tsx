@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, CheckCircle2, Info, Share2, Clock, Loader2, AlertCircle, ChefHat, Timer, ChevronRight, Zap, Sparkles, Flame, XCircle } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Info, Share2, Clock, Loader2, AlertCircle, ChefHat, Timer, ChevronRight, Zap, Sparkles, Flame, XCircle, ArrowRight } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order } from '../../types';
@@ -134,163 +134,136 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-[#F8FAFC] max-w-md mx-auto relative overflow-x-hidden pb-12">
-      {/* Background Decor */}
-      <div className="absolute top-0 left-0 right-0 h-[40vh] bg-primary/5 -skew-y-6 -mt-32 -z-10" />
+    <div className="min-h-screen w-full flex flex-col bg-[#020202] text-white max-w-md mx-auto relative overflow-x-hidden font-sans pb-12">
+      {/* Background Glow */}
+      <div className={`absolute top-0 left-0 right-0 h-[30vh] blur-[120px] -z-10 transition-colors duration-1000 ${
+        isAbandoned ? 'bg-red-500/20' :
+        isMissed ? 'bg-amber-500/20' :
+        flow === 'READY' ? 'bg-green-500/30' :
+        'bg-primary/20'
+      }`} />
       
-      <header className="px-6 py-6 flex items-center justify-between">
-          <button onClick={onBack} className="p-3.5 bg-white rounded-2xl border border-black/5 shadow-sm active:scale-90 transition-all">
-            <ChevronLeft className="w-5 h-5" />
+      <header className="px-8 py-8 flex items-center justify-between">
+          <button onClick={onBack} className="p-4 bg-white/5 rounded-2xl border border-white/10 active:scale-90 transition-all">
+            <ChevronLeft className="w-5 h-5 text-white" />
           </button>
           <div className="text-right">
-              <p className="text-[9px] font-black text-textSecondary uppercase tracking-widest">Active Token</p>
-              <p className="text-sm font-black text-textMain">#{order.id.slice(-6).toUpperCase()}</p>
+              <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-1">Authenticated</p>
+              <p className="text-xl font-black text-white italic tracking-tighter">#{order.id.slice(-6).toUpperCase()}</p>
           </div>
       </header>
 
-      <div className="flex-1 px-6 space-y-6">
-        {/* Real-time Ticker / Status Banner */}
-        <div className={`rounded-[2.5rem] p-6 border-2 transition-all duration-700 shadow-xl ${
-            isMissed ? 'bg-amber-50 border-amber-500/30' :
-            flow === 'READY' ? 'bg-green-50 border-green-500/30 animate-pulse-slow' :
-            flow === 'ALMOST_READY' ? 'bg-orange-50 border-orange-500/30' :
-            flow === 'QUEUED' || flow === 'PREPARING' ? 'bg-blue-50 border-blue-500/20' :
-            'bg-white border-primary/20'
+      <div className="flex-1 px-8 space-y-8">
+        {/* ⚡ HERO STATUS SECTION */}
+        <section className={`rounded-[3.5rem] p-10 border-2 transition-all duration-700 relative overflow-hidden ${
+            isMissed ? 'bg-amber-500/5 border-amber-500/40' :
+            flow === 'READY' ? 'bg-green-500/10 border-green-500/60 shadow-[0_0_80px_rgba(34,197,94,0.2)]' :
+            flow === 'ALMOST_READY' ? 'bg-orange-500/10 border-orange-500/40' :
+            'bg-white/5 border-white/10'
         }`}>
-            <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-3">
-                    <div className={`p-3 rounded-2xl ${
-                        isMissed ? 'bg-amber-500 text-white' :
-                        flow === 'READY' ? 'bg-green-500 text-white' :
-                        flow === 'ALMOST_READY' ? 'bg-orange-500 text-white' :
-                        'bg-primary/10 text-primary'
-                    }`}>
-                        {isMissed ? <Clock className="w-5 h-5" /> :
-                         flow === 'READY' ? <Sparkles className="w-5 h-5" /> :
-                         flow === 'ALMOST_READY' ? <Flame className="w-5 h-5" /> :
-                         <ChefHat className="w-5 h-5" />}
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-black tracking-tighter">
-                            {isMissed ? 'Re-preparing...' :
-                             flow === 'READY' ? 'Serving Station' :
-                             flow === 'ALMOST_READY' ? 'Plating Item...' :
-                             flow === 'PREPARING' ? 'Cooking Now' :
-                             'Preparing Order'}
-                        </h3>
-                        <p className="text-[10px] font-black text-textSecondary/60 uppercase tracking-widest leading-none mt-1">
-                            {isMissed ? 'Token valid for next batch' :
-                             flow === 'READY' ? 'Items at the counter' :
-                             flow === 'ALMOST_READY' ? 'Move to pickup zone' :
-                             'Chef is processing batch'}
-                        </p>
-                    </div>
+            {flow === 'READY' && (
+                <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-green-500/20 blur-[80px] rounded-full animate-pulse" />
+            )}
+
+            <div className="flex flex-col items-center text-center relative z-10">
+                <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-6 ${
+                    isMissed ? 'bg-amber-500 shadow-amber-500/40 shadow-2xl' :
+                    flow === 'READY' ? 'bg-green-500 shadow-green-500/40 shadow-2xl animate-bounce' :
+                    'bg-primary shadow-primary/40 shadow-2xl'
+                }`}>
+                    {isMissed ? <Clock className="w-10 h-10 text-white" /> :
+                     flow === 'READY' ? <Zap className="w-10 h-10 text-white fill-current" /> :
+                     <ChefHat className="w-10 h-10 text-white" />}
                 </div>
+
+                <h2 className={`text-5xl font-black tracking-tighter mb-2 italic ${
+                    isMissed ? 'text-amber-500' :
+                    flow === 'READY' ? 'text-green-500 uppercase scale-110 transition-transform' :
+                    'text-white'
+                }`}>
+                    {isMissed ? 'Missed it!' :
+                     flow === 'READY' ? 'GO COLLECT!' :
+                     flow === 'ALMOST_READY' ? 'Almost There' :
+                     'Preparing...'}
+                </h2>
+                
+                <p className="text-xs font-black text-gray-500 uppercase tracking-widest px-4 leading-relaxed">
+                    {isMissed ? 'Waiting for the next batch reassignment' :
+                     flow === 'READY' ? 'Items are at the counter, show QR now.' :
+                     flow === 'ALMOST_READY' ? 'Items are being plated by the chef.' :
+                     'Your order is in the kitchen workflow.'}
+                </p>
+
                 {timeLeft && !isMissed && (
-                    <div className="bg-white/80 px-3 py-1.5 rounded-xl border border-black/5 shadow-sm">
-                        <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">Pickup Timer</p>
-                        <p className="text-xs font-black text-red-600 font-mono">{timeLeft}</p>
+                    <div className="mt-8 flex flex-col items-center">
+                        <span className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] mb-2">Window Closes In</span>
+                        <div className="bg-white/5 px-8 py-4 rounded-[2rem] border border-white/10 shadow-inner">
+                            <p className="text-6xl font-black font-mono tracking-tighter text-red-500 animate-pulse">{timeLeft}</p>
+                        </div>
                     </div>
                 )}
             </div>
-            
-            {isMissed && (
-                <div className="mt-4 p-4 bg-amber-100/50 rounded-2xl border border-amber-200">
-                    <p className="text-[11px] font-bold text-amber-800 leading-snug">
-                       🕙 Window missed. Your QR is still active. Please wait while we prepare your items in another batch or talk to staff.
-                    </p>
-                </div>
-            )}
-        </div>
+        </section>
 
-        {/* QR Engine */}
-        {qrString && (
-            <div className={`bg-white rounded-[3rem] p-10 shadow-2xl shadow-primary/5 flex flex-col items-center group transition-opacity duration-500 ${isMissed ? 'opacity-40 hover:opacity-100' : ''}`}>
-                <div className="p-4 bg-white rounded-[2rem] border-4 border-slate-900 group-active:scale-95 transition-all duration-500 mb-8 relative">
-                    <QRCodeSVG value={qrString} size={200} />
-                    <div className={`absolute -top-2 -right-2 w-8 h-8 rounded-full flex items-center justify-center text-white border-4 border-white ${isMissed ? 'bg-amber-500' : 'bg-primary'}`}>
-                        {isMissed ? <Clock className="w-4 h-4" /> : <Zap className="w-4 h-4 fill-current" />}
-                    </div>
+        {/* 🏁 SCAN ENGINE */}
+        <div className={`bg-[#0A0A0A] rounded-[4rem] p-12 border border-white/5 flex flex-col items-center gap-10 shadow-2xl transition-all duration-700 ${
+            flow !== 'READY' && !isMissed ? 'opacity-20 translate-y-8 grayscale' : 'opacity-100 translate-y-0 grayscale-0'
+        }`}>
+            <div className="p-6 bg-white rounded-[3rem] shadow-[0_0_60px_rgba(255,255,255,0.1)] relative group">
+                {qrString ? <QRCodeSVG value={qrString} size={220} level="H" /> : <Loader2 className="w-16 h-16 animate-spin text-gray-200" />}
+                {flow === 'READY' && (
+                    <div className="absolute -top-4 -right-4 bg-green-500 text-white p-4 rounded-full border-8 border-[#0A0A0A] animate-ping" />
+                )}
+            </div>
+            
+            <div className="flex w-full items-center justify-center gap-12 border-t border-white/5 pt-10">
+                <div className="text-center">
+                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-1">Bill</p>
+                    <p className="text-3xl font-black italic text-white/90">₹{order.totalAmount}</p>
                 </div>
-                <div className="flex gap-10">
-                    <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Amount</p>
-                        <p className="text-lg font-black italic">₹{order.totalAmount}</p>
-                    </div>
-                    <div className="w-px h-8 bg-slate-100" />
-                    <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Status</p>
-                        <p className={`text-lg font-black italic ${isMissed ? 'text-amber-500' : 'text-primary'}`}>{isMissed ? 'PENDING' : 'VALID'}</p>
-                    </div>
+                <div className="w-px h-10 bg-white/10" />
+                <div className="text-center">
+                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-1">State</p>
+                    <p className={`text-3xl font-black italic ${isMissed ? 'text-amber-500' : 'text-green-500'}`}>VALID</p>
                 </div>
             </div>
-        )}
+        </div>
 
-        {/* Individual Item Tracker List */}
-        <div className="space-y-3">
-            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] px-2 mb-4 flex items-center gap-3">
-                <div className="w-1 h-3 bg-primary rounded-full" /> Full Tracking Detail
-            </h4>
+        {/* 📋 MINI TRACKER */}
+        <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] px-4">Item Status</h3>
             {order.items.map((item, idx) => {
-                const remaining = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
-                const isFullyServed = remaining <= 0;
-                
+                const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
+                const done = rem <= 0;
                 return (
-                    <div key={idx} className={`rounded-[2rem] p-5 border-2 transition-all duration-500 flex items-center justify-between ${
-                        isFullyServed ? 'bg-slate-100 border-transparent opacity-50' :
-                        isMissed ? 'bg-amber-50 border-amber-500/10' :
-                        flow === 'READY' ? 'bg-green-50 border-green-500/20' :
-                        'bg-white border-white shadow-sm'
+                    <div key={idx} className={`p-6 rounded-[2.5rem] border-2 flex items-center justify-between transition-all duration-500 ${
+                        done ? 'bg-green-500/5 border-transparent opacity-30 grayscale' :
+                        'bg-white/5 border-white/5 shadow-xl'
                     }`}>
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-black/5 overflow-hidden flex-shrink-0">
+                        <div className="flex items-center gap-5">
+                            <div className="w-14 h-14 rounded-2xl overflow-hidden border border-white/10">
                                 <img src={item.imageUrl} className="w-full h-full object-cover" alt={item.name} />
                             </div>
                             <div>
-                                <h5 className="font-black text-sm text-slate-900">{item.name}</h5>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[10px] font-bold text-slate-400">Qty: {item.quantity}</span>
-                                    {!isFullyServed && (
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-1 h-1 rounded-full bg-slate-300" />
-                                            <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                                isMissed ? 'text-amber-600' :
-                                                flow === 'READY' ? 'text-green-600' :
-                                                flow === 'ALMOST_READY' ? 'text-orange-500' :
-                                                'text-primary animate-pulse'
-                                            }`}>
-                                                {isMissed ? 'MISSED' : flow === 'READY' ? 'READY' : flow === 'ALMOST_READY' ? 'PLATING' : 'COOKING'}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
+                                <h4 className="font-black text-lg tracking-tight italic">{item.name}</h4>
+                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Qty: {item.quantity}</p>
                             </div>
                         </div>
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                             isFullyServed ? 'text-green-600 bg-green-100/50' :
-                             isMissed ? 'text-amber-600 bg-amber-500/10' :
-                             flow === 'READY' ? 'text-green-600 bg-green-500/10' :
-                             'text-slate-200'
-                        }`}>
-                            {isFullyServed ? <CheckCircle2 className="w-6 h-6" /> : 
-                             isMissed ? <Clock className="w-5 h-5" /> :
-                             flow === 'READY' ? <Sparkles className="w-5 h-5 animate-pulse" /> : 
-                             <div className="w-4 h-4 border-2 border-slate-200 border-t-primary rounded-full animate-spin" />}
-                        </div>
+                        {done ? <CheckCircle2 className="w-8 h-8 text-green-500" /> : <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
                     </div>
                 );
             })}
         </div>
-        
+
         <QuoteDisplay order={order} orderCount={orderCount} />
 
-        <div className="pt-6">
-           <button 
-             onClick={() => onViewOrders ? onViewOrders() : onBack()}
-             className="w-full py-5 bg-slate-900 text-white font-black rounded-3xl active:scale-95 transition-all text-[10px] uppercase tracking-widest border-2 border-slate-900 hover:bg-white hover:text-slate-900 flex items-center justify-center gap-3"
-           >
-             Continue Exploring <ChevronRight className="w-4 h-4" />
-           </button>
+        <div className="pt-10">
+            <button 
+                onClick={() => onViewOrders ? onViewOrders() : onBack()}
+                className="w-full h-24 bg-white text-black font-black uppercase tracking-[0.4em] text-xs rounded-[2.5rem] active:scale-95 transition-all shadow-[0_0_50px_rgba(255,255,255,0.1)] flex items-center justify-center gap-4"
+            >
+                Explore More <ArrowRight className="w-5 h-5" />
+            </button>
         </div>
       </div>
     </div>
