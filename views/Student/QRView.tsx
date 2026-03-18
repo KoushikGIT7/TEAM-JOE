@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order } from '../../types';
@@ -7,6 +7,7 @@ import { shouldShowQR, getOrderUIState } from '../../utils/orderLifecycle';
 import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { generateQRPayloadSync } from '../../services/qr';
+import QuoteDisplay from '../../components/QuoteDisplay';
 
 interface QRViewProps {
   orderId: string;
@@ -14,24 +15,27 @@ interface QRViewProps {
   onViewOrders?: () => void;
 }
 
-// ─── Minimal status config ────────────────────────────────────────────────────
-const STATUS_CONFIG = {
-  READY:        { label: 'COLLECT NOW',    sub: 'Show this QR at the counter',      color: '#22c55e', bg: '#052e16' },
-  ALMOST_READY: { label: 'ALMOST READY',   sub: 'Head to the counter shortly',       color: '#f97316', bg: '#1c0a00' },
-  PREPARING:    { label: 'PREPARING',      sub: 'Your order is being cooked',        color: '#94a3b8', bg: '#0f0f0f' },
-  MISSED:       { label: 'PICKUP MISSED',  sub: 'Reassigned to next available slot', color: '#f59e0b', bg: '#1c1000' },
-  SERVED:       { label: 'ORDER SERVED',   sub: 'Thank you! Enjoy your meal',        color: '#22c55e', bg: '#052e16' },
-  DEFAULT:      { label: 'IN QUEUE',       sub: 'Waiting for the kitchen',           color: '#64748b', bg: '#0f0f0f' },
+// ─── Status configuration ────────────────────────────────────────────────────
+const STATUS: Record<string, { label: string; sub: string; icon: React.FC<any>; color: string; bg: string; border: string }> = {
+  READY:        { label: 'Ready — Collect Now',    sub: 'Head to the counter and show this QR code.',         icon: Zap,        color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  ALMOST_READY: { label: 'Almost Ready',           sub: 'Your order is being plated. Head over soon.',         icon: Clock,      color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+  PREPARING:    { label: 'Preparing Your Order',   sub: 'The kitchen is working on it.',                       icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  MISSED:       { label: 'Pickup Missed',          sub: 'Reassigned to the next available slot.',              icon: Clock,      color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  SERVED:       { label: 'Order Served',           sub: 'Thank you! Enjoy your meal. 🎉',                     icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  NEW:          { label: 'Order Confirmed',        sub: 'Waiting to be scheduled for preparation.',            icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  DEFAULT:      { label: 'Order Confirmed',        sub: 'Sit tight — we\'ll notify you when it\'s ready.',    icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
 };
 
 const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
-  const [order, setOrder]     = useState<Order | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [order, setOrder]       = useState<Order | null>(null);
+  const [loading, setLoading]   = useState(true);
   const [qrString, setQrString] = useState<string | null>(null);
-  const qrGeneratedRef        = useRef(false);
+  const qrRef                   = useRef(false);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
+  const [orderCount, setOrderCount] = useState(1);
+  const prevFlow = useRef<string>('');
 
-  // ── Order Listener ───────────────────────────────────────────────────────
+  // ── Order listener ───────────────────────────────────────────────────────
   useEffect(() => {
     const unsub = listenToOrder(orderId, (data) => {
       setOrder(data);
@@ -39,22 +43,14 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       if (!data) { setQrString(null); return; }
 
       if (shouldShowQR(data)) {
-        if (data.qr?.token) {
-          setQrString(data.qr.token);
-          qrGeneratedRef.current = true;
-          return;
-        }
-        if (!qrGeneratedRef.current) {
+        if (data.qr?.token) { setQrString(data.qr.token); qrRef.current = true; return; }
+        if (!qrRef.current) {
           try {
             const qr = generateQRPayloadSync(data);
             setQrString(qr);
-            qrGeneratedRef.current = true;
+            qrRef.current = true;
             (async () => {
-              try {
-                await updateDoc(doc(db, 'orders', data.id), {
-                  qr: { token: qr, status: 'ACTIVE', createdAt: serverTimestamp() }
-                });
-              } catch (_) {}
+              try { await updateDoc(doc(db, 'orders', data.id), { qr: { token: qr, status: 'ACTIVE', createdAt: serverTimestamp() } }); } catch (_) {}
             })();
           } catch (_) { setQrString(null); }
         }
@@ -65,14 +61,13 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     return unsub;
   }, [orderId]);
 
-  // ── Pickup Timer ─────────────────────────────────────────────────────────
+  // ── Pickup timer ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const isCollecting = order?.pickupWindow?.status === 'COLLECTING';
-    const endTime = order?.pickupWindow?.endTime;
-    if (!isCollecting || !endTime) { setTimeLeft(null); return; }
-
+    const collecting = order?.pickupWindow?.status === 'COLLECTING';
+    const end = order?.pickupWindow?.endTime;
+    if (!collecting || !end) { setTimeLeft(null); return; }
     const tick = () => {
-      const diff = endTime - Date.now();
+      const diff = end - Date.now();
       if (diff <= 0) { setTimeLeft('0:00'); return; }
       const m = Math.floor(diff / 60000);
       const s = Math.floor((diff % 60000) / 1000);
@@ -84,59 +79,67 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   }, [order?.pickupWindow?.status, order?.pickupWindow?.endTime]);
 
   // ── Haptic on READY ──────────────────────────────────────────────────────
-  const prevFlow = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (order?.serveFlowStatus === 'READY' && prevFlow.current !== 'READY') {
-      if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+    const flow = order?.serveFlowStatus || '';
+    if (flow === 'READY' && prevFlow.current !== 'READY') {
+      if ('vibrate' in navigator) navigator.vibrate([150, 80, 150]);
     }
-    prevFlow.current = order?.serveFlowStatus;
+    prevFlow.current = flow;
   }, [order?.serveFlowStatus]);
+
+  // ── Order count ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!orderId) return;
+    const h = JSON.parse(localStorage.getItem('joe_order_history') || '[]');
+    if (!h.includes(orderId)) { h.push(orderId); localStorage.setItem('joe_order_history', JSON.stringify(h)); }
+    setOrderCount(h.length);
+  }, [orderId]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-[#080808]">
-        <Loader2 className="w-8 h-8 animate-spin text-white/20" />
+      <div className="h-screen w-full flex items-center justify-center bg-white">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#080808] p-8 text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-        <p className="text-white font-black">Order not found.</p>
-        <button onClick={onBack} className="mt-6 text-white/40 text-sm underline">Go Back</button>
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-white p-8 text-center">
+        <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+        <p className="font-semibold text-gray-700">Order not found.</p>
+        <button onClick={onBack} className="mt-4 text-sm text-gray-400 underline">Go Back</button>
       </div>
     );
   }
 
-  // ── Terminal States ──────────────────────────────────────────────────────
-  const uiState   = getOrderUIState(order);
+  // ── Terminal states ──────────────────────────────────────────────────────
+  const uiState    = getOrderUIState(order);
   const isAbandoned = uiState === 'ABANDONED';
   const isRejected  = order.orderStatus === 'REJECTED';
 
   if (isRejected || isAbandoned) {
     return (
-      <div className="h-screen w-full flex flex-col bg-[#080808] max-w-md mx-auto px-8">
-        <div className="pt-10 pb-4">
-          <button onClick={onBack} className="p-3 rounded-2xl bg-white/5 border border-white/10 active:scale-90 transition-all">
-            <ChevronLeft className="w-5 h-5 text-white" />
+      <div className="h-screen w-full flex flex-col bg-white max-w-md mx-auto">
+        <div className="px-6 pt-10 pb-4">
+          <button onClick={onBack} className="p-2.5 rounded-xl border border-gray-200 bg-gray-50 active:scale-95 transition-all">
+            <ChevronLeft className="w-5 h-5 text-gray-500" />
           </button>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-8 ${isRejected ? 'bg-red-500/10' : 'bg-amber-500/10'}`}>
-            <XCircle className={`w-10 h-10 ${isRejected ? 'text-red-500' : 'text-amber-500'}`} />
+        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 ${isRejected ? 'bg-red-50' : 'bg-amber-50'}`}>
+            <XCircle className={`w-8 h-8 ${isRejected ? 'text-red-500' : 'text-amber-500'}`} />
           </div>
-          <h2 className="text-3xl font-black text-white tracking-tighter mb-3">
+          <h2 className="text-2xl font-bold text-gray-900 mb-3 tracking-tight">
             {isRejected ? 'Order Rejected' : 'Order Abandoned'}
           </h2>
-          <p className="text-white/40 text-sm leading-relaxed max-w-xs">
+          <p className="text-gray-500 text-sm leading-relaxed max-w-xs">
             {isRejected
-              ? 'The kitchen could not process this order. Contact the cashier for a refund.'
-              : 'Pickup window was missed multiple times. This token is expired.'}
+              ? 'The kitchen could not process this order. Please contact the cashier for a refund.'
+              : 'Pickup window was missed multiple times. This token has expired.'}
           </p>
-          <button onClick={onBack} className="mt-10 w-full py-5 rounded-3xl bg-white text-black font-black text-xs uppercase tracking-widest active:scale-95 transition-all">
+          <button onClick={onBack} className="mt-8 w-full py-4 rounded-2xl bg-gray-900 text-white font-semibold text-sm active:scale-95 transition-all">
             Return to Menu
           </button>
         </div>
@@ -144,122 +147,116 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     );
   }
 
-  // ── Derive Status ────────────────────────────────────────────────────────
-  const flow = order.serveFlowStatus || 'DEFAULT';
-  const isMissed  = uiState === 'MISSED';
-  const isServed  = order.orderStatus === 'SERVED';
-  const isReady   = flow === 'READY' && !isMissed;
+  // ── Resolve status ───────────────────────────────────────────────────────
+  const flow    = order.serveFlowStatus || 'DEFAULT';
+  const isMissed = uiState === 'MISSED';
+  const isServed = order.orderStatus === 'SERVED';
+  const statusKey = isServed ? 'SERVED' : isMissed ? 'MISSED' : STATUS[flow] ? flow : 'DEFAULT';
+  const s = STATUS[statusKey] || STATUS.DEFAULT;
+  const Icon = s.icon;
+  const isReady = statusKey === 'READY';
 
-  const statusKey = isServed ? 'SERVED' : isMissed ? 'MISSED' : (STATUS_CONFIG as any)[flow] ? flow : 'DEFAULT';
-  const { label, sub, color, bg } = (STATUS_CONFIG as any)[statusKey] || STATUS_CONFIG.DEFAULT;
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Main render ──────────────────────────────────────────────────────────
   return (
-    <div
-      className="min-h-screen w-full max-w-md mx-auto flex flex-col font-sans"
-      style={{ background: '#080808', color: '#fff' }}
-    >
-      {/* ── Header: back + order ID ── */}
-      <div className="flex items-center justify-between px-6 pt-8 pb-4">
+    <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans pb-10">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-5 pt-8 pb-2">
         <button
           onClick={onBack}
-          className="p-3 rounded-2xl active:scale-90 transition-all"
-          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+          className="p-2.5 rounded-xl border border-gray-200 bg-gray-50 active:scale-95 transition-all"
         >
-          <ChevronLeft className="w-5 h-5 text-white" />
+          <ChevronLeft className="w-5 h-5 text-gray-500" />
         </button>
-        <span className="text-[11px] font-black uppercase tracking-[0.35em]" style={{ color: 'rgba(255,255,255,0.25)' }}>
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
           #{order.id.slice(-6).toUpperCase()}
         </span>
       </div>
 
-      {/* ── Status Line ── */}
-      <div className="px-6 pb-1 text-center">
-        <p
-          className="text-[11px] font-black uppercase tracking-[0.4em]"
-          style={{ color }}
+      {/* ── Status Badge ── */}
+      <div className="px-5 pt-4 pb-2">
+        <div
+          className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
+          style={{ background: s.bg, border: `1px solid ${s.border}` }}
         >
-          {label}
-        </p>
+          <Icon className="w-4 h-4 flex-shrink-0" style={{ color: s.color }} />
+          <div className="min-w-0">
+            <p className="text-sm font-bold leading-tight" style={{ color: s.color }}>{s.label}</p>
+            <p className="text-xs text-gray-500 leading-snug mt-0.5 truncate">{s.sub}</p>
+          </div>
+          {/* Timer inline when READY */}
+          {isReady && timeLeft && (
+            <span className="ml-auto text-lg font-bold font-mono flex-shrink-0" style={{ color: s.color }}>
+              {timeLeft}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ── Timer (READY only) ── */}
-      {isReady && timeLeft && (
-        <div className="text-center pb-2">
-          <span
-            className="text-5xl font-black font-mono tracking-tighter"
-            style={{ color }}
-          >
-            {timeLeft}
-          </span>
-        </div>
-      )}
-
-      {/* ── QR Code Block (~70% of screen) ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8">
+      {/* ── QR Code (main focus) ── */}
+      <div className="px-5 pt-3 flex-1 flex flex-col items-center justify-center">
         <div
-          className="w-full aspect-square max-w-[340px] rounded-[3rem] flex items-center justify-center relative"
+          className="w-full rounded-3xl flex items-center justify-center relative"
           style={{
-            background: bg,
-            border: `2px solid ${color}22`,
-            boxShadow: isReady ? `0 0 80px ${color}30` : 'none',
-            transition: 'box-shadow 0.8s ease',
+            padding: '24px',
+            background: isReady ? s.bg : '#f8fafc',
+            border: `2px solid ${isReady ? s.border : '#e2e8f0'}`,
+            aspectRatio: '1',
+            maxWidth: '340px',
+            margin: '0 auto',
+            transition: 'border-color 0.4s, background 0.4s',
           }}
         >
-          {/* Ready pulse ring */}
-          {isReady && (
-            <div
-              className="absolute inset-0 rounded-[3rem] animate-ping"
-              style={{ border: `2px solid ${color}`, opacity: 0.15 }}
-            />
-          )}
-
-          <div className="p-6 bg-white rounded-[2.5rem] shadow-2xl relative">
+          {/* QR or loader */}
+          <div className="bg-white rounded-2xl p-3 shadow-sm relative">
             {qrString
-              ? <QRCodeSVG value={qrString} size={240} level="H" />
-              : <div className="w-60 h-60 flex items-center justify-center">
-                  <Loader2 className="w-10 h-10 animate-spin" style={{ color }} />
+              ? <QRCodeSVG value={qrString} size={252} level="H" />
+              : <div className="w-[252px] h-[252px] flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
                 </div>
             }
-
-            {/* Served checkmark overlay */}
+            {/* Served overlay */}
             {isServed && (
-              <div className="absolute inset-0 rounded-[2.5rem] bg-white/90 flex items-center justify-center">
-                <CheckCircle2 className="w-20 h-20 text-green-500" />
+              <div className="absolute inset-0 bg-white/95 rounded-2xl flex items-center justify-center">
+                <CheckCircle2 className="w-16 h-16 text-green-500" />
               </div>
             )}
           </div>
+
+          {/* Green dot pulse on READY */}
+          {isReady && (
+            <span
+              className="absolute top-3 right-3 w-3 h-3 rounded-full animate-pulse"
+              style={{ background: s.color }}
+            />
+          )}
         </div>
 
-        {/* ── Instruction Line ── */}
-        <p
-          className="mt-6 text-[11px] font-black uppercase tracking-[0.35em] text-center"
-          style={{ color: 'rgba(255,255,255,0.2)' }}
-        >
-          {sub}
+        {/* ── Instruction line ── */}
+        <p className="text-xs text-gray-400 text-center mt-4 tracking-wide">
+          {isServed ? 'This token has been used.' : 'Show this code to the server at the counter.'}
         </p>
       </div>
 
-      {/* ── Item Served Indicators (compact, bottom) ── */}
-      <div className="px-6 pb-4 space-y-2">
+      {/* ── Item status (compact) ── */}
+      <div className="px-5 pt-5 space-y-2">
         {order.items.map((item, idx) => {
           const rem  = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
           const done = rem <= 0;
           return (
             <div
               key={idx}
-              className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
               style={{
-                background: done ? 'rgba(34,197,94,0.05)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${done ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.05)'}`,
-                opacity: done ? 0.5 : 1,
+                background: done ? '#f0fdf4' : '#f8fafc',
+                border: `1px solid ${done ? '#bbf7d0' : '#e2e8f0'}`,
               }}
             >
-              <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200">
                 <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
               </div>
-              <span className="flex-1 text-sm font-black tracking-tight truncate">{item.name}</span>
-              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: done ? '#22c55e' : 'rgba(255,255,255,0.3)' }}>
+              <span className="flex-1 text-sm font-medium text-gray-700 truncate">{item.name}</span>
+              <span className="text-xs font-semibold" style={{ color: done ? '#16a34a' : '#94a3b8' }}>
                 {done ? '✓ served' : `×${item.quantity}`}
               </span>
             </div>
@@ -267,12 +264,16 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         })}
       </div>
 
-      {/* ── Bottom Action ── */}
-      <div className="px-6 pb-10">
+      {/* ── Quote (gold, subtle) ── */}
+      <div className="px-5 pt-4">
+        <QuoteDisplay order={order} orderCount={orderCount} />
+      </div>
+
+      {/* ── Bottom action ── */}
+      <div className="px-5 pt-5">
         <button
           onClick={() => onViewOrders ? onViewOrders() : onBack()}
-          className="w-full py-4 rounded-3xl font-black text-xs uppercase tracking-[0.35em] active:scale-95 transition-all"
-          style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.06)' }}
+          className="w-full py-3.5 rounded-2xl text-sm font-semibold text-gray-500 bg-gray-50 border border-gray-200 active:scale-95 transition-all"
         >
           View All Orders
         </button>

@@ -1456,10 +1456,15 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
       if (order.orderStatus === 'SERVED') throw new Error("Order already served");
       if (order.paymentStatus !== 'SUCCESS') throw new Error("Payment not verified");
 
-      // Strict check: Only serve if READY (in collecting window) or Overridden
-      if (order.pickupWindow?.status !== 'COLLECTING' && !order.qrRedeemable) {
-        throw new Error(`SERVE_BLOCKED - Item status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY items or Overridden orders can be served.`);
+      // Allow serving if COLLECTING, READY, or manually overridden
+      const isAllowedToServe =
+        order.pickupWindow?.status === 'COLLECTING' ||
+        order.serveFlowStatus === 'READY' ||
+        order.qrRedeemable === true;
+      if (!isAllowedToServe) {
+        throw new Error(`SERVE_BLOCKED - Order is ${order.serveFlowStatus || order.pickupWindow?.status || 'NOT_READY'}. Only READY orders can be served.`);
       }
+
 
       const itemIndex = order.items.findIndex(i => i.id === itemId);
       if (itemIndex === -1) throw new Error("Item not found in order");
@@ -1546,9 +1551,19 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
 
       if (order.orderStatus === 'SERVED') return;
 
-      if (order.pickupWindow?.status !== 'COLLECTING' && !order.qrRedeemable) {
-        throw new Error(`SERVE_BLOCKED - Order status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY orders or Overridden orders can be served.`);
+      // Allow serving if any of these conditions are true:
+      // 1. pickupWindow is COLLECTING (batch explicitly opened window)
+      // 2. serveFlowStatus is READY (batch marked ready, window may not be set yet)
+      // 3. qrRedeemable override set by staff
+      const isAllowedToServe =
+        order.pickupWindow?.status === 'COLLECTING' ||
+        order.serveFlowStatus === 'READY' ||
+        order.qrRedeemable === true;
+
+      if (!isAllowedToServe) {
+        throw new Error(`SERVE_BLOCKED - Order is ${order.serveFlowStatus || order.pickupWindow?.status || 'NOT_READY'}. Only READY orders can be served.`);
       }
+
 
       const updatedItems = order.items.map(item => {
         const remaining = item.remainingQty !== undefined ? item.remainingQty : (item.quantity - (item.servedQty || 0));
