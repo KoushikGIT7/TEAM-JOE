@@ -2246,12 +2246,36 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
         // 3. Penalty Logic: Missed users get shifted to a LATER slot to prioritize first-timers
         const penalizedSlot = currentMissedCount > 0 ? getNextLogicalSlot(targetSlot) : targetSlot;
 
-        // 4. Batch Size Control & Reassignment
-        // We must find a batch in the target slot for EACH item in the order actually being prepared.
-        // Simplification: We look for a batch for the FIRST PREPARATION_ITEM.
-        const prepItem = order.items.find(it => it.orderType === 'PREPARATION_ITEM');
-        
-        if (prepItem) {
+        // 4. Batch Reassignment for ALL PREPARATION items in the order
+        const prepItems = order.items.filter(it => it.orderType === 'PREPARATION_ITEM' && (it.remainingQty ?? it.quantity) > 0);
+        const lastBatchIds: string[] = [];
+
+        for (const prepItem of prepItems) {
+          // --- CLEANUP OLD BATCH ---
+          // Find the batch this item was previously in (based on previous arrivalTime)
+          const oldSlot = order.arrivalTime;
+          if (oldSlot) {
+            // We search for the batch the student was in. Since there might be multiple indexes, 
+            // we check up to 20 (consistent with creation logic)
+            for (let i = 0; i < 20; i++) {
+              const oldBatchId = `batch_${oldSlot}_${prepItem.id}_${i}`;
+              const oldRef = doc(db, "prepBatches", oldBatchId);
+              const oldSnap = await tx.get(oldRef);
+              if (oldSnap.exists()) {
+                const oldData = oldSnap.data() as PrepBatch;
+                if (oldData.orderIds.includes(d.id)) {
+                  tx.update(oldRef, {
+                    orderIds: oldData.orderIds.filter(id => id !== d.id),
+                    quantity: increment(-prepItem.quantity),
+                    updatedAt: serverTimestamp()
+                  });
+                  break; 
+                }
+              }
+            }
+          }
+
+          // --- ASSIGN TO NEW BATCH ---
           let assignedBatchId = "";
           let index = 0;
           let foundBatch = false;
@@ -2290,18 +2314,19 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
               }
             }
           }
-
-          tx.update(doc(db, "orders", d.id), {
-            "pickupWindow.status": 'MISSED',
-            "serveFlowStatus": 'MISSED',
-            "missedFromBatchId": order.batchId || null,
-            "batchId": assignedBatchId || null,
-            "missedCount": currentMissedCount,
-            "arrivalTime": penalizedSlot,
-            "updatedAt": serverTimestamp()
-          });
-          reassignedCount++;
+          if (assignedBatchId) lastBatchIds.push(assignedBatchId);
         }
+
+        tx.update(doc(db, "orders", d.id), {
+          "pickupWindow.status": 'MISSED',
+          "serveFlowStatus": 'MISSED',
+          "missedFromBatchId": order.batchId || null,
+          "batchId": lastBatchIds[0] || null, // Keep legacy single batchId for compatibility
+          "missedCount": currentMissedCount,
+          "arrivalTime": penalizedSlot,
+          "updatedAt": serverTimestamp()
+        });
+        reassignedCount++;
       }
     });
 

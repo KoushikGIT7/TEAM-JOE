@@ -40,6 +40,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   // --- WORKSPACE STATE ---
   const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER'>('SERVER');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // --- REFS ---
   const lastScanTimestamp = useRef<number>(0);
@@ -140,7 +141,9 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     }
   };
 
-  const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
+   const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     try {
         await serveItemBatch(orderId, itemId, qty, profile.uid);
         if ('vibrate' in navigator) navigator.vibrate(50);
@@ -154,23 +157,30 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
               : (item.remainingQty ?? (item.quantity - (item.servedQty || 0)));
             return rem <= 0;
           });
-          if (allDone) {
+           if (allDone) {
             // Auto complete immediately if 0 items remaining
             setTimeout(() => setScanQueue(prev => prev.filter(id => id !== orderId)), 300);
           }
         }
     } catch (err: any) {
         setError(err.message || 'Serve Failed');
+    } finally {
+        setIsProcessing(false);
     }
   };
 
   const handleServeAll = async (orderId: string) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     try {
         setScanQueue(prev => prev.filter(id => id !== orderId));
         await serveFullOrder(orderId, profile.uid);
         if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
     } catch (err: any) {
         setError(err.message || 'Serve Failed');
+        // If fail, we should probably restore to queue but simpler to just error for now
+    } finally {
+        setIsProcessing(false);
     }
   };
 
@@ -228,9 +238,10 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
               isCameraOpen={isCameraOpen}
               setIsCameraOpen={setIsCameraOpen}
               handleQRScan={handleQRScan}
-              handleServeItem={handleServeItem}
+               handleServeItem={handleServeItem}
               handleServeAll={handleServeAll}
               scanFeedback={scanFeedback}
+              isProcessing={isProcessing}
            />
         ) : (
            <CookConsoleWorkspace batches={batches} />

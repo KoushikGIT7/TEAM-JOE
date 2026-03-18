@@ -11,6 +11,7 @@ interface ServerConsoleWorkspaceProps {
   handleQRScan: (data: string) => void;
   handleServeItem: (orderId: string, itemId: string, qty: number) => void;
   handleServeAll: (orderId: string) => void;
+  isProcessing: boolean;
   scanFeedback: {
     status: 'VALID' | 'INVALID' | null;
     message?: string;
@@ -39,6 +40,7 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   handleServeItem,
   handleServeAll,
   scanFeedback,
+  isProcessing,
 }) => {
   const focusedOrderId = useMemo(() => scanQueue[0] || null, [scanQueue]);
   const nextInQueueIds = useMemo(() => scanQueue.slice(1), [scanQueue]);
@@ -140,20 +142,26 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                </div>
                
                {/* Quick Resolve Actions */}
-               <div className="flex flex-col gap-3">
-                 <button 
-                   onClick={() => handleServeAll(scannedOrder.id)}
-                   className="px-8 bg-slate-900 hover:bg-black text-white h-14 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl transition-all shadow-slate-200 active:scale-95 flex items-center justify-center gap-2"
-                 >
-                    Serve Ready Items <ChevronRight className="w-4 h-4 text-slate-400" />
-                 </button>
-                 <button 
-                   onClick={() => setScanQueue(prev => prev.filter(id => id !== scannedOrder.id))} 
-                   className="px-8 bg-white border-2 border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 h-12 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95"
-                 >
-                   Push to pending
-                 </button>
-               </div>
+                <div className="flex flex-col gap-3">
+                  <button 
+                    disabled={isProcessing}
+                    onClick={() => handleServeAll(scannedOrder.id)}
+                    className={`px-8 h-14 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                      isProcessing ? 'bg-slate-400 text-slate-100 shadow-none cursor-wait' : 'bg-slate-900 hover:bg-black text-white shadow-slate-200'
+                    }`}
+                  >
+                     {isProcessing ? 'SCANNING...' : 'Serve Ready Items'} <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                  <button 
+                    disabled={isProcessing}
+                    onClick={() => setScanQueue(prev => prev.filter(id => id !== scannedOrder.id))} 
+                    className={`px-8 h-12 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 border-2 ${
+                      isProcessing ? 'bg-slate-50 border-slate-100 text-slate-300' : 'bg-white border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
+                    }`}
+                  >
+                    Push to pending
+                  </button>
+                </div>
             </div>
 
             {/* Items List */}
@@ -186,18 +194,18 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                             <span className="text-4xl font-black text-slate-900 font-mono tracking-tighter">×{rem}</span>
                          </div>
                        )}
-                       {statusInfo.flavor !== 'DONE' ? (
-                         <button 
-                           disabled={statusInfo.flavor !== 'READY'}
-                           onClick={() => handleServeItem(scannedOrder.id, it.id, rem)}
-                           className={`h-20 w-40 font-black text-sm uppercase tracking-[0.2em] rounded-[1.5rem] transition-all shadow-xl active:scale-95 ${
-                             statusInfo.flavor === 'READY' 
-                               ? 'bg-green-500 hover:bg-green-600 text-white border-b-4 border-green-700 shadow-green-200' 
-                               : 'bg-slate-200/50 text-slate-300 pointer-events-none shadow-none border-0'
-                           }`}
-                         >
-                           {statusInfo.flavor === 'READY' ? 'SERVE' : 'WAIT'}
-                         </button>
+                        {statusInfo.flavor !== 'DONE' ? (
+                          <button 
+                            disabled={statusInfo.flavor !== 'READY' || isProcessing}
+                            onClick={() => handleServeItem(scannedOrder.id, it.id, rem)}
+                            className={`h-20 w-40 font-black text-sm uppercase tracking-[0.2em] rounded-[1.5rem] transition-all shadow-xl active:scale-95 ${
+                              statusInfo.flavor === 'READY' && !isProcessing
+                                ? 'bg-green-500 hover:bg-green-600 text-white border-b-4 border-green-700 shadow-green-200' 
+                                : 'bg-slate-200/50 text-slate-300 pointer-events-none shadow-none border-0 opacity-50'
+                            }`}
+                          >
+                            {isProcessing ? 'SYNC...' : statusInfo.flavor === 'READY' ? 'SERVE' : 'WAIT'}
+                          </button>
                        ) : (
                          <div className="h-20 w-40 rounded-[1.5rem] bg-slate-100 border-2 border-slate-200 flex items-center justify-center text-slate-400">
                            <CheckCircle className="w-8 h-8" />
