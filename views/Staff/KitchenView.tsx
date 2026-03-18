@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, Clock, ChefHat, CheckCircle2, Loader2, UtensilsCrossed, Users, Timer, Bell, Zap, Flame, Sparkles } from 'lucide-react';
-import { listenToBatches, updateSlotStatus } from '../../services/firestore-db';
+import { listenToBatches } from '../../services/firestore-db';
+import { updateSlotStatusV2 as updateSlotStatus } from '../../services/firestore-v2';
 import { requestNotificationPermission } from '../../services/notificationService';
 import { SERVER_LABELS } from '../../constants';
 import type { PrepBatch, PrepBatchStatus } from '../../types';
