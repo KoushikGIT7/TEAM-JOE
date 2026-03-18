@@ -48,12 +48,9 @@ export const useAuth = (): UseAuthReturn => {
         setUser(null);
         setProfile(null);
         setLoading(false);
-      } else {
-        // firebaseUser exists but profile is null → onAuthStateChange already
-        // signed out the user (invalid staff) and will call callback(null, null).
-        // We stay loading until that second callback arrives.
-        // This path should be extremely rare — only on RBAC rejection mid-session.
-        console.warn('⚠️ useAuth: user present but profile null — awaiting RBAC resolution…');
+      } else if (firebaseUser) {
+        // User exists but profile is still resolving in the service layer.
+        // We stay loading to prevent flickering or unauthorized views.
       }
     });
 

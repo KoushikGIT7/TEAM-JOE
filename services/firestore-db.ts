@@ -1570,11 +1570,32 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
         })),
         orderStatus: newOrderStatus,
         serveFlowStatus: newServeFlowStatus,
-        servedAt: allResolved ? Date.now() : null,
+        servedAt: allResolved ? Date.now() : (order.servedAt || null),
         updatedAt: serverTimestamp(),
         qrStatus: allResolved ? 'DESTROYED' : order.qrStatus,
         qrState: allResolved ? 'SERVED' : 'SCANNED',
       });
+
+      // 🔄 SYNC PREP BATCHES: Decrement quantities in the production pipeline
+      // This ensures the Cook Console clears items after they are physically handed over.
+      const batchIds = order.batchIds || [];
+      for (const bId of batchIds) {
+         const bRef = doc(db, "prepBatches", bId);
+         const bSnap = await tx.get(bRef);
+         if (!bSnap.exists()) continue;
+         const bData = bSnap.data() as PrepBatch;
+
+         // If this batch belongs to the item we just served, decrement its quantity
+         if (bData.itemId === itemId && bData.status !== 'COMPLETED') {
+            const newQty = Math.max(0, bData.quantity - quantity);
+            const newStatus = newQty <= 0 ? 'COMPLETED' : bData.status;
+            tx.update(bRef, { 
+               quantity: newQty, 
+               status: newStatus,
+               updatedAt: serverTimestamp() 
+            });
+         }
+      }
     });
   } catch (err: any) {
     console.error("Error serving item batch:", err);
@@ -1617,6 +1638,30 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
         servedAt: serverTimestamp(),
         serveFlowStatus: 'SERVED'
       });
+
+      // 🔄 SYNC ALL RELATED BATCHES
+      const batchIds = order.batchIds || [];
+      for (const bId of batchIds) {
+         const bRef = doc(db, "prepBatches", bId);
+         const bSnap = await tx.get(bRef);
+         if (!bSnap.exists()) continue;
+         const bData = bSnap.data() as PrepBatch;
+
+         // Force complete all batches associated with this full order
+         if (bData.status !== 'COMPLETED') {
+            // Find how much of THIS order was in THIS batch
+            // (Simple approach for full serve: just decrement the whole order's items from the batch)
+            const itemInBatch = order.items.find(i => i.id === bData.itemId);
+            if (itemInBatch) {
+               const newQty = Math.max(0, bData.quantity - itemInBatch.quantity);
+               tx.update(bRef, { 
+                  quantity: newQty, 
+                  status: newQty <= 0 ? 'COMPLETED' : bData.status,
+                  updatedAt: serverTimestamp() 
+               });
+            }
+         }
+      }
     });
   } catch (err: any) {
     console.error("Error serving full order:", err);
@@ -2031,8 +2076,8 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
   return onSnapshot(
     query(
       collection(db, "prepBatches"), 
-      where("status", "in", ["QUEUED", "PREPARING", "READY"]),
-      limit(50)
+      where("status", "in", ["QUEUED", "PREPARING", "ALMOST_READY", "READY"]),
+      limit(100)
     ),
     (snapshot) => {
       const batches = snapshot.docs.map(doc => {

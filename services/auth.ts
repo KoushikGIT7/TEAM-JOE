@@ -76,7 +76,7 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
       
       return {
         uid: data.uid || uid,
-        name: data.name || 'Staff member',
+        name: data.name || 'Student member',
         email: data.email || '',
         role: userRole,
         active: data.active ?? true,
@@ -105,23 +105,25 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
     
     // CASE 1: NEW USER or MISSING PROFILE -> Auto-create as STUDENT
     if (!profile) {
-      console.log('🆕 Creating new student profile for:', user.email);
-      const newProfile: Partial<UserProfile> = {
+      const now = Date.now();
+      const newProfile: UserProfile = {
         uid: user.uid,
         name: user.displayName || 'Student',
         email: user.email || '',
         role: 'STUDENT',
         active: true,
-        createdAt: Date.now(),
+        createdAt: now,
       };
       
+      // Perform write but don't wait for it to return the profile again
+      // The onAuthStateChange listener will pick this up or we return it directly
       await setDoc(doc(db, "users", user.uid), {
         ...newProfile,
         lastActive: serverTimestamp(),
         createdAt: serverTimestamp()
-      });
+      }, { merge: true });
       
-      profile = await getUserProfile(user.uid);
+      profile = newProfile;
     }
     
     if (!profile) {
@@ -213,13 +215,30 @@ export const onAuthStateChange = (
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       try {
-        const profile = await getUserProfile(firebaseUser.uid);
+        let profile = await getUserProfile(firebaseUser.uid);
 
         if (!profile) {
-          console.warn("⚠️ No profile found for", firebaseUser.email);
-          // If we want to allow students who were somehow created without profiles:
-          // But signInWithGoogle handles this now.
-          callback(firebaseUser, null);
+          // ⚡ HIGH-SPEED AUTO-CREATION FOR STUDENTS
+          // If we have a user but no profile, they are likely a new Google sign-in.
+          // We create a student profile on the fly to avoid blocking the UI.
+          const now = Date.now();
+          const studentProfile: UserProfile = {
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || 'Student',
+            email: firebaseUser.email || '',
+            role: 'STUDENT',
+            active: true,
+            createdAt: now,
+          };
+
+          // Background fire-and-forget sync to Firestore
+          setDoc(doc(db, "users", firebaseUser.uid), {
+            ...studentProfile,
+            lastActive: serverTimestamp(),
+            createdAt: serverTimestamp()
+          }, { merge: true }).catch(err => console.error("Auto-profile sync failed:", err));
+
+          callback(firebaseUser, studentProfile);
           return;
         }
 
