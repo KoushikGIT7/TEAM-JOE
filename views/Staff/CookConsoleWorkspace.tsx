@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { Timer, Flame, CheckCircle, ChefHat, Clock } from 'lucide-react';
 import { PrepBatch } from '../../types';
-import { updateSlotStatusV2 as updateSlotStatus } from '../../services/firestore-v2';
+import { updateSlotStatus } from '../../services/cook-workflow';
 
 interface CookConsoleWorkspaceProps {
   batches: PrepBatch[];
