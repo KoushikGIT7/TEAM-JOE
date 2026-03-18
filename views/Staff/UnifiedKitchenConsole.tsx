@@ -42,6 +42,9 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   const [isFlushing, setIsFlushing] = useState(false);
   const [flushCount, setFlushCount] = useState<number | null>(null);
   const [scanQueue, setScanQueue] = useState<string[]>([]);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const [priorityOrderId, setPriorityOrderId] = useState<string | null>(null);
+  const [burstMode, setBurstMode] = useState(false);
 
   // Derived focus: Index 0 is active, others are in queue
   const focusedOrderId = useMemo(() => scanQueue[0] || null, [scanQueue]);
@@ -59,6 +62,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // --- REFS ---
   const scanReviewRef = useRef<HTMLDivElement>(null);
   const lastScanTimestamp = useRef<number>(0);
+  const interactionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const burstCounterRef = useRef<{ count: number; lastReset: number }>({ count: 0, lastReset: Date.now() });
 
   // --- TIME, SCANNER & MAINTENANCE ---
   useEffect(() => {
@@ -73,9 +78,20 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
     const scanner = initializeScanner({ suffixKey: 'Enter', autoFocus: true });
     scanner.onScan((data) => handleQRScan(data));
+
+    // Burst Mode Detection (Speed Mode)
+    const burstMonitor = setInterval(() => {
+        const now = Date.now();
+        if (now - burstCounterRef.current.lastReset > 60000) {
+            setBurstMode(burstCounterRef.current.count > 15);
+            burstCounterRef.current = { count: 0, lastReset: now };
+        }
+    }, 10000);
+
     return () => {
         clearInterval(t);
         clearInterval(maintenance);
+        clearInterval(burstMonitor);
         scanner.destroy();
     };
   }, []);
@@ -103,23 +119,28 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     setError(null);
     try {
         if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+        // Burst sound concept (subtle click)
         const order = await validateQRForServing(data);
+        
+        burstCounterRef.current.count++;
         
         setScanQueue(prev => {
             const exists = prev.includes(order.id);
             if (exists) {
-                // 🔄 DUPLICATE HANDLING: Bring to front (Active Focus)
+                // 🔄 PRIORITY FEEDBACK: Trigger pulse animation on re-scan
+                setPriorityOrderId(order.id);
+                setTimeout(() => setPriorityOrderId(null), 1000);
                 return [order.id, ...prev.filter(id => id !== order.id)];
             } else {
-                // 📩 SCAN QUEUE: Add to end (Do not replace active)
                 return [...prev, order.id];
             }
         });
 
-        // Auto-scroll to scan result
-        setTimeout(() => {
-            scanReviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
+        if (!burstMode) {
+            setTimeout(() => {
+                scanReviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
     } catch (err: any) {
         setError(err.message || 'Scan Failed');
     } finally {
@@ -128,12 +149,15 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   };
 
   const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
+    // 🔒 ACTIVE LOCK: Set interacting flag
+    setIsInteracting(true);
+    if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current);
+    interactionTimerRef.current = setTimeout(() => setIsInteracting(false), 5000);
+
     try {
         await serveItemBatch(orderId, itemId, qty, profile.uid);
         if ('vibrate' in navigator) navigator.vibrate(50);
 
-        // The local state update is no longer needed as the listener updates the DB state
-        // and our memoized scannedOrder will reflect it automatically.
         if (scannedOrder?.id === orderId) {
             const newItems = scannedOrder.items.map(i => {
                 if (i.id === itemId) {
@@ -148,8 +172,10 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
             });
             if (allDone) {
                 setTimeout(() => {
-                  setScanQueue(prev => prev.filter(id => id !== orderId));
-                }, 1200);
+                  if (!isInteracting) {
+                    setScanQueue(prev => prev.filter(id => id !== orderId));
+                  }
+                }, burstMode ? 200 : 1200);
             }
         }
     } catch (err: any) {
@@ -373,18 +399,37 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                 scannedOrder ? 'bg-primary/20' : 'bg-primary/5'
               }`} />
 
-              {/* 🕒 ZONE 3.1: QUEUE PREVIEW (STILL ZONE) */}
+              {/* 🕒 ZONE 3.1: QUEUE PREVIEW (STILL ZONE) - OVERFLOW HANDLING */}
               <div className="flex items-center gap-4 mb-6 overflow-x-auto no-scrollbar scroll-smooth">
-                   {queuePreviewOrders.map((qOrder, idx) => (
-                       <div 
-                         key={qOrder.id}
-                         onClick={() => setScanQueue(prev => [qOrder.id, ...prev.filter(id => id !== qOrder.id)])}
-                         className="flex-shrink-0 bg-white/5 border border-white/10 px-4 py-2 rounded-xl flex items-center gap-3 hover:bg-white/10 transition-all cursor-pointer group"
-                       >
-                           <div className="w-2 h-2 rounded-full bg-primary/40 group-hover:bg-primary transition-colors" />
-                           <span className="text-[10px] font-black font-mono text-white/60 tracking-tighter">#{qOrder.id.slice(-4).toUpperCase()}</span>
+                   {queuePreviewOrders.slice(0, 8).map((qOrder, idx) => {
+                       const isReady = qOrder.serveFlowStatus === 'READY';
+                       const isPriority = qOrder.id === priorityOrderId;
+                       return (
+                        <div 
+                          key={qOrder.id}
+                          onClick={() => {
+                            if (!isInteracting) setScanQueue(prev => [qOrder.id, ...prev.filter(id => id !== qOrder.id)]);
+                          }}
+                          className={`flex-shrink-0 bg-white/5 border px-4 py-2 rounded-xl flex items-center gap-3 transition-all cursor-pointer group ${
+                            isPriority ? 'scale-110 border-primary ring-2 ring-primary/20 bg-primary/10 animate-pulse' : 
+                            isReady ? 'border-green-500/20 hover:border-green-500/40' : 'border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                            <div className={`w-2 h-2 rounded-full transition-colors ${
+                                isReady ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 
+                                isPriority ? 'bg-primary animate-ping' : 'bg-primary/40 group-hover:bg-primary'
+                            }`} />
+                            <span className={`text-[10px] font-black font-mono tracking-tighter ${isReady ? 'text-white' : 'text-white/60'}`}>
+                                #{qOrder.id.slice(-4).toUpperCase()}
+                            </span>
+                        </div>
+                       );
+                   })}
+                   {queuePreviewOrders.length > 8 && (
+                       <div className="flex-shrink-0 bg-white/5 border border-white/5 px-4 py-2 rounded-xl text-[10px] font-black text-gray-600 uppercase">
+                          +{queuePreviewOrders.length - 8} MORE
                        </div>
-                   ))}
+                   )}
               </div>
 
               {scannedOrder ? (
@@ -410,14 +455,19 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                               {scannedOrder.items.map(item => {
                                   const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
                                   const done = rem <= 0;
+                                  // ✨ SMART ACTION: Suggest next item to serve
+                                  const isNextInLine = !done && scannedOrder.items.find(i => (i.remainingQty ?? (i.quantity - (i.servedQty || 0))) > 0)?.id === item.id;
+                                  
                                   return (
-                                      <div key={item.id} className={`p-10 rounded-[4rem] border-2 flex items-center justify-between transition-all duration-500 overflow-hidden relative group ${
-                                          done ? 'bg-green-500/10 border-green-500/20 opacity-40' : 'bg-white/5 border-white/5 hover:border-primary/40'
+                                      <div key={item.id} className={`p-10 rounded-[4rem] border-2 flex items-center justify-between transition-all duration-300 overflow-hidden relative group ${
+                                          done ? 'bg-green-500/10 border-green-500/20 opacity-40' : 
+                                          isNextInLine ? 'bg-primary/10 border-primary/40 shadow-[0_0_40px_rgba(249,115,22,0.1)]' : 'bg-white/5 border-white/5 hover:border-primary/40'
                                       }`}>
                                           <div className="flex items-center gap-8">
-                                              <div className="w-24 h-24 rounded-[2rem] overflow-hidden border border-white/20 shadow-2xl relative">
+                                              <div className={`w-24 h-24 rounded-[2rem] overflow-hidden border shadow-2xl relative transition-transform ${isNextInLine ? 'scale-110 border-primary' : 'border-white/20'}`}>
                                                   <img src={item.imageUrl} className="w-full h-full object-cover" alt="" />
                                                   {done && <div className="absolute inset-0 bg-green-500/40 flex items-center justify-center"><CheckCircle className="w-12 h-12 text-white" /></div>}
+                                                  {isNextInLine && !burstMode && <div className="absolute -top-2 -left-2 bg-primary text-black p-1 rounded-br-xl"><Zap className="w-4 h-4 fill-current" /></div>}
                                               </div>
                                               <div>
                                                   <h4 className="text-3xl font-black italic tracking-tighter leading-none mb-2">{item.name}</h4>
@@ -470,9 +520,14 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                           
                           <button 
                             onClick={() => handleServeAll(scannedOrder.id)}
-                            className="w-full h-full bg-white text-black font-black uppercase tracking-[0.5em] text-2xl rounded-[3rem] shadow-[0_0_80px_rgba(255,255,255,0.2)] active:scale-95 transition-all flex items-center justify-center gap-8 group"
+                            className={`w-full h-full font-black uppercase tracking-[0.5em] text-2xl rounded-[3rem] active:scale-95 transition-all flex items-center justify-center gap-8 group ${
+                                scannedOrder.items.every(i => (i.remainingQty ?? (i.quantity - (i.servedQty || 0))) > 0) ? 
+                                'bg-white text-black shadow-[0_0_80px_rgba(255,255,255,0.2)]' : 
+                                'bg-primary text-white shadow-[0_0_80px_rgba(249,115,22,0.4)] animate-bounce'
+                            }`}
                           >
-                             <UtensilsCrossed className="w-10 h-10 group-hover:rotate-12 transition-transform" /> COMPLETE MEAL SERVING
+                             <UtensilsCrossed className="w-10 h-10 group-hover:rotate-12 transition-transform" /> 
+                             {scannedOrder.items.every(i => (i.remainingQty ?? (i.quantity - (i.servedQty || 0))) > 0) ? 'COMPLETE MEAL SERVING' : 'SERVE ALL REMAINING'}
                           </button>
                       </div>
                   </div>
