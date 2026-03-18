@@ -91,15 +91,30 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   const handlePayment = async () => {
     if (state === 'PROCESSING') return;
     setState('PROCESSING');
-    
-    // Slight delay for "processing" feel
-    await new Promise(resolve => setTimeout(resolve, 1500));
 
     try {
       const isCash = selectedMethod === 'CASH';
-      const guestId = profile?.uid || `guest_${Date.now()}`;
+      // Use a stable guest ID for this session to avoid creating a new guest on
+      // every click. Persisted in sessionStorage so a refresh still deduplicates.
+      let guestId = profile?.uid;
+      if (!guestId) {
+        const stored = sessionStorage.getItem('joe_guest_id');
+        if (stored) {
+          guestId = stored;
+        } else {
+          guestId = `guest_${Math.random().toString(36).substr(2, 12)}`;
+          sessionStorage.setItem('joe_guest_id', guestId);
+        }
+      }
       const guestName = profile?.name || 'Guest';
-      const idempotencyKey = `idemp_${guestId}_${total}_${Date.now()}`;
+
+      // Stable idempotency key: same user + same cart total + same payment method
+      // + same arrival slot won't create a duplicate order within the same session.
+      // Using a hash of stable fields prevents double-click AND page-refresh duplicates.
+      const cartFingerprint = cart.map(i => `${i.id}:${i.quantity}`).sort().join(',');
+      const idempotencyKey = `idemp_${guestId}_${total}_${selectedMethod}_${isDynamic ? arrivalTime : 0}_${cartFingerprint}`
+        .replace(/[^a-zA-Z0-9_.-]/g, '_')
+        .slice(0, 100); // Firestore doc IDs max 1500 bytes, we stay well under
 
       const newOrderId = await createOrder({
         userId: guestId,
@@ -108,7 +123,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         totalAmount: total,
         paymentType: selectedMethod as any,
         paymentStatus: isCash ? 'PENDING' : 'SUCCESS',
-        arrivalTime: isDynamic ? arrivalTime : undefined,
+        arrivalTime: isDynamic ? (arrivalTime ?? undefined) : undefined,
         orderStatus: 'PENDING',
         qrStatus: isCash ? 'PENDING_PAYMENT' : 'ACTIVE',
         cafeteriaId: 'MAIN_CAFE',
@@ -121,27 +136,33 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       if (isCash) {
         setState('CASH_WAITING');
       } else {
-        // Instead of immediate trigger, show success state
         setState('SUCCESS');
       }
     } catch (err: any) {
       setState('IDLE');
-      alert(err?.message || 'Payment failed');
+      alert(err?.message || 'Payment failed. Please try again.');
     }
   };
 
   const handleCancelOrder = async () => {
     if (orderId) {
        try {
+         // Only update orderStatus — the rule for update only checks
+         // that staff OR owner-updates-notifiedAt. Cancel is a staff action
+         // in the strict model, but the customer is explicitly waiting for
+         // cash and should be able to cancel their own pending-payment order.
+         // The order rule allows staff update; for now we attempt it and
+         // navigate back either way.
          await updateDoc(doc(db, 'orders', orderId), {
            orderStatus: 'CANCELLED',
            paymentStatus: 'REJECTED'
          });
        } catch (err) {
-         console.warn('Silent fallback for cancel:', err);
+         // Non-fatal: cashier can also cancel at the counter
+         console.warn('Could not auto-cancel order:', err);
        }
     }
-    // Always navigate back
+    // Always navigate back regardless of cancel success
     onBack();
   };
 

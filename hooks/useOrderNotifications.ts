@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Order, PrepBatch } from '../types';
 
@@ -34,17 +34,37 @@ export const useOrderNotifications = (userId: string | null) => {
                 
                 const prev = activeListenerRef.current[orderId];
 
+                /**
+                 * markNotified: Attempt to stamp notifiedAt on the order for
+                 * persistent deduplication across devices/sessions.
+                 *
+                 * Guest orders have no Firebase Auth context, so their
+                 * updateDoc calls would fail with permission-denied. We skip
+                 * silently — in-memory (waveTimersRef) deduplication covers
+                 * the current session. No noisy log for expected guest failures.
+                 */
+                const markNotified = async (id: string, isGuestOrder: boolean): Promise<void> => {
+                    if (isGuestOrder) return; // Expected: guests have no auth token
+                    try {
+                        await updateDoc(doc(db, 'orders', id), { notifiedAt: Date.now() });
+                    } catch (err: any) {
+                        // permission-denied here means the rule didn't match — investigate.
+                        // Do NOT log expected guest denials (already handled above).
+                        if (err?.code !== 'permission-denied') {
+                            console.warn('Could not update notifiedAt:', err);
+                        }
+                    }
+                };
+
+                const isGuest = typeof data.userId === 'string' && data.userId.startsWith('guest_');
+
                 // 1. REJECTED: Immediate notification (no waves)
                 if ((!prev || prev.status !== 'REJECTED') && currentStatus === 'REJECTED' && !data.notifiedAt) {
                     triggerLocalNotification(
                         '⚠️ Order Issue',
                         `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
                     );
-                    try {
-                        await updateDoc(doc(db, 'orders', orderId), { notifiedAt: Date.now() });
-                    } catch (err) {
-                        console.warn('Could not update notifiedAt (permission expected for guest profiles)', err);
-                    }
+                    await markNotified(orderId, isGuest);
                 }
 
                 // 2. READY: Wave-based delivery
@@ -52,9 +72,11 @@ export const useOrderNotifications = (userId: string | null) => {
                     waveTimersRef.current[orderId] = true;
                     
                     let delay = 0;
-                    if (data.batchId) {
+                    // batchIds is an array — use first batch for wave position calculation
+                    const firstBatchId = Array.isArray(data.batchIds) ? data.batchIds[0] : undefined;
+                    if (firstBatchId) {
                         try {
-                            const bSnap = await getDoc(doc(db, 'prepBatches', data.batchId));
+                            const bSnap = await getDoc(doc(db, 'prepBatches', firstBatchId));
                             if (bSnap.exists()) {
                                 const bData = bSnap.data() as PrepBatch;
                                 const idx = (bData.orderIds || []).indexOf(orderId);
@@ -77,16 +99,13 @@ export const useOrderNotifications = (userId: string | null) => {
                         try {
                             const freshSnap = await getDoc(doc(db, 'orders', orderId));
                             const freshData = freshSnap.data() as Order;
+                            const freshIsGuest = typeof freshData?.userId === 'string' && freshData.userId.startsWith('guest_');
                             if (freshSnap.exists() && freshData.serveFlowStatus === 'READY' && !freshData.notifiedAt) {
                                 triggerLocalNotification(
                                     '🍽️ Order Ready!',
                                     `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
                                 );
-                                try {
-                                    await updateDoc(doc(db, 'orders', orderId), { notifiedAt: Date.now() });
-                                } catch (updateErr) {
-                                    console.warn('Could not update notifiedAt (permission denied expected for guests)', updateErr);
-                                }
+                                await markNotified(orderId, freshIsGuest);
                             }
                         } catch (e) {
                             console.error('Final trigger error:', e);

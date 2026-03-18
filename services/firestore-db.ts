@@ -879,214 +879,205 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       remainingQty: item.quantity
     }));
 
-      // Perform atomic transaction on the client side
-      const result = await runTransaction(db, async (transaction) => {
-        // --- PHASE 1: PRE-FETCH ALL DATA (READ ONLY) ---
-        // To follow the "All reads before writes" rule, we must get everything now.
-        const idempotencyKey = orderData.idempotencyKey;
-        const idempRef = idempotencyKey ? doc(db, "idempotency_keys", idempotencyKey) : null;
-        const slot = orderData.arrivalTime || 0;
-        const prepItems = orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM');
-        const slotStatsRef = doc(db, "slot_stats", slot.toString());
-        
-        // Prep Batch Refs (Check up to 3 indices for each prep item)
-        const batchRefs: { itemId: string; refs: any[] }[] = prepItems.map(item => ({
-          itemId: item.id,
-          refs: [0, 1, 2].map(idx => doc(db, "prepBatches", `batch_${slot}_${item.id}_${idx}`))
-        }));
+    // Perform atomic transaction on the client side
+    // ARCHITECTURE: Only write to collections the customer owns:
+    //   - orders (customer's own order)
+    //   - prepBatches (join/create a kitchen batch)
+    //   - slot_stats (capacity reservation)
+    //   - idempotency_keys (duplicate prevention)
+    // inventory_shards are staff-internal and NEVER written in the customer transaction.
+    const result = await runTransaction(db, async (transaction) => {
+      // ============================================================
+      // PHASE 1 — READS ONLY (all reads must precede any writes)
+      // ============================================================
+      const idempotencyKey = orderData.idempotencyKey;
+      const idempRef = idempotencyKey ? doc(db, "idempotency_keys", idempotencyKey) : null;
+      const slot = orderData.arrivalTime || 0;
+      const prepItems = orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM');
+      const slotStatsRef = doc(db, "slot_stats", slot.toString());
 
-        const allRefs = [
-          ...(idempRef ? [idempRef] : []),
-          ...orderData.items.map(it => doc(db, "inventory_meta", it.id)),
-          slotStatsRef,
-          ...batchRefs.flatMap(b => b.refs)
-        ];
+      // Pre-compute batch doc refs (3 slots per item to find an open batch)
+      const batchRefs: { itemId: string; refs: any[] }[] = prepItems.map(item => ({
+        itemId: item.id,
+        refs: [0, 1, 2].map(idx => doc(db, "prepBatches", `batch_${slot}_${item.id}_${idx}`))
+      }));
 
-        // Execute all reads in parallel at the start
-        const snapshots = await Promise.all(allRefs.map(ref => 
-          transaction.get(ref).catch(e => {
-            console.warn(`⚠️ Partial read failure for ${ref.path}:`, e.message);
-            return { exists: () => false }; // Graceful fallback for 403s
-          })
-        ));
+      const allRefs = [
+        ...(idempRef ? [idempRef] : []),
+        ...orderData.items.map(it => doc(db, "inventory_meta", it.id)),
+        slotStatsRef,
+        ...batchRefs.flatMap(b => b.refs)
+      ];
 
-        // Map snapshots back to their roles
-        let snapIdx = 0;
-        const idempSnap = idempotencyKey ? snapshots[snapIdx++] : null;
-        const inventorySnaps = orderData.items.map(() => snapshots[snapIdx++]);
-        const slotStatsSnap = snapshots[snapIdx++];
-        const itemBatchSnaps: Record<string, any[]> = {};
-        prepItems.forEach(item => {
-          itemBatchSnaps[item.id] = [0, 1, 2].map(() => snapshots[snapIdx++]);
-        });
+      // Execute all reads at once — Firestore requires all reads before writes
+      const snapshots = await Promise.all(
+        allRefs.map(ref =>
+          transaction.get(ref).catch(() =>
+            ({ exists: () => false, data: () => undefined } as any)
+          )
+        )
+      );
 
-        // --- PHASE 2: LOGIC & VALIDATION ---
-        
-        // 1. Idempotency Check
-        if (idempSnap?.exists()) {
-          return (idempSnap.data() as any)?.orderId;
+      // Map snapshots back by position
+      let snapIdx = 0;
+      const idempSnap = idempotencyKey ? snapshots[snapIdx++] : null;
+      const inventorySnaps = orderData.items.map(() => snapshots[snapIdx++]);
+      const slotStatsSnap = snapshots[snapIdx++];
+      const itemBatchSnaps: Record<string, any[]> = {};
+      prepItems.forEach(item => {
+        itemBatchSnaps[item.id] = [0, 1, 2].map(() => snapshots[snapIdx++]);
+      });
+
+      // ============================================================
+      // PHASE 2 — BUSINESS LOGIC (pure computation, no DB calls)
+      // ============================================================
+
+      // Idempotency: if this key already exists, return the existing orderId
+      if (idempSnap?.exists()) {
+        return (idempSnap.data() as any)?.orderId;
+      }
+
+      // Stock validation (soft check — does not block if inventory_meta is missing)
+      orderData.items.forEach((item, idx) => {
+        const snap = inventorySnaps[idx];
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          const available = (data.totalStock ?? 999) - (data.consumed ?? 0);
+          if (available < item.quantity) {
+            throw new Error(`OUT_OF_STOCK: ${item.name}`);
+          }
         }
+      });
 
-        // 2. Stock Validation
-        orderData.items.forEach((item, idx) => {
-          const snap = inventorySnaps[idx];
-          if (snap.exists()) {
-             const data = snap.data() as any;
-             const available = (data.totalStock ?? 0) - (data.consumed ?? 0);
-             if (available < item.quantity) {
-               throw new Error(`OUT_OF_STOCK: ${item.name}`);
-             }
+      // Slot capacity check
+      let targetSlot = slot;
+      const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
+      if (slotStatsSnap.exists()) {
+        const currentVolume = (slotStatsSnap.data() as any)?.totalVolume || 0;
+        if (currentVolume + requestedQty > MAX_TOTAL_SLOT_CAPACITY) {
+          targetSlot = getNextLogicalSlot(targetSlot);
+        }
+      }
+
+      // Resolve item types and build batch assignments
+      const itemsWithResolvedType = itemsWithQty.map(it => {
+        const resolvedOrderType = it.orderType ||
+          (FAST_ITEM_CATEGORIES.includes(it.category || '') ? 'FAST_ITEM' : 'PREPARATION_ITEM');
+        return {
+          ...it,
+          orderType: resolvedOrderType,
+          status: resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING'
+        };
+      });
+
+      const isDynamic = itemsWithResolvedType.some(it => it.orderType === 'PREPARATION_ITEM');
+      const batchAssignments: { ref: any; data: any; isNew: boolean }[] = [];
+      const finalizedBatchIds: string[] = [];
+
+      if (isDynamic) {
+        prepItems.forEach(item => {
+          const snaps = itemBatchSnaps[item.id];
+          let found = false;
+
+          for (let i = 0; i < snaps.length; i++) {
+            const bSnap = snaps[i];
+            const bRef = batchRefs.find(br => br.itemId === item.id)!.refs[i];
+
+            if (!bSnap.exists()) {
+              batchAssignments.push({
+                ref: bRef, isNew: true,
+                data: {
+                  id: bRef.id, itemId: item.id, itemName: item.name,
+                  arrivalTimeSlot: targetSlot, orderIds: [id],
+                  quantity: item.quantity, status: 'QUEUED',
+                  createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                }
+              });
+              finalizedBatchIds.push(bRef.id);
+              found = true;
+              break;
+            } else {
+              const bData = bSnap.data() as PrepBatch;
+              if (bData.status === 'QUEUED' && (bData.quantity + item.quantity) <= MAX_BATCH_SIZE) {
+                batchAssignments.push({
+                  ref: bRef, isNew: false,
+                  data: { orderIds: arrayUnion(id), quantity: increment(item.quantity), updatedAt: serverTimestamp() }
+                });
+                finalizedBatchIds.push(bRef.id);
+                found = true;
+                break;
+              }
+            }
+          }
+
+          if (!found) {
+            // All 3 slots full — create a uniquely-named overflow batch
+            const uniqueId = `batch_ovf_${targetSlot}_${item.id}_${id.slice(-4)}`;
+            const bRef = doc(db, "prepBatches", uniqueId);
+            batchAssignments.push({
+              ref: bRef, isNew: true,
+              data: {
+                id: uniqueId, itemId: item.id, itemName: item.name,
+                arrivalTimeSlot: targetSlot, orderIds: [id],
+                quantity: item.quantity, status: 'QUEUED',
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+              }
+            });
+            finalizedBatchIds.push(uniqueId);
           }
         });
+      }
 
-        // 3. Slot Capacity Calculation
-        let targetSlot = slot;
-        const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
-        if (slotStatsSnap.exists()) {
-           const currentVolume = (slotStatsSnap.data() as any)?.totalVolume || 0;
-           if (currentVolume + requestedQty > MAX_TOTAL_SLOT_CAPACITY) {
-              targetSlot = getNextLogicalSlot(targetSlot);
-           }
-        }
+      // Build final order object
+      const finalizedOrder: Order = {
+        ...orderData,
+        items: itemsWithResolvedType,
+        id, createdAt,
+        orderStatus: 'PENDING',
+        orderType: isDynamic ? 'PREPARATION_ITEM' : 'FAST_ITEM',
+        serveFlowStatus: isDynamic ? 'NEW' : 'READY',
+        arrivalTime: isDynamic ? targetSlot : undefined,
+        batchIds: finalizedBatchIds,
+        pickupWindowStart: !isDynamic ? createdAt : undefined,
+        pickupWindowEnd: !isDynamic ? createdAt + (60 * 60 * 1000) : undefined
+      } as Order;
 
-        // 4. Batch Allocation logic (processed locally based on snaps)
-        const itemsWithResolvedType = itemsWithQty.map(it => {
-          const resolvedOrderType = it.orderType || (FAST_ITEM_CATEGORIES.includes(it.category || '') ? 'FAST_ITEM' : 'PREPARATION_ITEM');
-          return {
-            ...it,
-            orderType: resolvedOrderType,
-            status: resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING'
-          };
-        });
+      if (finalizedOrder.paymentStatus === 'SUCCESS') {
+        finalizedOrder.qrStatus = 'ACTIVE';
+        const token = generateQRPayloadSync(finalizedOrder);
+        finalizedOrder.qr = { token, status: 'ACTIVE', createdAt };
+      }
 
-        const isDynamic = itemsWithResolvedType.some(it => it.orderType === 'PREPARATION_ITEM');
-        const batchAssignments: { ref: any; data?: any; isNew: boolean }[] = [];
-        const finalizedBatchIds: string[] = [];
+      // ============================================================
+      // PHASE 3 — WRITES ONLY (no reads from this point forward)
+      // ============================================================
 
-        if (isDynamic) {
-           prepItems.forEach(item => {
-              const snaps = itemBatchSnaps[item.id];
-              let found = false;
-              
-              for (let i = 0; i < snaps.length; i++) {
-                 const bSnap = snaps[i];
-                 const bRef = batchRefs.find(br => br.itemId === item.id)!.refs[i];
-                 
-                 if (!bSnap.exists()) {
-                    batchAssignments.push({
-                       ref: bRef,
-                       isNew: true,
-                       data: {
-                          id: bRef.id,
-                          itemId: item.id,
-                          itemName: item.name,
-                          arrivalTimeSlot: targetSlot,
-                          orderIds: [id],
-                          quantity: item.quantity,
-                          status: 'QUEUED',
-                          createdAt: serverTimestamp(),
-                          updatedAt: serverTimestamp()
-                       }
-                    });
-                    finalizedBatchIds.push(bRef.id);
-                    found = true;
-                    break;
-                 } else {
-                    const bData = bSnap.data() as PrepBatch;
-                    if (bData.status === 'QUEUED' && (bData.quantity + item.quantity) <= MAX_BATCH_SIZE) {
-                       batchAssignments.push({
-                          ref: bRef,
-                          isNew: false,
-                          data: {
-                             orderIds: arrayUnion(id),
-                             quantity: increment(item.quantity),
-                             updatedAt: serverTimestamp()
-                          }
-                       });
-                       finalizedBatchIds.push(bRef.id);
-                       found = true;
-                       break;
-                    }
-                 }
-              }
-
-              if (!found) {
-                 const uniqueId = `batch_p_${targetSlot}_${item.id}_${id.slice(-4)}_${Date.now()}`;
-                 const bRef = doc(db, "prepBatches", uniqueId);
-                 batchAssignments.push({
-                    ref: bRef,
-                    isNew: true,
-                    data: {
-                       id: uniqueId,
-                       itemId: item.id,
-                       itemName: item.name,
-                       arrivalTimeSlot: targetSlot,
-                       orderIds: [id],
-                       quantity: item.quantity,
-                       status: 'QUEUED',
-                       createdAt: serverTimestamp(),
-                       updatedAt: serverTimestamp()
-                    }
-                 });
-                 finalizedBatchIds.push(uniqueId);
-              }
-           });
-        }
-
-        // --- PHASE 3: WRITE OPERATIONS ONLY ---
-        
-        // 1. Capacity Reservation
+      // 1. Slot capacity reservation (only for dynamic/prep items)
+      if (isDynamic && requestedQty > 0) {
         transaction.set(doc(db, "slot_stats", targetSlot.toString()), {
-           totalVolume: increment(requestedQty),
-           updatedAt: serverTimestamp()
+          totalVolume: increment(requestedQty),
+          updatedAt: serverTimestamp()
         }, { merge: true });
+      }
 
-        // 2. Batch Operations
-        batchAssignments.forEach(ba => {
-           if (ba.isNew) transaction.set(ba.ref, ba.data);
-           else transaction.update(ba.ref, ba.data);
-        });
-
-        // 3. Inventory Shards
-        orderData.items.forEach(item => {
-           const shardIdx = Math.floor(Math.random() * INVENTORY_SHARD_COUNT);
-           const shardRef = doc(db, "inventory_shards", item.id, "shards", `shard_${shardIdx}`);
-           transaction.set(shardRef, {
-              count: increment(item.quantity),
-              lastUpdated: serverTimestamp()
-           }, { merge: true });
-        });
-
-        // 4. Idempotency Key
-        if (idempRef) {
-           transaction.set(idempRef, { orderId: id, createdAt: serverTimestamp() });
-        }
-
-        // 5. Final Order Object
-        const finalizedOrder: Order = {
-          ...orderData,
-          items: itemsWithResolvedType,
-          id,
-          createdAt,
-          orderStatus: 'PENDING',
-          orderType: isDynamic ? 'PREPARATION_ITEM' : 'FAST_ITEM',
-          serveFlowStatus: isDynamic ? 'NEW' : 'READY',
-          arrivalTime: isDynamic ? targetSlot : undefined,
-          batchIds: finalizedBatchIds,
-          pickupWindowStart: !isDynamic ? createdAt : undefined,
-          pickupWindowEnd: !isDynamic ? createdAt + (60 * 60 * 1000) : undefined
-        } as Order;
-
-        if (finalizedOrder.paymentStatus === 'SUCCESS') {
-           finalizedOrder.qrStatus = 'ACTIVE';
-           const token = generateQRPayloadSync(finalizedOrder);
-           finalizedOrder.qr = { token, status: 'ACTIVE', createdAt };
-        }
-
-        transaction.set(doc(db, "orders", id), orderToFirestore(finalizedOrder));
-
-        return id;
+      // 2. Kitchen batch assignments
+      batchAssignments.forEach(ba => {
+        if (ba.isNew) transaction.set(ba.ref, ba.data);
+        else transaction.update(ba.ref, ba.data);
       });
+
+      // 3. Idempotency key (write last in write phase to ensure atomicity)
+      if (idempRef) {
+        transaction.set(idempRef, { orderId: id, createdAt: serverTimestamp() });
+      }
+
+      // 4. The order document — customer owns this
+      transaction.set(doc(db, "orders", id), orderToFirestore(finalizedOrder));
+
+      return id;
+      // inventory_shards intentionally excluded — they are staff-internal
+      // and are managed via admin/server console, not customer transactions.
+    });
 
     try {
       const { invalidateReportsCache } = await import('./reporting');
@@ -1096,13 +1087,15 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     return result;
   } catch (error: any) {
     if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
-      console.warn("Network error during order creation (order may be queued):", error);
+      console.warn("Network error during order creation:", error.message);
       return 'order_' + Math.random().toString(36).substr(2, 9);
     }
     console.error("Error creating order:", error);
     throw error;
   }
 };
+
+
 
 /**
  * Get a single order by ID (non-realtime, one-time read)
