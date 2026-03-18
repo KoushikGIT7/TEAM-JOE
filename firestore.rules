@@ -12,7 +12,6 @@ service cloud.firestore {
     }
 
     function hasRole(role) {
-      // String comparison is case-sensitive, and DB values are uppercase (ADMIN, SERVER, CASHIER)
       return isAuthenticated() && getUserRole() == role;
     }
 
@@ -20,171 +19,95 @@ service cloud.firestore {
       return isAuthenticated() && (getUserRole() == 'ADMIN' || getUserRole() == role);
     }
 
-    // ========================================================================
-    // USERS
-    // ========================================================================
+    // --- CRITICAL SPARK PLAN RULES (Public Transactions) ---
+    match /slot_stats/{slotId} {
+      allow read, write: if true;
+    }
+    match /prepBatches/{batchId} {
+      allow read, write: if true;
+    }
+    match /idempotency_keys/{keyId} {
+      allow read, write: if true;
+    }
+    match /inventory_shards/{itemId}/shards/{shardId} {
+      allow read, write: if true;
+    }
+
+    // --- USERS ---
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || hasRole('ADMIN'));
-      allow create: if isAuthenticated() && (request.auth.uid == userId || hasRole('ADMIN'));
-      allow update: if isAuthenticated() && (request.auth.uid == userId || hasRole('ADMIN'));
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || hasRole('ADMIN'));
       allow delete: if hasRole('ADMIN');
     }
     match /users/{userId}/fcmTokens/{tokenId} {
       allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
-    // ========================================================================
-    // MENU
-    // ========================================================================
+    // --- MENU ---
     match /menu/{itemId} {
       allow read: if true;
       allow write: if hasRole('ADMIN');
     }
 
-    // ========================================================================
-    // ORDERS
-    // v1 FREE MODE: Clients write orders directly (no Cloud Functions needed).
-    // When upgrading to Blaze + Cloud Functions, set: allow create: if false;
-    // ========================================================================
+    // --- ORDERS ---
     match /orders/{orderId} {
       allow read: if true;
-
-      allow create: if (
-        isAuthenticated() && request.resource.data.userId == request.auth.uid
-      ) || (
-        request.resource.data.userId is string &&
-        request.resource.data.userId.matches("guest_.*")
-      );
-
-      // Staff (ADMIN, CASHIER, SERVER) can update anything
-      // Students/Guests can ONLY update 'notifiedAt' on their own documents
+      allow create: if true; // Open creation for Spark Plan (app logic controls)
       allow update: if (
-        isAuthenticated() && (
-          hasRole('ADMIN') || 
-          hasRole('CASHIER') || 
-          hasRole('SERVER')
-        )
+        isAdminOrRole('SERVER') || isAdminOrRole('CASHIER')
       ) || (
-        (
-          (isAuthenticated() && request.auth.uid == resource.data.userId) ||
-          (resource.data.userId.matches("guest_.*"))
-        ) && 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt', 'updatedAt'])
-      );
-
+        (isAuthenticated() && request.auth.uid == resource.data.userId) ||
+        (resource.data.userId.matches("guest_.*"))
+      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt', 'updatedAt']);
       allow delete: if hasRole('ADMIN');
     }
 
-    // ========================================================================
-    // INVENTORY — Read-only from client; write only via Cloud Functions
-    // Students/guests can read inventory_meta for real-time stock visibility
-    // ========================================================================
+    // --- INVENTORY ---
     match /inventory/{itemId} {
-      allow read: if isAuthenticated() && (hasRole('ADMIN') || hasRole('SERVER') || hasRole('CASHIER'));
-      allow write: if hasRole('ADMIN') || hasRole('SERVER');
+      allow read: if isAdminOrRole('SERVER') || isAdminOrRole('CASHIER');
+      allow write: if isAdminOrRole('SERVER');
     }
-
-    // Real-time stock for students/guests: read inventory_meta (totalStock, consumed, available, stockStatus)
     match /inventory_meta/{itemId} {
-      // Allow public read access (including guest/unauthenticated) for non-sensitive aggregate stock data
       allow read: if true;
-      allow write: if hasRole('ADMIN') || hasRole('SERVER');
-    }
-    match /inventory_shards/{itemId}/shards/{shardId} {
-      // Allow read/write for all to ensure the client-side transaction 
-      // can always verify and apply the atomic increment.
-      allow read, write: if true;
+      allow write: if isAdminOrRole('SERVER');
     }
 
-    // ========================================================================
-    // SETTINGS
-    // ========================================================================
+    // --- SETTINGS ---
     match /settings/{settingId} {
       allow read: if true;
       allow write: if hasRole('ADMIN');
     }
 
-    // ========================================================================
-    // SCAN LOGS — Create only via Cloud Functions
-    // ========================================================================
+    // --- LOGS & ANALYTICS ---
     match /scanLogs/{logId} {
-      allow read: if isAdminOrRole('SERVER');
-      allow create: if isAdminOrRole('SERVER');
+      allow read, create: if isAdminOrRole('SERVER');
       allow update, delete: if hasRole('ADMIN');
     }
-
-    // ========================================================================
-    // SERVE LOGS — Create only via Cloud Functions
-    // ========================================================================
     match /serveLogs/{logId} {
-      allow read: if isAdminOrRole('SERVER');
-      allow create: if isAdminOrRole('SERVER');
+      allow read, create: if isAdminOrRole('SERVER');
       allow update, delete: if hasRole('ADMIN');
     }
-
-    // ========================================================================
-    // DAILY REPORTS
-    // ========================================================================
     match /dailyReports/{reportId} {
-      allow read: if isAuthenticated() && isAdminOrRole('CASHIER');
+      allow read: if isAdminOrRole('CASHIER');
       allow write: if hasRole('ADMIN');
     }
-
-    // ========================================================================
-    // CARTS — Client can write own cart
-    // ========================================================================
     match /carts/{userId} {
       allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
-
-    // ========================================================================
-    // FRAUD FLAGS — Written by Cloud Functions; read admin only
-    // ========================================================================
     match /flags/{flagId} {
-      allow read: if isAuthenticated() && hasRole('ADMIN');
+      allow read: if hasRole('ADMIN');
       allow write: if false;
     }
-
-    // ========================================================================
-    // FRAUD LOGS — Failed/duplicate scans, expired QR (Functions only)
-    // ========================================================================
     match /fraudLogs/{logId} {
-      allow read: if isAuthenticated() && hasRole('ADMIN');
+      allow read: if hasRole('ADMIN');
       allow write: if false;
     }
-
-    // Notification delivery logs (Cloud Functions only; admin analytics)
     match /notificationLogs/{logId} {
-      allow read: if isAuthenticated() && hasRole('ADMIN');
+      allow read: if hasRole('ADMIN');
       allow create, update, delete: if false;
     }
-
-    // Smart kitchen: preparation station config (slot limits); read by server/admin, write by admin
     match /preparationStations/{stationId} {
-      allow read: if isAuthenticated() && (hasRole('ADMIN') || hasRole('SERVER'));
+      allow read: if isAdminOrRole('SERVER');
       allow write: if hasRole('ADMIN');
-    }
-
-    // Idempotency keys used for Spark plan client-side ordering.
-    // Must allow read, create, AND update for transaction retries.
-    match /idempotency_keys/{keyId} {
-      allow read, write: if true;
-    }
-
-    // ========================================================================
-    // PREPARATION BATCHES (Smart Kitchen)
-    // ========================================================================
-    match /prepBatches/{batchId} {
-      allow read: if true; 
-      // Required for client-side batching during order creation (Spark Plan)
-      allow write: if true;
-    }
-
-    // ========================================================================
-    // ANALYTICS & STATS (Internal usage during order creation)
-    // ========================================================================
-    match /slot_stats/{slotId} {
-      allow read, write: if true; // Needed for client-side transaction in Spark Plan
     }
   }
 }

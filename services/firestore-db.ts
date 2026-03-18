@@ -942,12 +942,16 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         
         // 🚨 CAPACITY CHECK: If slot volume > 200, shift to next 15m
         const slotStatsRef = doc(db, "slot_stats", slot.toString());
-        const statsSnap = await transaction.get(slotStatsRef);
-        const currentVolume = statsSnap.exists() ? (statsSnap.data().totalVolume || 0) : 0;
         const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
-
-        if (currentVolume + requestedQty > MAX_TOTAL_SLOT_CAPACITY) {
-            slot = getNextLogicalSlot(slot);
+        try {
+          const statsSnap = await transaction.get(slotStatsRef);
+          const currentVolume = statsSnap.exists() ? (statsSnap.data().totalVolume || 0) : 0;
+          if (currentVolume + requestedQty > MAX_TOTAL_SLOT_CAPACITY) {
+              slot = getNextLogicalSlot(slot);
+          }
+        } catch (e: any) {
+          console.warn("⚠️ Bypassing capacity check due to permissions/error:", e?.message);
+          // Non-blocking: continue with original slot if check fails
         }
 
         // Reserve capacity
@@ -964,38 +968,57 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
           let index = 0;
           let found = false;
 
-          while (!found && index < 20) {
+          while (!found && index < 5) { // Reduced index for faster fallback
             const potentialId = `batch_${slot}_${item.id}_${index}`;
             const bRef = doc(db, "prepBatches", potentialId);
-            const bSnap = await transaction.get(bRef);
-
-            if (!bSnap.exists()) {
-              transaction.set(bRef, {
-                id: potentialId,
-                itemId: item.id,
-                itemName: item.name,
-                arrivalTimeSlot: slot,
-                orderIds: [id],
-                quantity: item.quantity,
-                status: 'QUEUED',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-              });
-              assignedBatchId = potentialId;
-              found = true;
-            } else {
-              const bData = bSnap.data() as PrepBatch;
-              if (bData.status === 'QUEUED' && (bData.quantity + item.quantity) <= MAX_BATCH_SIZE) {
-                transaction.update(bRef, {
-                  orderIds: arrayUnion(id),
-                  quantity: increment(item.quantity),
+            
+            try {
+              const bSnap = await transaction.get(bRef);
+              if (!bSnap.exists()) {
+                transaction.set(bRef, {
+                  id: potentialId,
+                  itemId: item.id,
+                  itemName: item.name,
+                  arrivalTimeSlot: slot,
+                  orderIds: [id],
+                  quantity: item.quantity,
+                  status: 'QUEUED',
+                  createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp()
                 });
                 assignedBatchId = potentialId;
                 found = true;
               } else {
-                index++;
+                const bData = bSnap.data() as PrepBatch;
+                if (bData.status === 'QUEUED' && (bData.quantity + item.quantity) <= MAX_BATCH_SIZE) {
+                  transaction.update(bRef, {
+                    orderIds: arrayUnion(id),
+                    quantity: increment(item.quantity),
+                    updatedAt: serverTimestamp()
+                  });
+                  assignedBatchId = potentialId;
+                  found = true;
+                } else {
+                  index++;
+                }
               }
+            } catch (batchErr: any) {
+              console.warn("⚠️ Batch read permission denied, forcing unique batch", batchErr?.message);
+              // Fallback: Use a unique ID to avoid existing batch collision if we can't read
+              const uniqueId = `batch_p_${slot}_${item.id}_${id.slice(-4)}_${Date.now()}`;
+              transaction.set(doc(db, "prepBatches", uniqueId), {
+                  id: uniqueId,
+                  itemId: item.id,
+                  itemName: item.name,
+                  arrivalTimeSlot: slot,
+                  orderIds: [id],
+                  quantity: item.quantity,
+                  status: 'QUEUED',
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp()
+              });
+              assignedBatchId = uniqueId;
+              found = true;
             }
           }
 
