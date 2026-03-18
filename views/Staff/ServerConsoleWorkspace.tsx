@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { Camera, Check, CheckCircle, X, ChevronRight, Utensils, Clock, Zap, AlertTriangle, Search, CookingPot, PackageCheck } from 'lucide-react';
 import { Order, CartItem } from '../../types';
+import SmoothImage from '../../components/SmoothImage';
 
 interface ServerConsoleWorkspaceProps {
   activeOrders: Order[];
@@ -209,7 +210,7 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                 </div>
               )}
 
-              {filteredItems.length === 0 && (
+              {(readyItems.length + pendingItems.length + servedItems.length) === 0 && (
                  <div className="flex flex-col items-center justify-center py-20 text-slate-300 italic">
                     <Search className="w-10 h-10 mb-2 opacity-10" />
                     <p className="text-xs font-bold uppercase tracking-widest">No matching items found</p>
@@ -269,14 +270,15 @@ const ItemCard: React.FC<{
     }`}>
       {/* Visual Image Feedback */}
       <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 border border-slate-100 shrink-0 relative">
-         <img 
-           src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&h=100&fit=crop'} 
+         <SmoothImage 
+           src={item.imageUrl} 
            alt={item.name}
            className="w-full h-full object-cover"
-           loading="lazy"
+           containerClassName="w-12 h-12"
+           quality={100}
          />
          {statusInfo.flavor === 'READY' && (
-            <div className="absolute inset-0 bg-green-500/10 border border-green-500 rounded-lg animate-pulse" />
+            <div className="absolute inset-0 bg-green-500/10 border border-green-500 rounded-lg animate-pulse z-10" />
          )}
       </div>
 

@@ -2,8 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LogOut, ShoppingBag, Plus, Minus, Search, Loader2, 
   Menu, X as CloseIcon, User, Clock, ShieldCheck, 
-  ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles
+  ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
 } from 'lucide-react';
+import SmoothImage from '../../components/SmoothImage';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
 import { CATEGORIES, FAST_ITEM_CATEGORIES } from '../../constants';
 import { listenToMenu, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
@@ -404,15 +405,12 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             return (
               <div key={item.id} className={`bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-black/5 group hover:border-primary/20 transition-all flex flex-col active:scale-[0.98] ${outOfStock ? 'opacity-80' : ''}`}>
                 <div className="h-32 bg-gray-100 overflow-hidden relative">
-                  <img 
-                    src={item.imageUrl || 'https://images.unsplash.com/photo-1630383249896-424e482df921?auto=format&fit=crop&q=80&w=400'} 
+                <SmoothImage 
+                    src={item.imageUrl} 
                     alt={item.name} 
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = 'https://images.unsplash.com/photo-1630383249896-424e482df921?auto=format&fit=crop&q=80&w=400';
-                    }}
-                  />
+                    containerClassName="h-32"
+                />
                   <div className="absolute top-4 right-4 bg-white/95 backdrop-blur px-3 py-1.5 rounded-xl text-xs font-black text-textMain shadow-lg border border-black/5">
                     ₹{item.price}
                   </div>

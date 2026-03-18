@@ -69,7 +69,7 @@ service cloud.firestore {
           (isAuthenticated() && request.auth.uid == resource.data.userId) ||
           (resource.data.userId.matches("guest_.*"))
         ) && 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt', 'updatedAt'])
       );
 
       allow delete: if hasRole('ADMIN');
@@ -91,9 +91,9 @@ service cloud.firestore {
       allow write: if hasRole('ADMIN') || hasRole('SERVER');
     }
     match /inventory_shards/{itemId}/shards/{shardId} {
-      allow read: if isAuthenticated() && (hasRole('ADMIN') || hasRole('SERVER') || hasRole('CASHIER'));
-      // Allow anyone to increment shards (controlled via app logic + transaction)
-      allow write: if true; 
+      // Allow read/write for all to ensure the client-side transaction 
+      // can always verify and apply the atomic increment.
+      allow read, write: if true;
     }
 
     // ========================================================================
@@ -165,18 +165,26 @@ service cloud.firestore {
       allow write: if hasRole('ADMIN');
     }
 
-    // Idempotency keys for Spark plan client-side ordering
+    // Idempotency keys used for Spark plan client-side ordering.
+    // Must allow read, create, AND update for transaction retries.
     match /idempotency_keys/{keyId} {
-      // Allow read/create for everyone (including guests) to support duplicate check in transactions
-      allow read, create: if true;
+      allow read, write: if true;
     }
 
     // ========================================================================
     // PREPARATION BATCHES (Smart Kitchen)
     // ========================================================================
     match /prepBatches/{batchId} {
-      allow read: if true; // Students need to read status for notifications
-      allow write: if isAdminOrRole('SERVER');
+      allow read: if true; 
+      // Required for client-side batching during order creation (Spark Plan)
+      allow write: if true;
+    }
+
+    // ========================================================================
+    // ANALYTICS & STATS (Internal usage during order creation)
+    // ========================================================================
+    match /slot_stats/{slotId} {
+      allow read, write: if true; // Needed for client-side transaction in Spark Plan
     }
   }
 }
