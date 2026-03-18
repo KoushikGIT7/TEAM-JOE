@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Firestore Database Service
  * Production-grade replacement for localStorage mock database
  * All operations use Firestore with real-time listeners
@@ -414,7 +414,7 @@ export const initializeMenu = async (): Promise<void> => {
         });
       });
       await batch.commit();
-      console.log("✅ Menu initialized with default items");
+      console.log("âœ… Menu initialized with default items");
       
       // Also initialize inventory + inventory_meta for menu items (inventory_meta for real-time student view)
       const inventoryBatch = writeBatch(db);
@@ -441,7 +441,7 @@ export const initializeMenu = async (): Promise<void> => {
         });
       });
       await inventoryBatch.commit();
-      console.log("✅ Inventory and inventory_meta initialized for menu items");
+      console.log("âœ… Inventory and inventory_meta initialized for menu items");
     }
   } catch (error) {
     console.error("Error initializing menu:", error);
@@ -795,7 +795,7 @@ export const getAggregatedInventory = async (): Promise<InventoryItem[]> => {
   }
 };
 
-/** Update kitchen workflow state (PLACED → COOKING → READY → SERVED). Server/admin only via Callable. */
+/** Update kitchen workflow state (PLACED â†’ COOKING â†’ READY â†’ SERVED). Server/admin only via Callable. */
 export const updateKitchenStatus = async (orderId: string, kitchenStatus: KitchenStatus): Promise<void> => {
   if (useCallables()) {
     await updateKitchenStatusCallable({ orderId, kitchenStatus });
@@ -804,7 +804,7 @@ export const updateKitchenStatus = async (orderId: string, kitchenStatus: Kitche
   await updateDoc(doc(db, "orders", orderId), { kitchenStatus });
 };
 
-/** Zero-wait: update serve flow (NEW→PREPARING→READY). Server only. */
+/** Zero-wait: update serve flow (NEWâ†’PREPARINGâ†’READY). Server only. */
 export const updateServeFlowStatus = async (orderId: string, serveFlowStatus: 'PREPARING' | 'READY'): Promise<void> => {
   if (useCallables()) {
     await updateServeFlowStatusCallable({ orderId, serveFlowStatus });
@@ -888,7 +888,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     // inventory_shards are staff-internal and NEVER written in the customer transaction.
     const result = await runTransaction(db, async (transaction) => {
       // ============================================================
-      // PHASE 1 — READS ONLY (all reads must precede any writes)
+      // PHASE 1 â€” READS ONLY (all reads must precede any writes)
       // ============================================================
       const idempotencyKey = orderData.idempotencyKey;
       const idempRef = idempotencyKey ? doc(db, "idempotency_keys", idempotencyKey) : null;
@@ -909,7 +909,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         ...batchRefs.flatMap(b => b.refs)
       ];
 
-      // Execute all reads at once — Firestore requires all reads before writes
+      // Execute all reads at once â€” Firestore requires all reads before writes
       const snapshots = await Promise.all(
         allRefs.map(ref =>
           transaction.get(ref).catch(() =>
@@ -929,7 +929,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       });
 
       // ============================================================
-      // PHASE 2 — BUSINESS LOGIC (pure computation, no DB calls)
+      // PHASE 2 â€” BUSINESS LOGIC (pure computation, no DB calls)
       // ============================================================
 
       // Idempotency: if this key already exists, return the existing orderId
@@ -937,7 +937,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         return (idempSnap.data() as any)?.orderId;
       }
 
-      // Stock validation (soft check — does not block if inventory_meta is missing)
+      // Stock validation (soft check â€” does not block if inventory_meta is missing)
       orderData.items.forEach((item, idx) => {
         const snap = inventorySnaps[idx];
         if (snap.exists()) {
@@ -1011,7 +1011,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
           }
 
           if (!found) {
-            // All 3 slots full — create a uniquely-named overflow batch
+            // All 3 slots full â€” create a uniquely-named overflow batch
             const uniqueId = `batch_ovf_${targetSlot}_${item.id}_${id.slice(-4)}`;
             const bRef = doc(db, "prepBatches", uniqueId);
             batchAssignments.push({
@@ -1049,7 +1049,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       }
 
       // ============================================================
-      // PHASE 3 — WRITES ONLY (no reads from this point forward)
+      // PHASE 3 â€” WRITES ONLY (no reads from this point forward)
       // ============================================================
 
       // 1. Slot capacity reservation (only for dynamic/prep items)
@@ -1071,11 +1071,11 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         transaction.set(idempRef, { orderId: id, createdAt: serverTimestamp() });
       }
 
-      // 4. The order document — customer owns this
+      // 4. The order document â€” customer owns this
       transaction.set(doc(db, "orders", id), orderToFirestore(finalizedOrder));
 
       return id;
-      // inventory_shards intentionally excluded — they are staff-internal
+      // inventory_shards intentionally excluded â€” they are staff-internal
       // and are managed via admin/server console, not customer transactions.
     });
 
@@ -1404,7 +1404,7 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
 };
 
 export const validateQRForServing = async (qrData: string): Promise<Order> => {
-  console.log('🛡️ [FIREBASE-ORDER] Validating Meal Token...');
+  console.log('ðŸ›¡ï¸ [FIREBASE-ORDER] Validating Meal Token...');
   
   try {
     let orderId: string;
@@ -1470,7 +1470,7 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
       }
     }
 
-    console.log('✅ [FIREBASE-ORDER] Token validated successfully:', orderId);
+    console.log('âœ… [FIREBASE-ORDER] Token validated successfully:', orderId);
 
     // 5. Mark as SCANNED in database so it appears at serving counter
     const orderRef = doc(db, "orders", orderId);
@@ -1481,13 +1481,13 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
 
     return { ...order, scannedAt: Date.now(), qrState: 'SCANNED' };
   } catch (error: any) {
-    console.error('❌ [SCAN-ERROR]:', error.message);
+    console.error('âŒ [SCAN-ERROR]:', error.message);
     throw error;
   }
 };
 
 /**
- * 🛠️ FORCE READY: Manual override for servers when an item is physically ready 
+ * ðŸ› ï¸ FORCE READY: Manual override for servers when an item is physically ready 
  * but system says PENDING/PREPARING. Moves it to COLLECTING/READY.
  */
 export const forceReadyOrder = async (orderId: string, staffId: string): Promise<void> => {
@@ -1619,7 +1619,7 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
         qrState: allResolved ? 'SERVED' : 'SCANNED',
       });
 
-      // 🔄 SYNC PREP BATCHES: Decrement quantities in the production pipeline
+      // ðŸ”„ SYNC PREP BATCHES: Decrement quantities in the production pipeline
       // This ensures the Cook Console clears items after they are physically handed over.
       const batchIds = order.batchIds || [];
       for (const bId of batchIds) {
@@ -1682,7 +1682,7 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
         serveFlowStatus: 'SERVED'
       });
 
-      // 🔄 SYNC ALL RELATED BATCHES
+      // ðŸ”„ SYNC ALL RELATED BATCHES
       const batchIds = order.batchIds || [];
       for (const bId of batchIds) {
          const bRef = doc(db, "prepBatches", bId);
@@ -1848,7 +1848,7 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
       // to maintain high throughput on this serving transaction.
     });
 
-    console.log('✅ Item served:', { orderId, itemId, servedBy });
+    console.log('âœ… Item served:', { orderId, itemId, servedBy });
   } catch (error) {
     console.error("Error serving item:", error);
     throw error;
@@ -1866,7 +1866,7 @@ export const rejectOrderFromCounter = async (orderId: string, rejectedBy: string
       rejectedBy,
       rejectedAt: serverTimestamp()
     });
-    console.log('🚫 Order rejected from counter:', orderId);
+    console.log('ðŸš« Order rejected from counter:', orderId);
   } catch (error) {
     console.error("Error rejecting order:", error);
     throw error;
@@ -2132,7 +2132,6 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
           updatedAt: data.updatedAt?.toMillis?.() || Date.now()
         } as PrepBatch;
       });
-      // Sort client-side to avoid needing a composite index
       const sorted = batches.sort((a, b) => (a.arrivalTimeSlot || 0) - (b.arrivalTimeSlot || 0));
       callback(sorted);
     },
@@ -2146,15 +2145,23 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
 export const startBatchPreparation = async (batchId: string): Promise<void> => {
   const batchRef = doc(db, "prepBatches", batchId);
   try {
-    const batchSnap = await getDoc(batchRef);
-    if (!batchSnap.exists()) return;
-    const data = batchSnap.data() as PrepBatch;
-
     await runTransaction(db, async (tx) => {
+      // PHASE 1: READ
+      const batchSnap = await tx.get(batchRef);
+      if (!batchSnap.exists()) return;
+      const data = batchSnap.data() as PrepBatch;
+      
+      // Read all order docs before writing anything
+      const orderRefs = (data.orderIds || []).map(oid => doc(db, "orders", oid));
+      const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
+
+      // PHASE 2: WRITE
       tx.update(batchRef, { status: 'PREPARING', updatedAt: serverTimestamp() });
-      for (const orderId of (data.orderIds || [])) {
-        tx.update(doc(db, "orders", orderId), { serveFlowStatus: 'PREPARING' });
-      }
+      orderSnaps.forEach((snap, i) => {
+        if (snap.exists()) {
+          tx.update(orderRefs[i], { serveFlowStatus: 'PREPARING' });
+        }
+      });
     });
   } catch (err) {
     console.error("Error starting batch prep:", err);
@@ -2165,21 +2172,25 @@ export const startBatchPreparation = async (batchId: string): Promise<void> => {
 export const markBatchAlmostReady = async (batchId: string): Promise<void> => {
   const batchRef = doc(db, "prepBatches", batchId);
   try {
-    const batchSnap = await getDoc(batchRef);
-    if (!batchSnap.exists()) return;
-    const data = batchSnap.data() as PrepBatch;
-
     await runTransaction(db, async (tx) => {
+      // PHASE 1: READ
+      const batchSnap = await tx.get(batchRef);
+      if (!batchSnap.exists()) return;
+      const data = batchSnap.data() as PrepBatch;
+
+      const orderRefs = (data.orderIds || []).map(oid => doc(db, "orders", oid));
+      const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
+
+      // PHASE 2: WRITE
       tx.update(batchRef, { 
         status: 'ALMOST_READY', 
         updatedAt: serverTimestamp() 
       });
-      
-      for (const orderId of (data.orderIds || [])) {
-        tx.update(doc(db, "orders", orderId), { 
-          serveFlowStatus: 'ALMOST_READY'
-        });
-      }
+      orderSnaps.forEach((snap, i) => {
+        if (snap.exists()) {
+          tx.update(orderRefs[i], { serveFlowStatus: 'ALMOST_READY' });
+        }
+      });
     });
   } catch (err) {
     console.error("Error marking batch almost ready:", err);
@@ -2190,39 +2201,40 @@ export const markBatchAlmostReady = async (batchId: string): Promise<void> => {
 export const markBatchReady = async (batchId: string): Promise<void> => {
   const batchRef = doc(db, "prepBatches", batchId);
   try {
-    const batchSnap = await getDoc(batchRef);
-    if (!batchSnap.exists()) return;
-    const data = batchSnap.data() as PrepBatch;
-
     const now = Date.now();
-    const durationMs = 7 * 60 * 1000; // 7 minute window
-    const pickupWindowEnd = now + durationMs;
 
     await runTransaction(db, async (tx) => {
+      // PHASE 1: READ
       const batchSnap = await tx.get(batchRef);
       if (!batchSnap.exists()) return;
       const bData = batchSnap.data() as PrepBatch;
-      
+
       // Double action protection
       if (bData.status === 'READY') return;
 
+      const orderRefs = (bData.orderIds || []).map(oid => doc(db, "orders", oid));
+      const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
+
+      // PHASE 2: WRITE
       tx.update(batchRef, { 
         status: 'READY', 
         readyAt: now, 
         updatedAt: serverTimestamp() 
       });
       
-      for (const orderId of (bData.orderIds || [])) {
-        tx.update(doc(db, "orders", orderId), { 
-          serveFlowStatus: 'READY',
-          pickupWindow: {
-            startTime: now,
-            endTime: now + PICKUP_WINDOW_DURATION_MS,
-            durationMs: PICKUP_WINDOW_DURATION_MS,
-            status: 'COLLECTING'
-          }
-        });
-      }
+      orderSnaps.forEach((snap, i) => {
+        if (snap.exists()) {
+          tx.update(orderRefs[i], { 
+            serveFlowStatus: 'READY',
+            pickupWindow: {
+              startTime: now,
+              endTime: now + PICKUP_WINDOW_DURATION_MS,
+              durationMs: PICKUP_WINDOW_DURATION_MS,
+              status: 'COLLECTING'
+            }
+          });
+        }
+      });
     });
   } catch (err) {
     console.error("Error marking batch ready:", err);
@@ -2237,39 +2249,87 @@ export const markBatchCompleted = async (batchId: string): Promise<void> => {
    });
 };
 
-// ─── Slot Level Controllers (Batch Operations) ───
+// â”€â”€â”€ Slot Level Controllers (Batch Operations) â”€â”€â”€
 
+/**
+ * updateSlotStatus â€” Updates all batches in a slot AND their linked orders.
+ * 
+ * ARCHITECTURE: Strict read-before-write transaction.
+ * 1. Query all active batches in this slot (outside transaction â€” queries 
+ *    can't run inside transactions anyway).
+ * 2. Inside the transaction:
+ *    - PHASE 1: Read ALL batch docs + ALL order docs upfront.
+ *    - PHASE 2: Write ALL updates.
+ *    No read is ever performed after a write.
+ */
 export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): Promise<void> => {
+    // Step 0: Query batch IDs outside the transaction (query is NOT transactional)
     const q = query(
         collection(db, "prepBatches"),
         where("arrivalTimeSlot", "==", slot),
         where("status", "!=", "COMPLETED")
     );
     
-    const snap = await getDocs(q);
-    if (snap.empty) return;
+    const querySnap = await getDocs(q);
+    if (querySnap.empty) return;
 
-    // 🚀 BATCHED WRITE: Update all batches and their orders in one transaction
+    const batchIds = querySnap.docs.map(d => d.id);
+
     await runTransaction(db, async (tx) => {
         const now = Date.now();
-        for (const d of snap.docs) {
-            const batchData = d.data() as PrepBatch;
-            if (batchData.status === status) continue;
 
-            const batchRef = doc(db, "prepBatches", d.id);
+        // ============================================================
+        // PHASE 1 â€” ALL READS (no writes until this section is done)
+        // ============================================================
+        
+        // 1a. Read all batch documents
+        const batchRefs = batchIds.map(bid => doc(db, "prepBatches", bid));
+        const batchSnaps = await Promise.all(batchRefs.map(r => tx.get(r)));
+
+        // 1b. Collect all unique order IDs from all batches
+        const batchDataList: { ref: any; data: PrepBatch; idx: number }[] = [];
+        const allOrderIds = new Set<string>();
+        
+        batchSnaps.forEach((snap, idx) => {
+            if (!snap.exists()) return;
+            const data = snap.data() as PrepBatch;
+            if (data.status === status) return; // already at target status, skip
+            batchDataList.push({ ref: batchRefs[idx], data, idx });
+            (data.orderIds || []).forEach(oid => allOrderIds.add(oid));
+        });
+
+        if (batchDataList.length === 0) return; // nothing to update
+
+        // 1c. Read ALL order documents upfront
+        const orderIdArray = Array.from(allOrderIds);
+        const orderRefs = orderIdArray.map(oid => doc(db, "orders", oid));
+        const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
+
+        // Build a lookup: orderId â†’ { ref, snap }
+        const orderMap = new Map<string, { ref: any; snap: any }>();
+        orderIdArray.forEach((oid, i) => {
+            orderMap.set(oid, { ref: orderRefs[i], snap: orderSnaps[i] });
+        });
+
+        // ============================================================
+        // PHASE 2 â€” ALL WRITES (no reads from this point forward)
+        // ============================================================
+
+        // 2a. Update each batch
+        batchDataList.forEach(({ ref, data }) => {
             const updateObj: any = { status, updatedAt: serverTimestamp() };
             if (status === 'READY') updateObj.readyAt = now;
+            tx.update(ref, updateObj);
+        });
 
-            tx.update(batchRef, updateObj);
+        // 2b. Update each order (using pre-fetched snapshots)
+        batchDataList.forEach(({ data: batchData }) => {
+            (batchData.orderIds || []).forEach(orderId => {
+                const entry = orderMap.get(orderId);
+                if (!entry || !entry.snap.exists()) return;
 
-            for (const orderId of (batchData.orderIds || [])) {
-                const orderRef = doc(db, "orders", orderId);
-                const orderSnap = await tx.get(orderRef);
-                if (!orderSnap.exists()) continue;
-
-                const orderData = orderSnap.data();
+                const orderData = entry.snap.data();
                 const items = (orderData.items || []).map((item: any) => {
-                    // Update ONLY items that match this batch's itemId and aren't already served
                     if (item.id === batchData.itemId && item.status !== 'SERVED') {
                         return { ...item, status };
                     }
@@ -2285,12 +2345,17 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
                         status: 'COLLECTING'
                     };
                 }
-                tx.update(orderRef, orderUpdate);
-            }
-        }
+                tx.update(entry.ref, orderUpdate);
+            });
+        });
     });
 };
 
+/**
+ * tryAcquireMaintenanceLock â€” Leader election for background maintenance tasks.
+ * Reads system/maintenance doc. If it doesn't exist, creates it.
+ * If the doc is stale (>30s), takes over. Otherwise yields.
+ */
 export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean> => {
   const maintenanceRef = doc(db, "system", "maintenance");
   const now = Date.now();
@@ -2304,13 +2369,11 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
       }
       
       const data = snap.data() as SystemMaintenance;
-      // If last heartbeat was > 30s ago, assume the role (Harder 30s expiry)
       if (now - data.lastHeartbeatAt > 30000) {
         tx.update(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId });
         return true;
       }
       
-      // If we are already the owner, update the timestamp
       if (data.activeNodeId === nodeId) {
         tx.update(maintenanceRef, { lastHeartbeatAt: now });
         return true;
@@ -2319,9 +2382,12 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
       return false;
     });
   } catch (err) {
+    console.warn("Maintenance lock acquisition failed (non-fatal):", (err as any)?.message);
     return false;
   }
 };
+
+
 
 export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
   const now = Date.now();

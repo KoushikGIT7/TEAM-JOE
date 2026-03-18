@@ -215,6 +215,13 @@ service cloud.firestore {
     // TIER 6: ADMIN / SYSTEM-ONLY
     // =========================================================================
 
+    // System operational docs (maintenance locks, heartbeats, etc.)
+    // Staff need read/write for leader election; no customer access.
+    match /system/{docId} {
+      allow read, write: if isStaff();
+    }
+
+
     match /flags/{flagId} {
       allow read: if isAdmin();
       allow write: if false;
