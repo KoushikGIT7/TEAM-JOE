@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShieldCheck, X, AlertCircle, LogOut
 } from 'lucide-react';
+import { updateDoc, doc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { UserProfile, Order, PrepBatch } from '../../types';
 import {
   listenToBatches,
@@ -9,7 +11,8 @@ import {
   serveItemBatch,
   serveFullOrder,
   listenToActiveOrders,
-  flushMissedPickups
+  flushMissedPickups,
+  forceReadyOrder
 } from '../../services/firestore-db';
 import { initializeScanner } from '../../services/scanner';
 import QRScanner from '../../components/QRScanner';
@@ -23,69 +26,84 @@ interface UnifiedKitchenConsoleProps {
 }
 
 const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout }) => {
-  // --- STATE ---
+  // --- CORE DATA STATE ---
   const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  
+  // --- UI STATE ---
+  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER'>('SERVER');
   const [isScanning, setIsScanning] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [scanQueue, setScanQueue] = useState<string[]>([]);
-  const [scanFeedback, setScanFeedback] = useState<{ 
-    status: 'VALID' | 'INVALID' | null, 
-    message?: string,
-    subtext?: string,
-    orderId?: string
-  }>({ status: null });
 
-  // --- WORKSPACE STATE ---
-  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER'>('SERVER');
-  const [isProcessing, setIsProcessing] = useState(false);
+  // 🛡️ SCAN QUEUE SYNC: Derived from Firestore 'SCANNED' state
+  // This ensures the queue survives page refresh, crashes, or multi-tablet environments.
+  const scanQueue = useMemo(() => {
+    return activeOrders
+      .filter(o => o.qrState === 'SCANNED' && o.orderStatus !== 'SERVED')
+      .sort((a, b) => (a.scannedAt || 0) - (b.scannedAt || 0))
+      .map(o => o.id);
+  }, [activeOrders]);
+
+  const [scanFeedback, setScanFeedback] = useState<{
+    status: 'VALID' | 'INVALID' | null;
+    message?: string;
+    subtext?: string;
+    orderId?: string;
+  }>({ status: null });
 
   // --- REFS ---
   const lastScanTimestamp = useRef<number>(0);
 
-  // --- TIME & SCANNER ---
+  // --- MAINTENANCE & CLOCK ---
   useEffect(() => {
-    const t = setInterval(() => setCurrentTime(new Date()), 1000);
-
-    const scanner = initializeScanner({ suffixKey: 'Enter', autoFocus: true });
-    scanner.onScan((data) => {
-      // Only process scans if in SERVER workspace
-      if (activeWorkspace === 'SERVER') {
-        handleQRScan(data);
-      }
-    });
-
+    const clockT = setInterval(() => setCurrentTime(new Date()), 1000);
+    
     // 🚀 PRODUCTION MAINTENANCE: Flush Missed Pickups (Every 60s)
-    // Runs 'Lazy Reassignment' logic to move orders from READY to MISSED
     const maintenanceLoop = setInterval(async () => {
        const nodeId = `node_${profile.uid.slice(0,8)}`;
        await flushMissedPickups(nodeId).catch(console.warn);
     }, 60000);
 
+    const unsubBatches = listenToBatches(setBatches);
+    const unsubOrders = listenToActiveOrders(setActiveOrders);
+
     return () => {
-      clearInterval(t);
+      clearInterval(clockT);
       clearInterval(maintenanceLoop);
+      unsubBatches();
+      unsubOrders();
+    };
+  }, [profile.uid]);
+
+  // --- HEADLESS SCANNER INPUT FOCUS ---
+  useEffect(() => {
+    if (activeWorkspace !== 'SERVER') return;
+
+    const focusT = setInterval(() => {
+      const el = document.getElementById('headless-scanner-input');
+      if (el && document.activeElement !== el) el.focus();
+    }, 1000);
+
+    const scanner = initializeScanner({ suffixKey: 'Enter', autoFocus: true });
+    scanner.onScan((data) => {
+      if (activeWorkspace === 'SERVER') {
+        handleQRScan(data);
+      }
+    });
+
+    return () => {
+      clearInterval(focusT);
       scanner.destroy();
     };
   }, [activeWorkspace]);
 
-  // --- LISTENERS ---
-  useEffect(() => {
-    const unsubBatches = listenToBatches(setBatches);
-    const unsubOrders = listenToActiveOrders(setActiveOrders);
-    return () => {
-        unsubBatches();
-        unsubOrders();
-    };
-  }, []);
-
-  // --- HANDLERS ---
+  // --- OPERATIONAL HANDLERS ---
   const handleQRScan = async (data: string) => {
     if (!data?.trim() || isScanning) return;
 
-    // 🛡️ SCAN THROTTLING: Prevent repeated scans within 500ms (High Throughput)
     const now = Date.now();
     if (now - lastScanTimestamp.current < 500) return;
     lastScanTimestamp.current = now;
@@ -95,13 +113,11 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     try {
         if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
 
-        // 1. Fetch FULL Order
+        // 1. Validate & Mark as SCANNED in DB
         const order = await validateQRForServing(data);
-        
-        // Check if fully static (no prep needed) -> Fast Path Static Meal
         const isStaticMeal = order.items.every(it => it.orderType === 'FAST_ITEM');
 
-        // 2. Success Feedback (Traffic Signal Green)
+        // 2. Success Feedback
         setScanFeedback({
           status: 'VALID',
           message: 'VALID',
@@ -109,59 +125,30 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           orderId: order.id.slice(-6).toUpperCase()
         });
 
+        // 3. Fast Path completion
         if (isStaticMeal) {
-           // Auto-serve in background, do not clutter queue
            serveFullOrder(order.id, profile.uid).catch(console.error);
-        } else {
-           // 3. Add to Queue and Focus (for prep items)
-           setScanQueue(prev => {
-             const exists = prev.includes(order.id);
-             if (exists) {
-               // Re-prioritize to front
-               return [order.id, ...prev.filter(id => id !== order.id)];
-             }
-             return [order.id, ...prev];
-           });
         }
 
-        // 4. Return to scan mode after 1.2 seconds (overlay fades quickly)
-        setTimeout(() => setScanFeedback({ status: null }), 1200);
-
+        setTimeout(() => setScanFeedback({ status: null }), 1500);
     } catch (err: any) {
-        // Failure Feedback (Traffic Signal Red)
         setScanFeedback({
           status: 'INVALID',
           message: 'INVALID',
-          subtext: err.message || 'QR not valid'
+          subtext: err.message || 'Validation Failed'
         });
-        
-        setTimeout(() => setScanFeedback({ status: null }), 1500);
+        setTimeout(() => setScanFeedback({ status: null }), 2000);
     } finally {
         setIsScanning(false);
     }
   };
 
-   const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
+  const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
         await serveItemBatch(orderId, itemId, qty, profile.uid);
         if ('vibrate' in navigator) navigator.vibrate(50);
-
-        // Auto-remove from queue if fully served
-        const order = activeOrders.find(o => o.id === orderId);
-        if (order) {
-          const allDone = order.items.every(item => {
-            const rem = item.id === itemId 
-              ? (item.remainingQty ?? (item.quantity - (item.servedQty || 0))) - qty
-              : (item.remainingQty ?? (item.quantity - (item.servedQty || 0)));
-            return rem <= 0;
-          });
-           if (allDone) {
-            // Auto complete immediately if 0 items remaining
-            setTimeout(() => setScanQueue(prev => prev.filter(id => id !== orderId)), 300);
-          }
-        }
     } catch (err: any) {
         setError(err.message || 'Serve Failed');
     } finally {
@@ -173,116 +160,167 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-        setScanQueue(prev => prev.filter(id => id !== orderId));
         await serveFullOrder(orderId, profile.uid);
         if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
     } catch (err: any) {
         setError(err.message || 'Serve Failed');
-        // If fail, we should probably restore to queue but simpler to just error for now
     } finally {
         setIsProcessing(false);
     }
   };
 
-  // --- WORKSPACE RENDERING ---
+  const promoteOrder = async (orderId: string) => {
+    try {
+        await updateDoc(doc(db, 'orders', orderId), { scannedAt: Date.now() });
+    } catch (err: any) {
+        setError('Failed to focus order');
+    }
+  };
+
+  const handleForceReady = async (orderId: string) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+        await forceReadyOrder(orderId, profile.uid);
+        if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+    } catch (err: any) {
+        setError(err.message || 'Action Failed');
+    } finally {
+        setIsProcessing(false);
+    }
+  };
 
   return (
-    <div className="h-screen w-screen bg-[#FDFDFD] flex flex-col font-sans text-slate-900 overflow-hidden">
-      
-      {/* Workspace Header - Top Bar */}
-      <header className="h-20 border-b border-slate-200 bg-white px-8 flex items-center justify-between shrink-0 z-40">
-         <div className="flex items-center gap-6">
-           {/* Segmented Workspace Switch */}
-           <div className="flex bg-slate-100 p-1.5 rounded-2xl shrink-0">
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans select-none overflow-hidden h-screen">
+      {/* GLOBAL BACKGROUND FEEDBACK - STATIC FAST PATH */}
+      {scanFeedback.status === 'VALID' && (
+        <div className="fixed inset-0 z-[100] bg-green-600 flex flex-col items-center justify-center animate-in fade-in duration-300 pointer-events-none">
+          <div className="bg-white/10 p-12 rounded-3xl backdrop-blur-md mb-8">
+            <ShieldCheck className="w-32 h-32 text-white" />
+          </div>
+          <h1 className="text-7xl font-bold text-white tracking-widest uppercase animate-in zoom-in-95 duration-500">
+            {scanFeedback.message}
+          </h1>
+          <p className="text-sm font-bold text-green-100 uppercase tracking-[0.5em] mt-6 border-t border-white/20 pt-6">
+            {scanFeedback.subtext}
+          </p>
+        </div>
+      )}
+
+      {/* HEADER: OPERATIONAL DASHBOARD */}
+      <header className="bg-white px-8 h-20 flex items-center justify-between border-b border-slate-200 shrink-0 shadow-sm z-30">
+        <div className="flex items-center gap-6">
+           <div className="bg-slate-900 px-5 py-2 rounded-lg">
+              <span className="text-white font-bold text-lg tracking-tight uppercase">JOE CAFE</span>
+           </div>
+           
+           {/* Workspace Switcher */}
+           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button 
                 onClick={() => setActiveWorkspace('COOK')}
-                className={`px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all ${
+                className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
                   activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
-                Production Pipeline
+                Cook Station
               </button>
               <button 
                 onClick={() => setActiveWorkspace('SERVER')}
-                className={`px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all ${
+                className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
                   activeWorkspace === 'SERVER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
-                Scan & Serve
+                Server Desk
               </button>
            </div>
-         </div>
+        </div>
 
-         <div className="flex items-center gap-8">
-           <div className="text-right hidden sm:block">
-             <p className="text-sm font-black text-slate-900 leading-none mb-1">
-               {currentTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}
-             </p>
-             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-               {activeWorkspace === 'COOK' ? 'Kitchen Mode' : 'Counter Mode'}
-             </p>
+        <div className="flex items-center gap-8">
+           <div className="text-right flex flex-col items-end">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Live Ops Time</span>
+              <span className="text-2xl font-black text-slate-900 font-mono tracking-tighter leading-none">
+                 {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
            </div>
-           <button onClick={onLogout} className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 transition-all">
-             <LogOut className="w-5 h-5" />
-           </button>
-         </div>
+           
+           <div className="h-10 w-[1px] bg-slate-200" />
+
+           <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold shadow-lg">
+                 {profile.name?.charAt(0) || 'S'}
+              </div>
+              <button onClick={onLogout} className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all">
+                <LogOut className="w-5 h-5" />
+              </button>
+           </div>
+        </div>
       </header>
 
-      {/* Dynamic Content Area */}
-      <main className="flex-1 overflow-hidden flex flex-col relative w-full">
+      {/* MAIN WORKSPACE AREA */}
+      <main className="flex-1 relative overflow-hidden bg-slate-50">
         {activeWorkspace === 'SERVER' ? (
            <ServerConsoleWorkspace 
               activeOrders={activeOrders}
               scanQueue={scanQueue}
-              setScanQueue={setScanQueue}
+              setScanQueue={(fn) => {
+                 // Convert old functional setter usage to promoteOrder call
+                 // This is a minimal shim to keep ServerConsoleWorkspace working
+                 if (typeof fn === 'function') {
+                    const nextId = fn([])[0];
+                    if (nextId) promoteOrder(nextId);
+                 }
+              }}
               isCameraOpen={isCameraOpen}
               setIsCameraOpen={setIsCameraOpen}
               handleQRScan={handleQRScan}
-               handleServeItem={handleServeItem}
+              handleServeItem={handleServeItem}
               handleServeAll={handleServeAll}
+              handleForceReady={handleForceReady}
               scanFeedback={scanFeedback}
               isProcessing={isProcessing}
            />
         ) : (
            <CookConsoleWorkspace batches={batches} />
         )}
-      </main>
 
-      {/* Manual Scanner Modal overlay */}
-      {isCameraOpen && activeWorkspace === 'SERVER' && (
-        <div className="fixed inset-0 z-[110] bg-slate-950/95 flex items-center justify-center p-6 backdrop-blur-md">
-          <div className="bg-white w-full max-w-xl rounded-[3rem] overflow-hidden relative shadow-2xl animate-in zoom-in-95 duration-300 border border-slate-100">
-            <button onClick={() => setIsCameraOpen(false)} className="absolute top-6 right-6 z-10 w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-900 border border-slate-200 hover:bg-slate-100 transition-all">
-              <X className="w-6 h-6" />
+        {/* ERROR OVERLAY */}
+        {error && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-[110] animate-in slide-in-from-top duration-300">
+            <AlertCircle className="w-6 h-6" />
+            <span className="font-black uppercase tracking-widest text-sm">{error}</span>
+            <button onClick={() => setError(null)} className="ml-4 bg-white/20 p-1 rounded-lg">
+              <X className="w-4 h-4" />
             </button>
-            <div className="bg-slate-900 p-10 pt-16 text-center text-white">
-              <ShieldCheck className="w-16 h-16 mx-auto mb-4 text-emerald-400" />
-              <h2 className="text-3xl font-black tracking-tight mb-2 uppercase italic">Secure Scan Mode</h2>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-[0.2em]">Validating student tokens manually</p>
-            </div>
-            <div className="p-10 bg-[#FAFAFA]">
-              <div className="bg-white rounded-[2.5rem] overflow-hidden aspect-square flex items-center justify-center border-2 border-slate-100 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] relative">
-                <QRScanner
-                  onScan={(data) => { setIsCameraOpen(false); handleQRScan(data); }}
-                  onClose={() => setIsCameraOpen(false)}
-                />
-              </div>
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Global Error Toast */}
-      {error && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-5 rounded-[2rem] shadow-2xl z-[200] flex items-center gap-6 animate-in slide-in-from-bottom-10 duration-[600ms] border border-white/5 whitespace-nowrap">
-          <AlertCircle className="w-6 h-6 text-red-500" />
-          <p className="font-bold text-sm tracking-tight">{error}</p>
-          <button onClick={() => setError(null)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 transition-all ml-4">
-             <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
+        {/* HEADLESS SCANNER INPUT */}
+        <input 
+          id="headless-scanner-input"
+          type="text" 
+          className="absolute opacity-0 pointer-events-none"
+          autoFocus
+        />
+        
+        {/* CAMERA MODAL */}
+        {isCameraOpen && (
+          <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+            <button 
+              onClick={() => setIsCameraOpen(false)}
+              className="absolute top-8 right-8 w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-white z-10"
+            >
+              <X className="w-8 h-8" />
+            </button>
+            <QRScanner
+              onScan={(data) => {
+                handleQRScan(data);
+                setIsCameraOpen(false);
+              }}
+              onClose={() => setIsCameraOpen(false)}
+            />
+          </div>
+        )}
+      </main>
     </div>
   );
 };

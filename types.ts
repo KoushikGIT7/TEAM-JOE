@@ -71,8 +71,8 @@ export interface Order {
 
   /** Selected slot (dynamic items): e.g. 1230 for 12:30 PM. Stored as integer. */
   arrivalTime?: number;
-  /** Link to batch preparation */
-  batchId?: string;
+  /** Link to batch preparation (Multi-item support) */
+  batchIds?: string[];
   /** Number of times this order has missed a window */
   missedCount?: number;
   /** Track history for MISSED items being moved */

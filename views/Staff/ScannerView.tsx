@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
   LogOut, Scan, CheckCircle, AlertCircle, RefreshCw,
-  Smartphone, User, Clock, XCircle, ShoppingBag,
+  Smartphone, User, Clock, XCircle, ShoppingBag, Zap
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
-import { validateQRForServing, rejectOrderFromCounter, serveItemBatch } from '../../services/firestore-db';
+import { validateQRForServing, rejectOrderFromCounter, serveItemBatch, forceReadyOrder } from '../../services/firestore-db';
 import Logo from '../../components/Logo';
 import QRScanner from '../../components/QRScanner';
 
@@ -31,10 +31,6 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setErrorMsg('');
   };
 
-  /**
-   * Core scan → validate → show review flow.
-   * validateQRForServing marks qrState = 'SCANNED' in Firestore.
-   */
   const handleScan = useCallback(async (rawData: string) => {
     if (terminalState === 'SCANNING') return;
     setTerminalState('SCANNING');
@@ -46,24 +42,24 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       setScannedOrder(order);
       setTerminalState('REVIEW');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Validation failed');
+      setErrorMsg(err.message || 'Verification Error');
       setTerminalState('ERROR');
     }
   }, [terminalState]);
 
-  const handleOpenCamera = () => {
-    if (busy || terminalState === 'SCANNING') return;
-    setIsCameraOpen(true);
-  };
-
-  /**
-   * SERVE ALL — serves every remaining item in the order.
-   */
   const handleServeAll = async () => {
     if (!scannedOrder || busy) return;
     setServing(true);
 
     try {
+      const anyWait = scannedOrder.items.some(it => 
+        it.status !== 'READY' && it.orderType === 'PREPARATION_ITEM' && (it.remainingQty || 0) > 0
+      );
+      
+      if (anyWait && !scannedOrder.qrRedeemable) {
+         throw new Error("Active prep remaining. Use override if physically ready.");
+      }
+
       for (const item of scannedOrder.items) {
         const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
         if (remaining > 0) {
@@ -73,223 +69,245 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       setTerminalState('SUCCESS');
       setScannedOrder(null);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Serve failed');
+      setErrorMsg(err.message || 'Action failed');
       setTerminalState('ERROR');
     } finally {
       setServing(false);
     }
   };
 
-  /**
-   * REJECT — marks the order as rejected in Firestore.
-   */
+  const handleForceReady = async () => {
+     if (!scannedOrder || busy) return;
+     setServing(true);
+     try {
+        await forceReadyOrder(scannedOrder.id, profile.uid);
+        const updatedItems = scannedOrder.items.map(it => ({ ...it, status: 'READY' as any }));
+        setScannedOrder({ ...scannedOrder, items: updatedItems, qrRedeemable: true });
+        setServing(false);
+        setTimeout(() => handleServeAll(), 50);
+     } catch (err: any) {
+        setErrorMsg(err.message || 'Override failed');
+        setTerminalState('ERROR');
+        setServing(false);
+     }
+  };
+
   const handleReject = async () => {
     if (!scannedOrder || busy) return;
     setRejecting(true);
 
     try {
       await rejectOrderFromCounter(scannedOrder.id, profile.uid);
-      setErrorMsg('ORDER REJECTED BY SERVER');
+      setErrorMsg('TICKET REJECTED');
       setTerminalState('ERROR');
       setScannedOrder(null);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Reject failed');
+      setErrorMsg(err.message || 'Rejection error');
       setTerminalState('ERROR');
     } finally {
       setRejecting(false);
     }
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-textMain text-white flex flex-col max-w-md mx-auto font-sans">
-      {/* Camera Scanner */}
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col max-w-lg mx-auto font-sans shadow-xl border-x border-slate-200">
+      
+      {/* 📸 CAMERA INTAKE */}
       {isCameraOpen && (
-        <QRScanner
-          onScan={(data) => { setIsCameraOpen(false); handleScan(data); }}
-          onClose={() => setIsCameraOpen(false)}
-          isScanning={terminalState === 'SCANNING'}
-        />
+        <div className="fixed inset-0 z-[200]">
+           <QRScanner
+             onScan={(data) => { setIsCameraOpen(false); handleScan(data); }}
+             onClose={() => setIsCameraOpen(false)}
+             isScanning={terminalState === 'SCANNING'}
+           />
+        </div>
       )}
 
-      {/* Header */}
-      <div className="p-6 flex justify-between items-center border-b border-white/5 bg-white/5 backdrop-blur-xl">
-        <Logo size="sm" className="!text-white" />
+      {/* 🏷️ HEADER */}
+      <div className="p-6 flex justify-between items-center bg-white border-b border-slate-200 shrink-0 shadow-sm">
+        <Logo size="sm" className="!text-slate-900 !font-black !tracking-tight" />
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <p className="text-[10px] font-black text-white/40 uppercase tracking-widest px-2 py-0.5 bg-white/5 rounded-md">Server Node</p>
-            <p className="text-sm font-bold mt-1">{profile?.name || 'Staff'}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">SERVER STATION</p>
+            <p className="text-sm font-bold mt-0.5 text-slate-700">{profile?.name || 'Authorized Staff'}</p>
           </div>
-          <button onClick={onLogout} className="p-3 bg-white/5 rounded-2xl hover:bg-red-500/20 transition-all active:scale-90 border border-white/10">
-            <LogOut className="w-5 h-5 text-red-400" />
+          <button onClick={onLogout} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 transition-all active:scale-90">
+            <LogOut className="w-5 h-5" />
           </button>
         </div>
       </div>
 
       <div className="flex-1 flex flex-col p-6 overflow-y-auto">
 
-        {/* IDLE — Scan prompt */}
+        {/* 📟 IDLE STATE */}
         {terminalState === 'IDLE' && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-12 animate-in fade-in zoom-in-95 duration-500">
-            <div className="w-64 h-64 border-2 border-primary/20 rounded-[3rem] flex items-center justify-center relative bg-primary/5 group">
-              <div className="absolute inset-0 bg-primary/10 rounded-[3rem] blur-2xl group-hover:bg-primary/20 transition-all" />
-              <Scan className="w-24 h-24 text-primary animate-pulse relative z-10" />
-              <div className="absolute inset-4 border border-primary/30 rounded-[2.5rem] opacity-50" />
-              <div className="absolute -top-4 -right-4 bg-primary text-white p-4 rounded-3xl shadow-xl shadow-primary/40 animate-bounce">
-                <Smartphone className="w-7 h-7" />
+          <div className="flex-1 flex flex-col items-center justify-center space-y-10">
+            <div className="w-64 h-64 border-2 border-slate-200 rounded-3xl flex items-center justify-center bg-white shadow-sm relative overflow-hidden group">
+              <Scan className="w-24 h-24 text-slate-200 group-hover:text-green-500 transition-colors" />
+              <div className="absolute inset-4 border border-slate-50 rounded-2xl" />
+              <div className="absolute bottom-4 right-4 bg-slate-900 text-white p-3 rounded-xl shadow-lg">
+                <Smartphone className="w-6 h-6" />
               </div>
             </div>
 
-            <div className="text-center space-y-4">
-              <h2 className="text-4xl font-black tracking-tighter uppercase leading-none">
-                Terminal<br /><span className="text-primary">Ready</span>
+            <div className="text-center space-y-2">
+              <h2 className="text-4xl font-black tracking-tighter uppercase text-slate-900">
+                Awaiting Token
               </h2>
-              <p className="text-white/30 text-xs font-bold uppercase tracking-[0.2em] px-8">
-                Tap the button below and scan the customer's meal token
+              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] px-10">
+                Position scan within frame or trigger camera below
               </p>
             </div>
 
             <button
-              onClick={handleOpenCamera}
-              className="w-full bg-primary hover:bg-primary/90 py-7 rounded-[2.5rem] font-black text-xl uppercase tracking-widest flex items-center justify-center gap-4 active:scale-95 transition-all shadow-2xl shadow-primary/25"
+              onClick={() => setIsCameraOpen(true)}
+              className="w-full bg-slate-900 hover:bg-black py-6 rounded-2xl font-bold text-lg uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all text-white shadow-xl"
             >
-              <Scan className="w-7 h-7" />
-              Launch Intake
+              <Scan className="w-6 h-6" />
+              Start Token Scan
             </button>
           </div>
         )}
 
-        {/* SCANNING — Loading */}
+        {/* 🔄 PROCESSING */}
         {terminalState === 'SCANNING' && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-300">
-            <div className="w-32 h-32 rounded-[3rem] bg-primary/20 border-2 border-primary/40 flex items-center justify-center">
-              <RefreshCw className="w-16 h-16 text-primary animate-spin" />
+          <div className="flex-1 flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+              <RefreshCw className="w-8 h-8 text-slate-900 animate-spin" />
             </div>
-            <p className="text-xl font-black uppercase tracking-[0.3em] text-primary">Verifying Token…</p>
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Verifying DB Link…</p>
           </div>
         )}
 
-        {/* REVIEW — show order + SERVE/REJECT */}
+        {/* 📋 REVIEW STATE */}
         {terminalState === 'REVIEW' && scannedOrder && (
-          <div className="flex-1 flex flex-col space-y-6 animate-in slide-in-from-bottom-10 duration-500">
-            {/* Badge */}
-            <div className="text-center space-y-2">
-              <div className="inline-flex items-center gap-2 bg-green-500/20 text-green-400 px-4 py-1.5 rounded-full border border-green-500/30">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Token Authorized</span>
-              </div>
-              <h2 className="text-3xl font-black uppercase tracking-tighter">Order Contents</h2>
+          <div className="flex-1 flex flex-col space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+               <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Scanned ID</p>
+                  <p className="font-mono text-2xl font-black text-slate-900">#{scannedOrder.id.slice(-6).toUpperCase()}</p>
+               </div>
+               <div className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-[10px] uppercase tracking-wider border border-slate-200">
+                  {scannedOrder.items.length} Items Listed
+               </div>
             </div>
 
-            {/* Items */}
-            <div className="flex-1 space-y-4">
-              <p className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.4em]">
-                <ShoppingBag className="w-3.5 h-3.5" />
-                {scannedOrder.items.length} {scannedOrder.items.length === 1 ? 'item' : 'items'} to serve
-              </p>
+            <div className="flex-1 space-y-3">
               {scannedOrder.items.map((item) => {
                 const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
+                const isReady = item.status === 'READY' || item.orderType === 'FAST_ITEM' || scannedOrder.qrRedeemable;
+                
                 return (
-                  <div key={item.id} className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden flex items-center p-3 gap-4">
-                    <div className="w-28 h-28 rounded-3xl overflow-hidden bg-gray-900 flex-shrink-0 border border-white/10 shadow-inner">
+                  <div key={item.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex items-center p-4 gap-5 shadow-sm">
+                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-50 flex-shrink-0 border border-slate-100">
                       <img
-                        src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'}
+                        src={item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&h=100&fit=crop'}
                         alt={item.name}
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="flex-1 pr-4 space-y-1">
-                      <p className="text-[10px] font-black text-primary uppercase tracking-[0.15em]">Prepare Now</p>
-                      <h3 className="text-2xl font-black tracking-tight leading-tight">{item.name}</h3>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-3xl font-black text-white/90">×{remaining}</span>
-                        <span className="bg-white/10 px-3 py-0.5 rounded-lg text-[10px] font-black text-white/40 uppercase tracking-widest">Quantity</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                         <div className={`w-1.5 h-1.5 rounded-full ${isReady ? 'bg-green-500' : 'bg-amber-400 animate-pulse'}`} />
+                         <p className={`text-[9px] font-bold uppercase tracking-widest ${isReady ? 'text-green-600' : 'text-amber-600'}`}>
+                           {isReady ? 'Dispense Ready' : 'Prep in Progress'}
+                         </p>
                       </div>
+                      <h3 className="text-xl font-bold tracking-tight text-slate-900 leading-tight">{item.name}</h3>
+                      <p className="text-2xl font-bold text-slate-900 font-mono tracking-tighter mt-1 leading-none">×{remaining}</p>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Customer info */}
-            <div className="flex items-center gap-4 bg-white/5 p-5 rounded-3xl border border-white/10">
-              <div className="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
-                <User className="w-6 h-6 text-white" />
+            {/* Verification Footer Overlay */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shrink-0">
+                <User className="w-6 h-6" />
               </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Meal Provision For</p>
-                <p className="font-bold text-xl truncate tracking-tight">{scannedOrder.userName}</p>
+              <div className="flex-1">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Authenticated Holder</p>
+                <p className="font-bold text-lg text-slate-900 uppercase italic leading-none">{scannedOrder.userName}</p>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="grid grid-cols-2 gap-4 pt-2">
+            {/* GRID ACTIONS */}
+            <div className="grid grid-cols-4 gap-3 pt-2">
               <button
                 onClick={handleReject}
                 disabled={busy}
-                className="bg-white/5 hover:bg-red-600/10 border border-white/10 hover:border-red-600/30 py-6 rounded-[2rem] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 text-white/60 hover:text-red-400 disabled:opacity-40"
+                className="col-span-1 bg-white h-16 rounded-xl border border-slate-200 flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all active:scale-95"
               >
-                {rejecting ? <RefreshCw className="animate-spin w-5 h-5" /> : <XCircle className="w-5 h-5 text-red-400" />}
-                Reject
+                <XCircle className="w-5 h-5" />
               </button>
+              
               <button
                 onClick={handleServeAll}
                 disabled={busy}
-                className="bg-green-600 hover:bg-green-500 py-6 rounded-[2rem] font-black uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-green-600/30 flex items-center justify-center gap-2 disabled:opacity-50"
+                className="col-span-3 bg-green-600 hover:bg-green-700 h-16 rounded-xl font-bold text-xs uppercase tracking-[0.2em] text-white shadow-xl shadow-green-900/10 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
               >
-                {serving ? <RefreshCw className="animate-spin w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
-                Serve
+                {serving ? <RefreshCw className="animate-spin w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                Dispense All Ready
               </button>
+
+              {scannedOrder.items.some(it => it.status !== 'READY' && it.orderType === 'PREPARATION_ITEM' && (it.remainingQty || 0) > 0) && !scannedOrder.qrRedeemable && (
+                <button
+                  onClick={handleForceReady}
+                  disabled={busy}
+                  className="col-span-4 bg-amber-50 h-16 rounded-xl border border-amber-200 text-amber-600 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-amber-100 transition-all active:scale-95"
+                >
+                  <Zap className="w-4 h-4" />
+                  Kitchen Bypass Override
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* SUCCESS */}
+        {/* ✅ SUCCESS STATE */}
         {terminalState === 'SUCCESS' && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-300">
-            <div className="w-32 h-32 rounded-[3rem] bg-green-600 flex items-center justify-center shadow-2xl shadow-green-600/40">
-              <CheckCircle className="w-16 h-16 text-white" />
+          <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in-95 duration-300">
+            <div className="w-24 h-24 rounded-2xl bg-green-600 flex items-center justify-center shadow-lg shadow-green-900/10">
+              <CheckCircle className="w-12 h-12 text-white" />
             </div>
-            <div className="text-center space-y-3">
-              <h2 className="text-5xl font-black tracking-tighter uppercase text-green-400">Served!</h2>
-              <p className="text-white/40 font-black text-xs uppercase tracking-[0.2em] max-w-[200px] mx-auto leading-relaxed">
-                Order served successfully
-              </p>
+            <div className="text-center space-y-1">
+              <h2 className="text-4xl font-black tracking-tighter uppercase text-slate-900 italic">Verified</h2>
+              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Transaction log updated</p>
             </div>
-            <button onClick={reset} className="w-full mt-8 bg-white/5 border border-white/10 hover:bg-white/10 py-6 rounded-[2.5rem] font-black uppercase tracking-widest transition-all active:scale-95">
-              Reset Terminal
+            <button onClick={reset} className="w-full mt-6 bg-slate-900 text-white py-6 rounded-2xl font-bold uppercase tracking-widest active:scale-95 transition-all shadow-xl">
+              Next Customer Scan
             </button>
           </div>
         )}
 
-        {/* ERROR */}
+        {/* ❌ ERROR STATE */}
         {terminalState === 'ERROR' && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-300">
-            <div className="w-32 h-32 rounded-[3rem] bg-red-600 flex items-center justify-center shadow-2xl shadow-red-600/40">
-              <AlertCircle className="w-16 h-16 text-white" />
+          <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in-95 duration-300">
+            <div className="w-24 h-24 rounded-2xl bg-red-50 flex items-center justify-center border-2 border-red-100 text-red-500">
+              <AlertCircle className="w-12 h-12" />
             </div>
-            <div className="text-center space-y-3">
-              <h2 className="text-5xl font-black tracking-tighter uppercase text-red-400">Rejected</h2>
-              <p className="text-white/40 font-black text-xs uppercase tracking-[0.2em] max-w-[220px] mx-auto leading-relaxed">
+            <div className="text-center space-y-1">
+              <h2 className="text-4xl font-black tracking-tighter uppercase text-red-600 italic">Rejected</h2>
+              <p className="text-red-400 font-bold text-[10px] uppercase tracking-widest max-w-[200px] mx-auto">
                 {errorMsg}
               </p>
             </div>
-            <button onClick={reset} className="w-full mt-8 bg-white/5 border border-white/10 hover:bg-white/10 py-6 rounded-[2.5rem] font-black uppercase tracking-widest transition-all active:scale-95">
-              Reset Terminal
+            <button onClick={reset} className="w-full mt-6 bg-white border border-slate-200 py-6 rounded-2xl font-bold uppercase tracking-widest text-slate-700 active:scale-95 transition-all shadow-sm">
+              Return to Scanning
             </button>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-6 border-t border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-md">
-        <div className="flex items-center gap-2 opacity-30">
-          <Clock className="w-4 h-4" />
-          <span className="text-[10px] font-black uppercase tracking-widest">Auth: Secure</span>
+      <div className="p-6 border-t border-slate-200 flex justify-between items-center bg-white">
+        <div className="flex items-center gap-2.5 opacity-40">
+          <Clock className="w-4 h-4 text-slate-400" />
+          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Secure Station v2</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse" />
-          <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Sync Active</span>
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500 opacity-60" />
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active Ops Link</span>
         </div>
       </div>
     </div>

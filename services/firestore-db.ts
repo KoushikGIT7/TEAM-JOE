@@ -129,7 +129,7 @@ const orderToFirestore = (order: Order) => ({
   } : null,
   estimatedReadyTime: order.estimatedReadyTime != null ? Timestamp.fromMillis(order.estimatedReadyTime) : null,
   arrivalTime: order.arrivalTime || null,
-  batchId: order.batchId || null,
+  batchIds: order.batchIds || [],
   missedCount: order.missedCount || 0,
   missedFromBatchId: order.missedFromBatchId || null,
   sentPickupReminderAt: order.sentPickupReminderAt != null ? Timestamp.fromMillis(order.sentPickupReminderAt) : null,
@@ -192,7 +192,7 @@ const firestoreToOrder = (id: string, data: any): Order => {
     } : undefined,
     estimatedReadyTime: toMillis(data.estimatedReadyTime),
     arrivalTime: data.arrivalTime || null,
-    batchId: data.batchId || null,
+    batchIds: data.batchIds || [],
     missedCount: data.missedCount || 0,
     missedFromBatchId: data.missedFromBatchId || null,
     sentPickupReminderAt: toMillis(data.sentPickupReminderAt),
@@ -1010,7 +1010,8 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
              assignedBatchId = overflowId;
           }
           
-          newOrder.batchId = assignedBatchId; // Track the batch for the order
+          if (!newOrder.batchIds) newOrder.batchIds = [];
+          newOrder.batchIds.push(assignedBatchId);
         }
       }
 
@@ -1309,8 +1310,8 @@ export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() =
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      // Sort client-side to avoid needing a composite index
-      const sorted = orders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      // Sort client-side by scannedAt (FIFO) to avoid index overhead while ensuring line integrity
+      const sorted = orders.sort((a, b) => (a.scannedAt || 0) - (b.scannedAt || 0));
       callback(sorted);
     },
     (error) => {
@@ -1439,6 +1440,61 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
   } catch (error: any) {
     console.error('❌ [SCAN-ERROR]:', error.message);
     throw error;
+  }
+};
+
+/**
+ * 🛠️ FORCE READY: Manual override for servers when an item is physically ready 
+ * but system says PENDING/PREPARING. Moves it to COLLECTING/READY.
+ */
+export const forceReadyOrder = async (orderId: string, staffId: string): Promise<void> => {
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(orderRef);
+      if (!snap.exists()) throw new Error("Order not found");
+      const orderData = snap.data();
+      const now = Date.now();
+      
+      // Mark all items as ready if they were pending/preparing
+      const items = (orderData.items || []).map((item: any) => {
+        if (item.status === 'PENDING' || item.status === 'PREPARING') {
+          return { ...item, status: 'READY' };
+        }
+        return item;
+      });
+
+      // Update associated batches to COMPLETED (since we've bypassed them)
+      if (orderData.batchIds && orderData.batchIds.length > 0) {
+        for (const bId of orderData.batchIds) {
+          tx.update(doc(db, "prepBatches", bId), { 
+            status: 'COMPLETED', // Or READY, but COMPLETED usually closes the kitchen view
+            updatedAt: serverTimestamp() 
+          });
+        }
+      }
+
+      tx.update(orderRef, {
+        items,
+        serveFlowStatus: 'READY',
+        pickupWindow: {
+          startTime: now,
+          endTime: now + PICKUP_WINDOW_DURATION_MS,
+          durationMs: PICKUP_WINDOW_DURATION_MS,
+          status: 'COLLECTING'
+        },
+        qrRedeemable: true, // Also set redeemable flag for safety in serve checks
+        overrides: arrayUnion({
+          staffId,
+          reason: 'MANUAL_FORCE_READY_BY_SERVER',
+          timestamp: now
+        }),
+        updatedAt: serverTimestamp()
+      });
+    });
+  } catch (err: any) {
+    console.error("Error forcing order ready:", err);
+    throw err;
   }
 };
 
@@ -2320,8 +2376,8 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
         tx.update(doc(db, "orders", d.id), {
           "pickupWindow.status": 'MISSED',
           "serveFlowStatus": 'MISSED',
-          "missedFromBatchId": order.batchId || null,
-          "batchId": lastBatchIds[0] || null, // Keep legacy single batchId for compatibility
+          "missedFromBatchId": order.batchIds?.[0] || null,
+          "batchIds": lastBatchIds,
           "missedCount": currentMissedCount,
           "arrivalTime": penalizedSlot,
           "updatedAt": serverTimestamp()
