@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { X, Sparkles, Camera, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { X, Camera, AlertTriangle, RefreshCw, Zap } from 'lucide-react';
 
 interface QRScannerProps {
   onScan: (data: string) => void;
@@ -9,200 +9,218 @@ interface QRScannerProps {
 }
 
 const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) => {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]             = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const qrCodeInstance = useRef<Html5Qrcode | null>(null);
-  const regionId = "qr-reader-region";
+  const [detected, setDetected]       = useState(false);
+  const qrRef                         = useRef<Html5Qrcode | null>(null);
+  const firedRef                      = useRef(false); // prevent double-fire
+  const regionId                      = 'qr-reader-region';
+
+  const stopCamera = useCallback(async () => {
+    try {
+      if (qrRef.current?.isScanning) {
+        await qrRef.current.stop();
+        qrRef.current.clear();
+      }
+    } catch (_) {}
+  }, []);
 
   useEffect(() => {
-    // Check for Secure Context (Required for Camera on non-localhost mobile)
-    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      setError("CAMERA_INSECURE_CONTEXT: Camera access requires HTTPS when using an IP address. Please use localhost or setup HTTPS.");
+    // Security context check
+    if (
+      !window.isSecureContext &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1'
+    ) {
+      setError('Camera requires HTTPS. Use localhost or configure HTTPS.');
       setIsInitializing(false);
       return;
     }
 
-    const startScanner = async () => {
+    const start = async () => {
       try {
         setIsInitializing(true);
-        const html5QrCode = new Html5Qrcode(regionId);
-        qrCodeInstance.current = html5QrCode;
+        const scanner = new Html5Qrcode(regionId, { verbose: false });
+        qrRef.current = scanner;
 
-        // Optimization for performance and accuracy during rush hours
-        const config = {
-          fps: 10, // Lower FPS for better per-frame stability
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-             const size = Math.floor(minEdge * 0.7);
-             return { width: size, height: size };
-          },
-          aspectRatio: 1.0,
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-          videoConstraints: {
-            facingMode: "environment",
-            focusMode: "continuous",
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 }
-          }
-        };
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 30,
+            qrbox: (w: number, h: number) => {
+              const size = Math.floor(Math.min(w, h) * 0.80);
+              return { width: size, height: size };
+            },
+            aspectRatio: 1.0,
+            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+            videoConstraints: {
+              facingMode: { ideal: 'environment' },
+              width:  { min: 640, ideal: 1920, max: 3840 },
+              height: { min: 480, ideal: 1080, max: 2160 },
+              focusMode: 'continuous',
+              exposureMode: 'continuous',
+              whiteBalanceMode: 'continuous',
+            },
+            disableFlip: false,
+          } as any,
 
-        // Preference: back camera
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          config,
-          (decodedText) => {
-            console.log(`[QR-SCANNER] Success: ${decodedText}`);
-            // Small vibration feedback if supported
-            if (navigator.vibrate) navigator.vibrate(50);
+          async (decodedText) => {
+            // Prevent double-callback on same frame
+            if (firedRef.current) return;
+            firedRef.current = true;
+
+            // Instant haptic
+            if ('vibrate' in navigator) navigator.vibrate(60);
+            // Flash detected state
+            setDetected(true);
+
+            // Stop camera before calling onScan so parent renders instantly
+            await stopCamera();
             onScan(decodedText);
           },
-          (errorMessage) => {
-            // Noise from frame-by-frame missing QR (expected)
+          () => {
+            // Per-frame decode failure is expected noise — ignore
           }
         );
-        
+
         setIsInitializing(false);
       } catch (err: any) {
-        console.error("Failed to start scanner:", err);
-        setError(`Camera Error: ${err.message || "Permission denied or camera in use"}`);
+        setError(err?.message || 'Camera permission denied or camera in use.');
         setIsInitializing(false);
       }
     };
 
-    startScanner();
-
-    return () => {
-      if (qrCodeInstance.current && qrCodeInstance.current.isScanning) {
-        qrCodeInstance.current.stop()
-          .then(() => qrCodeInstance.current?.clear())
-          .catch(err => console.error("Error stopping scanner:", err));
-      }
-    };
+    start();
+    return () => { stopCamera(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleRetry = () => {
-    window.location.reload();
+  const handleClose = async () => {
+    await stopCamera();
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex flex-col bg-black/98 backdrop-blur-2xl animate-in fade-in duration-300">
-      {/* Header */}
-      <div className="flex items-center justify-between p-6 bg-gradient-to-b from-black/80 to-transparent">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center border-2 border-primary/40 shadow-[0_0_20px_rgba(249,115,22,0.3)]">
-            <Camera className="w-7 h-7 text-primary" />
+    <div className="fixed inset-0 z-[210] flex flex-col bg-black animate-in fade-in duration-200">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-6 pt-8 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center">
+            <Camera className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2 leading-none">
-              JOE <span className="text-primary">Lens</span>
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <p className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-400">Secure AI Scanner Active</p>
+            <p className="text-sm font-black text-white tracking-tight">QR Scanner</p>
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Camera Active</p>
             </div>
           </div>
         </div>
-        <button 
-          onClick={onClose}
-          className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all active:scale-90 border border-white/10"
+        <button
+          onClick={handleClose}
+          className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all active:scale-90"
         >
-          <X className="w-6 h-6" />
+          <X className="w-5 h-5 text-white" />
         </button>
       </div>
 
-      {/* Main Scanner Area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
-        <div className="w-full max-w-sm aspect-square relative group">
-            {/* Corner Markers */}
-            <div className="absolute inset-0 z-20 pointer-events-none p-4">
-                <div className="absolute top-0 left-0 w-16 h-16 border-t-[6px] border-l-[6px] border-primary rounded-tl-[3rem] shadow-[0_0_30px_rgba(249,115,22,0.5)] transition-all duration-300 group-hover:scale-110" />
-                <div className="absolute top-0 right-0 w-16 h-16 border-t-[6px] border-r-[6px] border-primary rounded-tr-[3rem] shadow-[0_0_30px_rgba(249,115,22,0.5)] transition-all duration-300 group-hover:scale-110" />
-                <div className="absolute bottom-0 left-0 w-16 h-16 border-b-[6px] border-l-[6px] border-primary rounded-bl-[3rem] shadow-[0_0_30px_rgba(249,115,22,0.5)] transition-all duration-300 group-hover:scale-110" />
-                <div className="absolute bottom-0 right-0 w-16 h-16 border-b-[6px] border-r-[6px] border-primary rounded-br-[3rem] shadow-[0_0_30px_rgba(249,115,22,0.5)] transition-all duration-300 group-hover:scale-110" />
+      {/* ── Scanner Area ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-6">
+        <div className="w-full max-w-xs aspect-square relative">
+
+          {/* Corner brackets */}
+          {(['tl','tr','bl','br'] as const).map(pos => (
+            <div
+              key={pos}
+              className="absolute w-10 h-10 pointer-events-none"
+              style={{
+                top:    pos.startsWith('t') ? 0 : undefined,
+                bottom: pos.startsWith('b') ? 0 : undefined,
+                left:   pos.endsWith('l')   ? 0 : undefined,
+                right:  pos.endsWith('r')   ? 0 : undefined,
+                borderTop:    pos.startsWith('t') ? '3px solid #f97316' : undefined,
+                borderBottom: pos.startsWith('b') ? '3px solid #f97316' : undefined,
+                borderLeft:   pos.endsWith('l')   ? '3px solid #f97316' : undefined,
+                borderRight:  pos.endsWith('r')   ? '3px solid #f97316' : undefined,
+                borderRadius: pos === 'tl' ? '12px 0 0 0' : pos === 'tr' ? '0 12px 0 0' : pos === 'bl' ? '0 0 0 12px' : '0 0 12px 0',
+              }}
+            />
+          ))}
+
+          {/* Camera feed */}
+          <div
+            id={regionId}
+            className="w-full h-full rounded-2xl overflow-hidden bg-black"
+            style={{ border: detected ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.06)', transition: 'border-color 0.2s' }}
+          />
+
+          {/* Laser scan line */}
+          {!detected && !error && (
+            <div className="absolute left-0 right-0 h-px bg-primary/70 pointer-events-none animate-laser" />
+          )}
+
+          {/* Initializing overlay */}
+          {isInitializing && (
+            <div className="absolute inset-0 bg-black/80 flex items-center justify-center rounded-2xl">
+              <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
             </div>
+          )}
 
-            {/* Scanning Laser animation */}
-            <div className="absolute top-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-primary to-transparent animate-laser opacity-80" />
+          {/* Detected flash */}
+          {detected && (
+            <div className="absolute inset-0 bg-green-500/20 rounded-2xl flex items-center justify-center">
+              <Zap className="w-16 h-16 text-green-400 fill-current" />
+            </div>
+          )}
 
-            {/* Camera Feed */}
-            <div id={regionId} className="w-full h-full rounded-[3rem] overflow-hidden bg-gray-900 shadow-2xl border-2 border-white/10" />
-            
-            {/* Loading/Initializing State */}
-            {(isInitializing || isScanning) && (
-                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-30 rounded-[3rem] border-2 border-primary/20">
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(249,115,22,0.5)]" />
-                        <p className="text-white font-black uppercase text-sm tracking-widest animate-pulse">
-                          {isScanning ? 'Processing Token' : 'Warming up Camera'}
-                        </p>
-                    </div>
-                </div>
-            )}
+          {/* Processing overlay */}
+          {isScanning && !detected && (
+            <div className="absolute inset-0 bg-black/70 rounded-2xl flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
 
-            {/* Error State */}
-            {error && (
-              <div className="absolute inset-0 bg-red-950/90 backdrop-blur-md flex items-center justify-center z-40 rounded-[3rem] p-8 text-center border-4 border-red-500/30">
-                <div className="flex flex-col items-center gap-6">
-                  <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center border-2 border-red-500/50">
-                    <AlertTriangle className="w-10 h-10 text-red-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black text-white mb-2">SCANNER BLOCKED</h3>
-                    <p className="text-sm text-red-100 font-bold leading-relaxed">{error}</p>
-                    {error.includes("HTTPS") && (
-                      <p className="mt-4 text-[10px] text-red-300 uppercase font-black tracking-widest bg-red-500/20 py-2 px-4 rounded-xl">
-                        Tip: Open on laptop or Use HTTPS
-                      </p>
-                    )}
-                  </div>
-                  <button 
-                    onClick={handleRetry}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-8 py-3 rounded-2xl font-black text-sm uppercase transition-all active:scale-95 shadow-xl"
-                  >
-                    <RefreshCw className="w-4 h-4" /> Retry Access
-                  </button>
-                </div>
-              </div>
-            )}
+          {/* Error overlay */}
+          {error && (
+            <div className="absolute inset-0 bg-red-950/90 rounded-2xl flex flex-col items-center justify-center gap-4 p-6 text-center">
+              <AlertTriangle className="w-10 h-10 text-red-400" />
+              <p className="text-sm text-red-200 font-bold leading-relaxed">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="flex items-center gap-2 bg-red-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
+              >
+                <RefreshCw className="w-4 h-4" /> Retry
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Status & Instructions */}
-        <div className="mt-12 w-full max-w-sm space-y-4">
-            <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-6 border border-white/10 flex items-start gap-4 shadow-2xl">
-                <ShieldCheck className="w-6 h-6 text-green-400 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-gray-200 leading-relaxed font-medium">
-                  Align the <strong className="text-primary">Meal Token</strong> within the frame. 
-                  Validation occurs automatically upon detection.
-                </p>
-            </div>
-            
-            <div className="flex items-center justify-center gap-3 text-[10px] text-white/30 font-black uppercase tracking-[0.3em] py-2">
-                <Sparkles className="w-3 h-3" />
-                Zero-Latency Verification Active
-            </div>
-        </div>
+        {/* Instruction */}
+        <p className="mt-6 text-[11px] font-black uppercase tracking-[0.35em] text-center text-white/25">
+          Point camera at the student QR code
+        </p>
       </div>
 
       <style>{`
         @keyframes laser {
-            0% { top: 0%; opacity: 0 }
-            10% { opacity: 0.8 }
-            90% { opacity: 0.8 }
-            100% { top: 100%; opacity: 0 }
+          0%   { top: 8%;  opacity: 0; }
+          5%   { opacity: 0.8; }
+          95%  { opacity: 0.8; }
+          100% { top: 92%; opacity: 0; }
         }
-        .animate-laser {
-            animation: laser 2.5s ease-in-out infinite;
-        }
+        .animate-laser { animation: laser 1.4s ease-in-out infinite; position: absolute; }
         #qr-reader-region video {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: contain !important; /* Changed from cover to contain to avoid cropping */
-            background: black;
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
         }
+        /* Remove library's default UI chrome */
+        #qr-reader-region img,
+        #qr-reader-region > div:not(:has(video)) { display: none !important; }
       `}</style>
     </div>
   );
 };
 
 export default QRScanner;
-

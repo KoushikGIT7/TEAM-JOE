@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+
 import {
   CheckCircle, AlertCircle, Scan, Search, LogOut, RefreshCw,
   Gamepad2, Zap, Camera, ChevronRight, X, ShoppingBag, User, XCircle
@@ -307,27 +308,34 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     refocusScanner();
   };
 
+  // Timestamp throttle — guards against double-fire without blocking next scan
+  const lastScanTs = useRef<number>(0);
+
   /**
-   * FIXED QR SCAN FLOW
-   * Before: validateQRForServing → set username toast → auto-clear after 2s (BUG)
-   * Now:    validateQRForServing → mark as SCANNED in Firestore → show full order
-   *         review modal → operator clicks SERVE ALL or REJECT → clear modal
+   * HIGH-THROUGHPUT QR SCAN FLOW
+   * - Non-blocking: does NOT set isScanning gate (hardware scanner can fire again immediately)
+   * - Throttled to 300ms to avoid double-fire from same physical scan
+   * - On success: shows full order review modal
+   * - On error: shows toast and refocuses scanner instantly
    */
   const processQRScan = useCallback(async (qrData: string) => {
-    if (!qrData?.trim() || isScanning) return;
+    if (!qrData?.trim()) return;
     const trimmed = qrData.trim();
+
+    // 300ms throttle prevents double-fire from same scan
+    const now = Date.now();
+    if (now - lastScanTs.current < 300) return;
+    lastScanTs.current = now;
 
     setIsScanning(true);
     setError(null);
-    setScannedOrder(null);
+
+    // Refocus scanner immediately — next student can scan while this validates
+    setTimeout(refocusScanner, 0);
 
     try {
-      // Validates signature, checks payment, marks qrState = 'SCANNED' in Firestore
       const order = await validateQRForServing(trimmed);
-
-      // Store raw data for serve/reject actions
       setScanRawData(trimmed);
-      // Show the review modal — operator must act
       setScannedOrder(order);
     } catch (err: any) {
       showError(err.message || 'Scan Failed');
@@ -335,7 +343,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     } finally {
       setIsScanning(false);
     }
-  }, [isScanning]);
+  }, []);
 
   const handleQRScanFromScanner = useCallback((data: string) => {
     processQRScan(data);
