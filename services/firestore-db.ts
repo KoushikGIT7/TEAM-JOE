@@ -1492,8 +1492,9 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
       };
 
       // Check if all items are completed (SERVED or ABANDONED)
-      const allResolved = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED');
+      const allResolved = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED' || (i.remainingQty === 0 && i.quantity > 0));
       const newOrderStatus = allResolved ? 'SERVED' : order.orderStatus;
+      const newServeFlowStatus = allResolved ? 'SERVED' : (order.serveFlowStatus === 'READY' ? 'SERVED_PARTIAL' : order.serveFlowStatus);
 
       // Update order
       tx.update(orderRef, {
@@ -1510,6 +1511,7 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
           status: item.status
         })),
         orderStatus: newOrderStatus,
+        serveFlowStatus: newServeFlowStatus,
         servedAt: allResolved ? Date.now() : null,
         updatedAt: serverTimestamp(),
         qrStatus: allResolved ? 'DESTROYED' : order.qrStatus,
@@ -1517,7 +1519,7 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
       });
     });
   } catch (err: any) {
-    console.error("Error serving item:", err);
+    console.error("Error serving item batch:", err);
     throw err;
   }
 };

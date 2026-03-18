@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap } from 'lucide-react';
+import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap, Check } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order } from '../../types';
@@ -16,14 +16,14 @@ interface QRViewProps {
 }
 
 // ─── Status configuration ────────────────────────────────────────────────────
+// ─── Status configuration (Strict States) ───────────────────────────────────
 const STATUS: Record<string, { label: string; sub: string; icon: React.FC<any>; color: string; bg: string; border: string }> = {
-  READY:        { label: 'Ready — Collect Now',    sub: 'Head to the counter and show this QR code.',         icon: Zap,        color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-  ALMOST_READY: { label: 'Almost Ready',           sub: 'Your order is being plated. Head over soon.',         icon: Clock,      color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
-  PREPARING:    { label: 'Preparing Your Order',   sub: 'The kitchen is working on it.',                       icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
-  MISSED:       { label: 'Pickup Missed',          sub: 'Reassigned to the next available slot.',              icon: Clock,      color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
-  SERVED:       { label: 'Order Served',           sub: 'Thank you! Enjoy your meal. 🎉',                     icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-  NEW:          { label: 'Order Confirmed',        sub: 'Waiting to be scheduled for preparation.',            icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
-  DEFAULT:      { label: 'Order Confirmed',        sub: 'Sit tight — we\'ll notify you when it\'s ready.',    icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  READY:        { label: 'READY FOR PICKUP',    sub: 'Show this QR at the counter now',         icon: Zap,        color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  PREPARING:    { label: 'PREPARING FOOD',     sub: 'The kitchen is cooking your meal',        icon: ChefHat,    color: '#0284c7', bg: '#f0f9ff', border: '#bae6fd' },
+  SCHEDULED:    { label: 'SCHEDULED',          sub: 'Waiting for your preparation slot',        icon: Clock,      color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  MISSED:       { label: 'MISSED BATCH',       sub: 'Reassigned, preparing for next slot',     icon: Clock,      color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  SERVED:       { label: 'ORDER COMPLETED',    sub: 'Thank you! Enjoy your meal 🎉',          icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  DEFAULT:      { label: 'ORDER PLACED',       sub: 'Waiting to start...',                     icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
 };
 
 const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
@@ -42,20 +42,13 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       setLoading(false);
       if (!data) { setQrString(null); return; }
 
-      if (shouldShowQR(data)) {
-        if (data.qr?.token) { setQrString(data.qr.token); qrRef.current = true; return; }
-        if (!qrRef.current) {
-          try {
-            const qr = generateQRPayloadSync(data);
-            setQrString(qr);
-            qrRef.current = true;
-            (async () => {
-              try { await updateDoc(doc(db, 'orders', data.id), { qr: { token: qr, status: 'ACTIVE', createdAt: serverTimestamp() } }); } catch (_) {}
-            })();
-          } catch (_) { setQrString(null); }
-        }
-      } else {
-        setQrString(null);
+      const qr = data.qr?.token || generateQRPayloadSync(data);
+      setQrString(qr);
+      if (!data.qr?.token && !qrRef.current) {
+          qrRef.current = true;
+          updateDoc(doc(db, 'orders', data.id), { 
+            qr: { token: qr, status: 'ACTIVE', createdAt: serverTimestamp() } 
+          }).catch(() => {});
       }
     });
     return unsub;
@@ -63,9 +56,10 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
   // ── Pickup timer ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const collecting = order?.pickupWindow?.status === 'COLLECTING';
+    const isReady = order?.serveFlowStatus === 'READY';
     const end = order?.pickupWindow?.endTime;
-    if (!collecting || !end) { setTimeLeft(null); return; }
+    if (!isReady || !end) { setTimeLeft(null); return; }
+    
     const tick = () => {
       const diff = end - Date.now();
       if (diff <= 0) { setTimeLeft('0:00'); return; }
@@ -76,206 +70,183 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     tick();
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
-  }, [order?.pickupWindow?.status, order?.pickupWindow?.endTime]);
+  }, [order?.serveFlowStatus, order?.pickupWindow?.endTime]);
 
   // ── Haptic on READY ──────────────────────────────────────────────────────
   useEffect(() => {
     const flow = order?.serveFlowStatus || '';
     if (flow === 'READY' && prevFlow.current !== 'READY') {
-      if ('vibrate' in navigator) navigator.vibrate([150, 80, 150]);
+      if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
     }
     prevFlow.current = flow;
   }, [order?.serveFlowStatus]);
 
-  // ── Order count ──────────────────────────────────────────────────────────
+  // ── Order count (for quotes) ─────────────────────────────────────────────
   useEffect(() => {
     if (!orderId) return;
     const h = JSON.parse(localStorage.getItem('joe_order_history') || '[]');
-    if (!h.includes(orderId)) { h.push(orderId); localStorage.setItem('joe_order_history', JSON.stringify(h)); }
+    if (!h.includes(orderId)) { 
+      h.push(orderId); 
+      localStorage.setItem('joe_order_history', JSON.stringify(h)); 
+    }
     setOrderCount(h.length);
   }, [orderId]);
 
-  // ── Loading ──────────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-white">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="h-screen w-full flex items-center justify-center bg-white">
+      <Loader2 className="w-8 h-8 animate-spin text-gray-200" />
+    </div>
+  );
 
-  if (!order) {
-    return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-white p-8 text-center">
-        <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
-        <p className="font-semibold text-gray-700">Order not found.</p>
-        <button onClick={onBack} className="mt-4 text-sm text-gray-400 underline">Go Back</button>
-      </div>
-    );
-  }
+  if (!order) return (
+    <div className="h-screen w-full flex flex-col items-center justify-center bg-white p-8 text-center uppercase tracking-widest">
+      <AlertCircle className="w-10 h-10 text-red-100 mb-4" />
+      <p className="text-xs font-black text-gray-400">Order Missing</p>
+      <button onClick={onBack} className="mt-8 px-8 py-3 bg-gray-900 text-white rounded-2xl text-[10px] font-black">Back to Menu</button>
+    </div>
+  );
 
-  // ── Terminal states ──────────────────────────────────────────────────────
-  const uiState    = getOrderUIState(order);
-  const isAbandoned = uiState === 'ABANDONED';
-  const isRejected  = order.orderStatus === 'REJECTED';
-
-  if (isRejected || isAbandoned) {
-    return (
-      <div className="h-screen w-full flex flex-col bg-white max-w-md mx-auto">
-        <div className="px-6 pt-10 pb-4">
-          <button onClick={onBack} className="p-2.5 rounded-xl border border-gray-200 bg-gray-50 active:scale-95 transition-all">
-            <ChevronLeft className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 ${isRejected ? 'bg-red-50' : 'bg-amber-50'}`}>
-            <XCircle className={`w-8 h-8 ${isRejected ? 'text-red-500' : 'text-amber-500'}`} />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3 tracking-tight">
-            {isRejected ? 'Order Rejected' : 'Order Abandoned'}
-          </h2>
-          <p className="text-gray-500 text-sm leading-relaxed max-w-xs">
-            {isRejected
-              ? 'The kitchen could not process this order. Please contact the cashier for a refund.'
-              : 'Pickup window was missed multiple times. This token has expired.'}
-          </p>
-          <button onClick={onBack} className="mt-8 w-full py-4 rounded-2xl bg-gray-900 text-white font-semibold text-sm active:scale-95 transition-all">
-            Return to Menu
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Resolve status ───────────────────────────────────────────────────────
-  const flow    = order.serveFlowStatus || 'DEFAULT';
-  const isMissed = uiState === 'MISSED';
+  const uiState = getOrderUIState(order);
+  const flow = order.serveFlowStatus || 'NEW';
+  const isMissed = uiState === 'MISSED' || order.orderStatus === 'MISSED';
   const isServed = order.orderStatus === 'SERVED';
-  const statusKey = isServed ? 'SERVED' : isMissed ? 'MISSED' : STATUS[flow] ? flow : 'DEFAULT';
+  
+  // Resolve strict status
+  let statusKey = 'SCHEDULED';
+  if (isServed) statusKey = 'SERVED';
+  else if (isMissed) statusKey = 'MISSED';
+  else if (flow === 'READY') statusKey = 'READY';
+  else if (flow === 'PREPARING' || flow === 'ALMOST_READY') statusKey = 'PREPARING';
+  else if (order.paymentStatus === 'SUCCESS') statusKey = 'SCHEDULED';
+
   const s = STATUS[statusKey] || STATUS.DEFAULT;
-  const Icon = s.icon;
   const isReady = statusKey === 'READY';
 
-  // ── Main render ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans pb-10">
-
+    <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans overflow-x-hidden">
+      
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-5 pt-8 pb-2">
-        <button
-          onClick={onBack}
-          className="p-2.5 rounded-xl border border-gray-200 bg-gray-50 active:scale-95 transition-all"
-        >
-          <ChevronLeft className="w-5 h-5 text-gray-500" />
+      <div className="px-6 pt-10 pb-4 flex items-center justify-between">
+        <button onClick={onBack} className="p-3 bg-gray-50 rounded-2xl border border-gray-100 active:scale-95 transition-all">
+          <ChevronLeft className="w-5 h-5 text-gray-400" />
         </button>
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-          #{order.id.slice(-6).toUpperCase()}
-        </span>
-      </div>
-
-      {/* ── Status Badge ── */}
-      <div className="px-5 pt-4 pb-2">
-        <div
-          className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
-          style={{ background: s.bg, border: `1px solid ${s.border}` }}
-        >
-          <Icon className="w-4 h-4 flex-shrink-0" style={{ color: s.color }} />
-          <div className="min-w-0">
-            <p className="text-sm font-bold leading-tight" style={{ color: s.color }}>{s.label}</p>
-            <p className="text-xs text-gray-500 leading-snug mt-0.5 truncate">{s.sub}</p>
-          </div>
-          {/* Timer inline when READY */}
-          {isReady && timeLeft && (
-            <span className="ml-auto text-lg font-bold font-mono flex-shrink-0" style={{ color: s.color }}>
-              {timeLeft}
-            </span>
-          )}
+        <div className="text-right">
+          <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest leading-none mb-1">Queue ID</p>
+          <p className="text-sm font-black text-gray-900 leading-none">#{order.id.slice(-6).toUpperCase()}</p>
         </div>
       </div>
 
-      {/* ── QR Code (main focus) ── */}
-      <div className="px-5 pt-3 flex-1 flex flex-col items-center justify-center">
-        <div
-          className="w-full rounded-3xl flex items-center justify-center relative"
-          style={{
-            padding: '24px',
-            background: isReady ? s.bg : '#f8fafc',
-            border: `2px solid ${isReady ? s.border : '#e2e8f0'}`,
-            aspectRatio: '1',
-            maxWidth: '340px',
-            margin: '0 auto',
-            transition: 'border-color 0.4s, background 0.4s',
-          }}
+      {/* ── Status Indicator ── */}
+      <div className="px-6 py-2">
+        <div 
+          className="rounded-[2rem] p-6 border-2 transition-all duration-700"
+          style={{ background: s.bg, borderColor: s.border }}
         >
-          {/* QR or loader */}
-          <div className="bg-white rounded-2xl p-3 shadow-sm relative">
-            {qrString
-              ? <QRCodeSVG value={qrString} size={252} level="H" />
-              : <div className="w-[252px] h-[252px] flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
-                </div>
-            }
-            {/* Served overlay */}
-            {isServed && (
-              <div className="absolute inset-0 bg-white/95 rounded-2xl flex items-center justify-center">
-                <CheckCircle2 className="w-16 h-16 text-green-500" />
+          <div className="flex justify-between items-start mb-4">
+            <div className={`p-4 rounded-2xl block transition-all ${isReady ? 'bg-green-600 text-white animate-bounce' : ''}`} style={{ background: !isReady ? s.bg : undefined, border: !isReady ? `1px solid ${s.border}` : undefined }}>
+              <s.icon className={`w-6 h-6 ${isReady ? 'text-white' : ''}`} style={{ color: !isReady ? s.color : undefined }} />
+            </div>
+            {isReady && timeLeft && (
+               <div className="text-right">
+                  <p className="text-[10px] font-black text-green-700 uppercase tracking-widest mb-1">Pickup Window</p>
+                  <p className="text-2xl font-black text-green-700 font-mono tracking-tighter">{timeLeft}</p>
+               </div>
+            )}
+            {!isReady && order.arrivalTime && (
+              <div className="text-right">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Arrival Time</p>
+                <p className="text-sm font-black text-gray-900 uppercase">
+                  {(order.arrivalTime.toString().padStart(4, '0').slice(0, 2))}:{(order.arrivalTime.toString().padStart(4, '0').slice(2))} PM
+                </p>
               </div>
             )}
           </div>
+          
+          <h1 className="text-2xl font-black tracking-tighter mb-1" style={{ color: s.color }}>{s.label}</h1>
+          <p className="text-xs font-bold opacity-60 leading-relaxed" style={{ color: s.color }}>{s.sub}</p>
+          
+          {/* Progress Bar */}
+          <div className="mt-6 h-1.5 bg-black/5 rounded-full overflow-hidden">
+             <div 
+               className="h-full rounded-full transition-all duration-1000 ease-out"
+               style={{ 
+                 background: s.color,
+                 width: statusKey === 'SERVED' ? '100%' : 
+                        statusKey === 'READY' ? '100%' : 
+                        statusKey === 'PREPARING' ? '65%' : '25%'
+               }} 
+             />
+          </div>
+        </div>
+      </div>
 
-          {/* Green dot pulse on READY */}
-          {isReady && (
-            <span
-              className="absolute top-3 right-3 w-3 h-3 rounded-full animate-pulse"
-              style={{ background: s.color }}
-            />
+      {/* ── The Static QR (Centerpiece) ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
+        <div className="w-full max-w-[320px] aspect-square bg-white border-[12px] border-gray-50 rounded-[3rem] shadow-2xl shadow-black/5 flex items-center justify-center relative overflow-hidden">
+          {qrString ? (
+            <div className="p-4 relative bg-white">
+              <QRCodeSVG value={qrString} size={220} level="M" />
+              {isServed && (
+                <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in duration-500">
+                  <CheckCircle2 className="w-20 h-20 text-green-500 mb-2" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-green-600">Served</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Loader2 className="w-10 h-10 animate-spin text-gray-100" />
+          )}
+
+          {/* Real-time scan pulse */}
+          {!isServed && statusKey === 'READY' && (
+            <div className="absolute inset-0 border-4 border-green-500/20 rounded-[2.5rem] animate-pulse" />
           )}
         </div>
-
-        {/* ── Instruction line ── */}
-        <p className="text-xs text-gray-400 text-center mt-4 tracking-wide">
-          {isServed ? 'This token has been used.' : 'Show this code to the server at the counter.'}
+        <p className="mt-8 text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] text-center px-10">
+          Point this at counter scanner
         </p>
       </div>
 
-      {/* ── Item status (compact) ── */}
-      <div className="px-5 pt-5 space-y-2">
-        {order.items.map((item, idx) => {
-          const rem  = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
-          const done = rem <= 0;
-          return (
-            <div
-              key={idx}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-              style={{
-                background: done ? '#f0fdf4' : '#f8fafc',
-                border: `1px solid ${done ? '#bbf7d0' : '#e2e8f0'}`,
-              }}
-            >
-              <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200">
-                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-              </div>
-              <span className="flex-1 text-sm font-medium text-gray-700 truncate">{item.name}</span>
-              <span className="text-xs font-semibold" style={{ color: done ? '#16a34a' : '#94a3b8' }}>
-                {done ? '✓ served' : `×${item.quantity}`}
-              </span>
-            </div>
-          );
-        })}
+      {/* ── Orders Details (Clean) ── */}
+      <div className="px-6 py-4 border-t border-gray-50">
+        <div className="flex items-center gap-3 mb-6">
+           <QuoteDisplay order={order} orderCount={orderCount} />
+        </div>
+        <div className="space-y-3">
+          {order.items.map((item, idx) => {
+             const isItemServed = (item.remainingQty ?? (item.quantity - (item.servedQty || 0))) <= 0;
+             return (
+               <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                 <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg overflow-hidden grayscale">
+                       <img src={item.imageUrl} className="w-full h-full object-cover" alt="" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-gray-900">{item.name}</h4>
+                      <p className="text-[9px] font-bold text-gray-400">Qty: {item.quantity}</p>
+                    </div>
+                 </div>
+                 {isItemServed ? (
+                   <span className="text-[9px] font-black uppercase text-green-600 bg-green-50 px-3 py-1.5 rounded-full border border-green-100 flex items-center gap-2">
+                     <Check className="w-3 h-3" /> Served
+                   </span>
+                 ) : (
+                   <span className="text-[9px] font-black uppercase text-gray-400 bg-white px-3 py-1.5 rounded-full border border-gray-200">
+                     Reserved
+                   </span>
+                 )}
+               </div>
+             )
+          })}
+        </div>
       </div>
 
-      {/* ── Quote (gold, subtle) ── */}
-      <div className="px-5 pt-4">
-        <QuoteDisplay order={order} orderCount={orderCount} />
-      </div>
-
-      {/* ── Bottom action ── */}
-      <div className="px-5 pt-5">
-        <button
+      <div className="p-6 pt-0">
+        <button 
           onClick={() => onViewOrders ? onViewOrders() : onBack()}
-          className="w-full py-3.5 rounded-2xl text-sm font-semibold text-gray-500 bg-gray-50 border border-gray-200 active:scale-95 transition-all"
+          className="w-full py-5 bg-gray-900 text-white rounded-[1.75rem] text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-gray-200"
         >
-          View All Orders
+          View Order History
         </button>
       </div>
     </div>
