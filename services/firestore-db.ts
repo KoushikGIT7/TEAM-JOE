@@ -1391,9 +1391,11 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
       throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
     }
 
-    // 4. Strict check: Only serve if READY (in collecting window)
-    if (order.pickupWindow?.status !== 'COLLECTING') {
-      throw new Error(`SERVE_BLOCKED - Item status is ${order.pickupWindow?.status || order.serveFlowStatus}. Only READY items can be served.`);
+    // 4. Strict check: Only serve if READY or COLLECTING
+    const pStatus = order.pickupWindow?.status;
+    const fStatus = order.serveFlowStatus;
+    if (pStatus !== 'COLLECTING' && fStatus !== 'READY') {
+      throw new Error(`SERVE_BLOCKED - Item status is ${pStatus || fStatus || 'PENDING'}. Only READY items can be served.`);
     }
 
     // 4. Cryptographic Signature Verification

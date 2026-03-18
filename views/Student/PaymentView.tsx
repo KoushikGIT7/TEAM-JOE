@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, CreditCard, Smartphone, Landmark, Banknote, ShieldCheck, Loader2, CheckCircle2, Clock, ChevronRight } from 'lucide-react';
 import { UserProfile, CartItem } from '../../types';
 import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../services/firestore-db';
+import { db } from '../../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -128,6 +130,21 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     }
   };
 
+  const handleCancelOrder = async () => {
+    if (orderId) {
+       try {
+         await updateDoc(doc(db, 'orders', orderId), {
+           orderStatus: 'CANCELLED',
+           paymentStatus: 'REJECTED'
+         });
+       } catch (err) {
+         console.warn('Silent fallback for cancel:', err);
+       }
+    }
+    // Always navigate back
+    onBack();
+  };
+
   const methods = [
     { id: 'UPI', name: 'UPI Pay', icon: Smartphone, color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
     { id: 'CARD', name: 'Debit/Credit Card', icon: CreditCard, color: 'bg-blue-50 text-blue-600 border-blue-100' },
@@ -184,7 +201,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                   </div>
               </div>
               <button 
-                onClick={onBack}
+                onClick={handleCancelOrder}
                 className="w-full py-4 text-textSecondary font-bold"
               >
                   Cancel Order

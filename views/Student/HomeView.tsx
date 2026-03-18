@@ -92,6 +92,16 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     ['NEW', 'QUEUED', 'PREPARING'].includes(activeOrder.serveFlowStatus || 'NEW');
   const { visible: showHeadline, headline } = useMotivationalHeadline(isPrepWaiting);
 
+  // Derive flow for Haptic Feedback + UI, safe when activeOrder is null
+  const activeOrderFlow = activeOrder?.serveFlowStatus || (activeOrder?.paymentStatus === 'SUCCESS' ? 'PAID' : 'NEW');
+
+  // Haptic Feedback for READY state (triggered by flow change), moved to top level
+  useEffect(() => {
+    if (activeOrderFlow === 'READY' && ('vibrate' in navigator)) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  }, [activeOrderFlow]);
+
   useEffect(() => {
     const savedCart = localStorage.getItem('joe_cart');
     if (savedCart) {
@@ -289,55 +299,35 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <p className="text-xs text-error/80">Please review and place a new order.</p>
           </div>
         </div>
-      )}      {/* Live Order Tracker Banner (Senior UX) */}
-      {activeOrder && (() => {
-        const isPrep = activeOrder.orderType === 'PREPARATION_ITEM';
-        const flow = activeOrder.serveFlowStatus || (activeOrder.paymentStatus === 'SUCCESS' ? 'PAID' : 'NEW');
-        
-        // Haptic Feedback for READY state (triggered by flow change)
-        useEffect(() => {
-            if (flow === 'READY' && ('vibrate' in navigator)) {
-                navigator.vibrate([200, 100, 200]);
-            }
-        }, [flow]);
-
-        const getStatusColor = () => {
-            if (activeOrder.paymentStatus === 'PENDING') return 'border-amber-500 bg-amber-500/5 shadow-amber-900/10';
-            if (flow === 'READY') return 'border-green-500 bg-green-500/5 shadow-green-900/20';
-            if (flow === 'ALMOST_READY') return 'border-orange-500 bg-orange-500/5 shadow-orange-900/10';
-            return 'border-primary bg-primary/5 shadow-primary-900/10';
-        };
-
-        const getProgressWidth = () => {
-            if (activeOrder.paymentStatus === 'PENDING') return 'w-1/4';
-            if (flow === 'READY') return 'w-full';
-            if (flow === 'ALMOST_READY') return 'w-5/6';
-            if (flow === 'PREPARING') return 'w-2/3';
-            return 'w-1/2';
-        };
-
-        return (
+      )}
+      {/* Live Order Tracker Banner (Senior UX) */}
+      {activeOrder && (
          <div className="p-4 animate-in slide-in-from-top-4 duration-700">
             <div 
               onClick={() => onViewQR && onViewQR(activeOrder.id)}
-              className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all duration-500 group ${getStatusColor()}`}
+              className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all duration-500 group ${
+                activeOrder.paymentStatus === 'PENDING' ? 'border-amber-500 bg-amber-500/5 shadow-amber-900/10' :
+                activeOrderFlow === 'READY' ? 'border-green-500 bg-green-500/5 shadow-green-900/20' :
+                activeOrderFlow === 'ALMOST_READY' ? 'border-orange-500 bg-orange-500/5 shadow-orange-900/10' :
+                'border-primary bg-primary/5 shadow-primary-900/10'
+              }`}
             >
               {/* Ready State Pulsing Glow */}
-              {flow === 'READY' && (
+              {activeOrderFlow === 'READY' && (
                 <div className="absolute inset-0 bg-green-500/10 animate-pulse-slow pointer-events-none" />
               )}
               
               <div className="flex justify-between items-center relative z-10">
                 <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${flow === 'READY' ? 'bg-green-500 text-white animate-bounce' : 'bg-white shadow-sm'}`}>
-                    {flow === 'READY' ? <Sparkles className="w-5 h-5" /> : <Clock className="w-5 h-5 text-primary" />}
+                  <div className={`p-3 rounded-2xl ${activeOrderFlow === 'READY' ? 'bg-green-500 text-white animate-bounce' : 'bg-white shadow-sm'}`}>
+                    {activeOrderFlow === 'READY' ? <Sparkles className="w-5 h-5" /> : <Clock className="w-5 h-5 text-primary" />}
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary opacity-60">Real-time Order Tracking</p>
                     <h4 className="text-xl font-black text-textMain tracking-tighter">
                       {activeOrder.paymentStatus === 'PENDING' ? 'Pay to Start Cooking' : 
-                       flow === 'READY' ? '🎉 Food is Ready!' : 
-                       flow === 'ALMOST_READY' ? '🔥 Almost Ready...' : '🥣 Preparing Meal'}
+                       activeOrderFlow === 'READY' ? '🎉 Food is Ready!' : 
+                       activeOrderFlow === 'ALMOST_READY' ? '🔥 Almost Ready...' : '🥣 Preparing Meal'}
                     </h4>
                   </div>
                 </div>
@@ -351,7 +341,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <div className="flex flex-wrap gap-2 relative z-10">
                  {activeOrder.items.slice(0, 3).map((item, idx) => (
                     <div key={idx} className="px-3 py-1.5 bg-white/50 backdrop-blur rounded-xl border border-black/5 flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${flow === 'READY' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
+                        <div className={`w-1.5 h-1.5 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
                         <span className="text-[9px] font-black text-textMain">{item.name}</span>
                     </div>
                  ))}
@@ -365,18 +355,24 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <div className="space-y-3 relative z-10">
                 <div className="flex justify-between items-end">
                     <p className="text-[10px] font-bold text-textSecondary flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${flow === 'READY' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-primary'}`} />
-                        {flow === 'READY' ? 'Collect from counter' : 'Optimal arrival in ~8m'}
+                        <div className={`w-2 h-2 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-primary'}`} />
+                        {activeOrderFlow === 'READY' ? 'Collect from counter' : 'Optimal arrival in ~8m'}
                     </p>
                     <ChevronRight className="w-4 h-4 text-textSecondary opacity-30 group-hover:translate-x-1 transition-transform" />
                 </div>
                 <div className="h-2 bg-black/5 rounded-full overflow-hidden">
-                    <div className={`h-full transition-all duration-1000 ease-out rounded-full ${flow === 'READY' ? 'bg-green-500' : 'bg-primary'} ${getProgressWidth()}`} />
+                    <div className={`h-full transition-all duration-1000 ease-out rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500' : 'bg-primary'} ${
+                      activeOrder.paymentStatus === 'PENDING' ? 'w-1/4' :
+                      activeOrderFlow === 'READY' ? 'w-full' :
+                      activeOrderFlow === 'ALMOST_READY' ? 'w-5/6' :
+                      activeOrderFlow === 'PREPARING' ? 'w-2/3' : 'w-1/2'
+                    }`} />
                 </div>
               </div>
             </div>
-         </div>
-        ); })()}
+          </div>
+      )}
+
 
       {/* Dynamic Menu Container */}
       {loading ? (

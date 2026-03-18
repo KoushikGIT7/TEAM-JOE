@@ -40,7 +40,11 @@ export const useOrderNotifications = (userId: string | null) => {
                         '⚠️ Order Issue',
                         `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
                     );
-                    await updateDoc(doc(db, 'orders', orderId), { notifiedAt: Date.now() });
+                    try {
+                        await updateDoc(doc(db, 'orders', orderId), { notifiedAt: Date.now() });
+                    } catch (err) {
+                        console.warn('Could not update notifiedAt (permission expected for guest profiles)', err);
+                    }
                 }
 
                 // 2. READY: Wave-based delivery
@@ -78,7 +82,11 @@ export const useOrderNotifications = (userId: string | null) => {
                                     '🍽️ Order Ready!',
                                     `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
                                 );
-                                await updateDoc(doc(db, 'orders', orderId), { notifiedAt: Date.now() });
+                                try {
+                                    await updateDoc(doc(db, 'orders', orderId), { notifiedAt: Date.now() });
+                                } catch (updateErr) {
+                                    console.warn('Could not update notifiedAt (permission denied expected for guests)', updateErr);
+                                }
                             }
                         } catch (e) {
                             console.error('Final trigger error:', e);

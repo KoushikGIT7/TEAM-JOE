@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   CheckCircle, Zap, Clock, Search, Camera, X, ChefHat, 
   UtensilsCrossed, Timer, AlertCircle, ChevronRight, 
@@ -71,6 +71,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
     // ðŸ¤– Autonomous Maintenance Heartbeat (Runs every 30s)
     const maintenance = setInterval(async () => {
+        if (profile.role !== 'ADMIN') return;
         try {
             await flushMissedPickups(profile.uid);
         } catch (err) {}
