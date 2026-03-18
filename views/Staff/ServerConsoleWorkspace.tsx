@@ -26,7 +26,7 @@ const getStatusDisplay = (item: CartItem): { text: string; flavor: 'READY' | 'WA
   if (item.status === 'READY' || item.orderType === 'FAST_ITEM') return { text: 'Ready for pickup', flavor: 'READY' };
   if (item.status === 'PREPARING') return { text: 'Preparing', flavor: 'WAITING' };
   if (item.status === 'PENDING') return { text: 'Scheduled', flavor: 'WAITING' };
-  if (item.status === 'ABANDONED') return { text: 'Reassigned', flavor: 'DONE' };
+  if (item.status === 'ABANDONED') return { text: 'Re-queued for fresh prep', flavor: 'DONE' };
   return { text: item.status || 'Scheduled', flavor: 'WAITING' };
 };
 

@@ -57,10 +57,31 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
             <p className="text-xs font-black text-textSecondary uppercase tracking-widest">Order</p>
             <p className="text-lg font-black text-textMain">#{order.id.slice(-8).toUpperCase()}</p>
           </div>
-          <div className={`flex items-center gap-1 ${statusColor} text-xs font-black`}>
+          <div className={`flex items-center gap-1 ${statusColor} text-xs font-black uppercase tracking-widest`}>
             {statusIcon}
             <span>{statusMsg}</span>
           </div>
+        </div>
+
+        {/* Status Timeline */}
+        <div className="flex items-center gap-1 mb-4 h-1 px-1">
+           {[ 'SCHEDULED', 'PREPARING', 'READY', 'SERVED' ].map((step, idx) => {
+              const currentIdx = 
+                order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || uiState === 'SCANNED' ? 3 :
+                order.serveFlowStatus === 'READY' ? 2 :
+                order.serveFlowStatus === 'PREPARING' || order.serveFlowStatus === 'ALMOST_READY' ? 1 : 0;
+              
+              const isPast = idx < currentIdx;
+              const isCurrent = idx === currentIdx;
+              
+              return (
+                <div key={step} className="flex-1 flex items-center gap-1">
+                   <div className={`h-full flex-1 rounded-full transition-all duration-700 ${
+                     isPast ? 'bg-green-500' : isCurrent ? 'bg-indigo-500 animate-pulse' : 'bg-slate-100'
+                   }`} />
+                </div>
+              )
+           })}
         </div>
 
         {/* Items */}

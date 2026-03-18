@@ -21,7 +21,7 @@ const STATUS: Record<string, { label: string; sub: string; icon: React.FC<any>; 
   READY:        { label: 'READY FOR PICKUP',    sub: 'Show this QR at the counter now',         icon: Zap,        color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   PREPARING:    { label: 'PREPARING FOOD',     sub: 'The kitchen is cooking your meal',        icon: ChefHat,    color: '#0284c7', bg: '#f0f9ff', border: '#bae6fd' },
   SCHEDULED:    { label: 'SCHEDULED',          sub: 'Waiting for your preparation slot',        icon: Clock,      color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
-  MISSED:       { label: 'MISSED BATCH',       sub: 'Reassigned, preparing for next slot',     icon: Clock,      color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  MISSED:       { label: 'RE-QUEUED',       sub: 'Preparing for next available slot',     icon: Clock,      color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
   SERVED:       { label: 'ORDER COMPLETED',    sub: 'Thank you! Enjoy your meal 🎉',          icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   DEFAULT:      { label: 'ORDER PLACED',       sub: 'Waiting to start...',                     icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
 };
@@ -147,9 +147,30 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
               <s.icon className={`w-6 h-6 ${isReady ? 'text-white' : ''}`} style={{ color: !isReady ? s.color : undefined }} />
             </div>
             {isReady && timeLeft && (
-               <div className="text-right">
-                  <p className="text-[10px] font-black text-green-700 uppercase tracking-widest mb-1">Pickup Window</p>
-                  <p className="text-2xl font-black text-green-700 font-mono tracking-tighter">{timeLeft}</p>
+               <div className="relative flex items-center justify-center w-24 h-24">
+                  {/* Circular Progress Ring */}
+                  <svg className="absolute w-full h-full -rotate-90">
+                    <circle
+                      cx="48" cy="48" r="42"
+                      stroke="currentColor"
+                      strokeWidth="6"
+                      fill="transparent"
+                      className="text-green-100"
+                    />
+                    <circle
+                      cx="48" cy="48" r="42"
+                      stroke="currentColor"
+                      strokeWidth="6"
+                      fill="transparent"
+                      strokeDasharray="264"
+                      strokeDashoffset={264 - (264 * (Math.max(0, (order?.pickupWindow?.endTime || 0) - Date.now()) / 420000))}
+                      className="text-green-600 transition-all duration-1000"
+                    />
+                  </svg>
+                  <div className="text-center z-10">
+                    <p className="text-[10px] font-black text-green-700 uppercase tracking-tighter leading-none">Min Left</p>
+                    <p className="text-xl font-black text-green-700 font-mono tracking-tighter">{timeLeft}</p>
+                  </div>
                </div>
             )}
             {!isReady && order.arrivalTime && (

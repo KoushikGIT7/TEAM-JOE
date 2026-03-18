@@ -8,7 +8,8 @@ import {
   validateQRForServing,
   serveItemBatch,
   serveFullOrder,
-  listenToActiveOrders
+  listenToActiveOrders,
+  flushMissedPickups
 } from '../../services/firestore-db';
 import { initializeScanner } from '../../services/scanner';
 import QRScanner from '../../components/QRScanner';
@@ -55,8 +56,16 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       }
     });
 
+    // 🚀 PRODUCTION MAINTENANCE: Flush Missed Pickups (Every 60s)
+    // Runs 'Lazy Reassignment' logic to move orders from READY to MISSED
+    const maintenanceLoop = setInterval(async () => {
+       const nodeId = `node_${profile.uid.slice(0,8)}`;
+       await flushMissedPickups(nodeId).catch(console.warn);
+    }, 60000);
+
     return () => {
       clearInterval(t);
+      clearInterval(maintenanceLoop);
       scanner.destroy();
     };
   }, [activeWorkspace]);
