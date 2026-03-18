@@ -45,7 +45,7 @@ import {
   PrepBatchStatus,
   SystemMaintenance
 } from "../types";
-import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT } from "../constants";
+import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT, FAST_ITEM_CATEGORIES } from "../constants";
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
@@ -903,16 +903,22 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         }
       }
 
-      // 3. Prepare order
-      const isDynamic = orderData.items.some(it => it.orderType === 'PREPARATION_ITEM');
+      // 3. Prepare order with metadata resolution
+      const itemsWithResolvedType = itemsWithQty.map(it => {
+        const resolvedOrderType = it.orderType || (FAST_ITEM_CATEGORIES.includes(it.category || '') ? 'FAST_ITEM' : 'PREPARATION_ITEM');
+        return {
+          ...it,
+          orderType: resolvedOrderType,
+          status: resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING'
+        };
+      });
+
+      const isDynamic = itemsWithResolvedType.some(it => it.orderType === 'PREPARATION_ITEM');
       const orderType = isDynamic ? 'PREPARATION_ITEM' : 'FAST_ITEM';
       
       const newOrder: Order = {
         ...orderData,
-        items: itemsWithQty.map(it => ({
-          ...it,
-          status: it.orderType === 'FAST_ITEM' ? 'READY' : 'PENDING'
-        })),
+        items: itemsWithResolvedType,
         id,
         createdAt,
         orderStatus: 'PENDING',

@@ -5,7 +5,7 @@ import {
   ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles
 } from 'lucide-react';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
-import { CATEGORIES } from '../../constants';
+import { CATEGORIES, FAST_ITEM_CATEGORIES } from '../../constants';
 import { listenToMenu, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import { useMotivationalHeadline } from '../../hooks/useMotivationalHeadline';
@@ -138,7 +138,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     setCart(prev => {
       const newCart = { ...prev };
       if (!newCart[item.id]) {
-        if (delta > 0) newCart[item.id] = { ...item, quantity: 1 };
+        if (delta > 0) {
+          const orderType = item.orderType || (FAST_ITEM_CATEGORIES.includes(item.category) ? 'FAST_ITEM' : 'PREPARATION_ITEM');
+          newCart[item.id] = { ...item, quantity: 1, orderType };
+        }
       } else {
         let newQty = newCart[item.id].quantity + delta;
         const maxAllowed = stockByItemId[item.id]?.available ?? 999;
