@@ -277,20 +277,28 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                 <span className="text-[10px] font-black text-primary uppercase tracking-[0.4em] mt-1">KITCHEN OPS</span>
             </div>
             
-            <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-3xl px-8 py-4 focus-within:border-primary/50 transition-all group shadow-inner">
-                <Search className="w-6 h-6 text-gray-500 group-focus-within:text-primary transition-colors" />
-                <input
-                    type="text"
-                    placeholder="SCAN TOKEN CODE..."
-                    className="bg-transparent border-none outline-none font-black text-2xl placeholder:text-white/5 tracking-[0.2em] uppercase w-96"
-                    autoFocus
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            handleQRScan((e.target as HTMLInputElement).value);
-                            (e.target as HTMLInputElement).value = '';
-                        }
-                    }}
-                />
+            <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-3xl px-8 py-4 focus-within:border-primary/50 transition-all group shadow-inner">
+                    <Search className="w-6 h-6 text-gray-500 group-focus-within:text-primary transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="SCAN TOKEN CODE..."
+                        className="bg-transparent border-none outline-none font-black text-2xl placeholder:text-white/5 tracking-[0.2em] uppercase w-96"
+                        autoFocus
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                handleQRScan((e.target as HTMLInputElement).value);
+                                (e.target as HTMLInputElement).value = '';
+                            }
+                        }}
+                    />
+                </div>
+                <button 
+                  onClick={() => setIsCameraOpen(true)}
+                  className="h-16 w-16 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 flex items-center justify-center transition-all active:scale-95 group"
+                >
+                    <Camera className="w-6 h-6 text-gray-400 group-hover:text-primary" />
+                </button>
             </div>
         </div>
 
