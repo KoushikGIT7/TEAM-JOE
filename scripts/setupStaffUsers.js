@@ -29,14 +29,14 @@
         email: 'cashier@joecafe.com',
         password: 'joecashier2026',
         name: 'Cashier Node',
-        role: 'cashier',
+        role: 'CASHIER',
         description: 'Handles cash payment approvals'
       },
       {
         email: 'server@joecafe.com',
         password: 'joeserver2026',
         name: 'Server Node',
-        role: 'server',
+        role: 'SERVER',
         description: 'Handles order serving and QR scanning'
       }
     ];

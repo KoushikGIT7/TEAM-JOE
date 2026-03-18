@@ -436,37 +436,58 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
               <div className="flex-1 overflow-y-auto space-y-3 pb-3">
                 {scannedOrder.items.map(item => {
                   const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
-                  const done = rem <= 0;
-                  const isNextInLine = !done && scannedOrder.items.find(i => (i.remainingQty ?? (i.quantity - (i.servedQty || 0))) > 0)?.id === item.id;
+                  const isDone = item.status === 'SERVED' || rem <= 0;
+                  const isReady = item.status === 'READY';
+                  const isPreparing = item.status === 'PREPARING' || item.status === 'PENDING';
+                  
                   return (
                     <div
                       key={item.id}
                       className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
-                        done ? 'bg-green-50 border-green-200 opacity-50' :
-                        isNextInLine ? 'bg-white border-green-400 shadow-sm' :
-                        'bg-white border-gray-200'
+                        isDone ? 'bg-green-50 border-green-200 opacity-60' :
+                        isReady ? 'bg-white border-green-400 shadow-sm' :
+                        'bg-gray-50 border-gray-200'
                       }`}
                     >
                       <div className="w-14 h-14 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 relative">
                         <img src={item.imageUrl} className="w-full h-full object-cover" alt="" />
-                        {done && <div className="absolute inset-0 bg-green-500/30 flex items-center justify-center"><CheckCircle className="w-6 h-6 text-white" /></div>}
+                        {isDone && (
+                          <div className="absolute inset-0 bg-green-500/40 flex items-center justify-center">
+                            <CheckCircle className="w-6 h-6 text-white" />
+                          </div>
+                        )}
+                        {isPreparing && !isDone && (
+                          <div className="absolute inset-0 bg-gray-500/20 flex items-center justify-center">
+                            <Flame className="w-6 h-6 text-gray-400 animate-pulse" />
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-gray-900 truncate">{item.name}</h4>
-                        <p className="text-xs text-gray-400">{done ? 'Served' : `${rem} remaining`}</p>
+                        <div className="flex items-center gap-2">
+                          <h4 className={`font-bold truncate ${isDone ? 'text-green-700' : 'text-gray-900'}`}>{item.name}</h4>
+                          {!isDone && (
+                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              isReady ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'
+                            }`}>
+                              {isReady ? 'Ready' : 'In Prep'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-400">{isDone ? 'Item Served' : `${rem} units found`}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={`text-2xl font-black ${done ? 'text-green-500' : isNextInLine ? 'text-green-700' : 'text-gray-400'}`}>
-                          {done ? 'âœ“' : rem}
+                        <span className={`text-2xl font-black ${isDone ? 'text-green-500' : isReady ? 'text-green-700' : 'text-gray-300'}`}>
+                          {isDone ? '✓' : rem}
                         </span>
-                        {!done && (
+                        {!isDone && (
                           <button
                             onClick={() => handleServeItem(scannedOrder.id, item.id, rem)}
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95 ${
-                              isNextInLine ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            disabled={!isReady}
+                            className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all active:scale-95 disabled:opacity-20 ${
+                              isReady ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200' : 'bg-gray-100 text-gray-400'
                             }`}
                           >
-                            <Zap className="w-5 h-5 fill-current" />
+                            <Zap className={`w-6 h-6 ${isReady ? 'fill-white' : ''}`} />
                           </button>
                         )}
                       </div>

@@ -28,7 +28,7 @@ export interface CartItem extends MenuItem {
   quantity: number;
   servedQty?: number;
   remainingQty?: number;
-  status?: 'PENDING' | 'SERVED' | 'ABANDONED';
+  status?: 'PENDING' | 'PREPARING' | 'READY' | 'SERVED' | 'ABANDONED';
 }
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'MISSED' | 'ABANDONED';
@@ -41,7 +41,7 @@ export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
 export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'SERVED_PARTIAL' | 'READY_SERVED' | 'SERVED' | 'MISSED' | 'EXPIRED' | 'ABANDONED';
 
 /** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED */
-export type QRState = 'ACTIVE' | 'SCANNED' | 'USED' | 'SERVED' | 'DESTROYED';
+export type QRState = 'ACTIVE' | 'SCANNED' | 'USED' | 'SERVED' | 'DESTROYED' | 'REJECTED';
 
 /** Kitchen workflow: PLACED → COOKING → READY → SERVED */
 export type KitchenStatus = 'PLACED' | 'COOKING' | 'READY' | 'SERVED';

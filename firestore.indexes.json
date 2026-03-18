@@ -93,6 +93,22 @@
         { "fieldPath": "qrState", "order": "ASCENDING" },
         { "fieldPath": "scannedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "prepBatches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "arrivalTimeSlot", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pickupWindow.status", "order": "ASCENDING" },
+        { "fieldPath": "orderStatus", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

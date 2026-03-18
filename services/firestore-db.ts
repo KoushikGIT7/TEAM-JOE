@@ -909,7 +909,10 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       
       const newOrder: Order = {
         ...orderData,
-        items: itemsWithQty,
+        items: itemsWithQty.map(it => ({
+          ...it,
+          status: it.orderType === 'FAST_ITEM' ? 'READY' : 'PENDING'
+        })),
         id,
         createdAt,
         orderStatus: 'PENDING',
@@ -1302,12 +1305,13 @@ export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() =
   return onSnapshot(
     query(
       collection(db, "orders"),
-      where("qrState", "==", "SCANNED"),
-      orderBy("createdAt", "asc")
+      where("qrState", "==", "SCANNED")
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
+      // Sort client-side to avoid needing a composite index
+      const sorted = orders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      callback(sorted);
     },
     (error) => {
       console.error("Error listening to active orders:", error);
@@ -1320,13 +1324,15 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
   return onSnapshot(
     query(
       collection(db, "orders"),
-      where("qrState", "==", "SCANNED"),
-      orderBy("createdAt", "asc")
+      where("qrState", "==", "SCANNED")
     ),
     (snapshot) => {
+      const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
+      // Sort client-side to avoid needing a composite index
+      const sortedOrders = orders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      
       const pendingItems: PendingItem[] = [];
-      snapshot.docs.forEach(doc => {
-        const order = firestoreToOrder(doc.id, doc.data());
+      sortedOrders.forEach(order => {
         order.items.forEach(item => {
           const remainingQty = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
           if (remainingQty > 0) {
@@ -1482,7 +1488,7 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
         ...item,
         servedQty: newServedQty,
         remainingQty: newRemainingQty,
-        status: newRemainingQty <= 0 ? 'SERVED' : 'PENDING'
+        status: newRemainingQty <= 0 ? 'SERVED' : item.status
       };
 
       // Check if all items are completed (SERVED or ABANDONED)
@@ -1509,39 +1515,13 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
         qrStatus: allResolved ? 'DESTROYED' : order.qrStatus,
         qrState: allResolved ? 'SERVED' : 'SCANNED',
       });
-
-      // Create serve log
-      const serveLogRef = doc(serveLogsRef);
-      tx.set(serveLogRef, {
-        orderId,
-        itemId,
-        itemName: item.name,
-        quantityServed: quantity,
-        servedBy,
-        servedAt: serverTimestamp()
-      });
-
-      // Update inventory shards for the batch
-      const shardId = `shard_${Math.floor(Math.random() * INVENTORY_SHARD_COUNT)}`;
-      const shardRef = doc(db, "inventory_shards", itemId, "shards", shardId);
-      
-      tx.set(shardRef, { 
-        count: increment(quantity),
-        lastUpdated: serverTimestamp() 
-      }, { merge: true });
     });
-
-    console.log('✅ Batch items served:', { orderId, itemId, quantity, servedBy });
-  } catch (error) {
-    console.error("Error batch serving items:", error);
-    throw error;
+  } catch (err: any) {
+    console.error("Error serving item:", err);
+    throw err;
   }
 };
 
-/**
- * Serve an entire order in one atomic transaction.
- * Marks orderStatus = 'SERVED' and qrStatus = 'DESTROYED'.
- */
 export const serveFullOrder = async (orderId: string, servedBy: string): Promise<void> => {
   try {
     const orderRef = doc(db, "orders", orderId);
@@ -1553,10 +1533,6 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
 
       if (order.orderStatus === 'SERVED') return;
 
-      // Allow serving if any of these conditions are true:
-      // 1. pickupWindow is COLLECTING (batch explicitly opened window)
-      // 2. serveFlowStatus is READY (batch marked ready, window may not be set yet)
-      // 3. qrRedeemable override set by staff
       const isAllowedToServe =
         order.pickupWindow?.status === 'COLLECTING' ||
         order.serveFlowStatus === 'READY' ||
@@ -1566,66 +1542,28 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
         throw new Error(`SERVE_BLOCKED - Order is ${order.serveFlowStatus || order.pickupWindow?.status || 'NOT_READY'}. Only READY orders can be served.`);
       }
 
-
-      const updatedItems = order.items.map(item => {
-        const remaining = item.remainingQty !== undefined ? item.remainingQty : (item.quantity - (item.servedQty || 0));
-        return {
-          ...item,
-          servedQty: item.quantity,
-          remainingQty: 0,
-          pendingServed: remaining
-        };
-      });
+      const updatedItems = order.items.map(item => ({
+        ...item,
+        servedQty: item.quantity,
+        remainingQty: 0,
+        status: 'SERVED'
+      }));
 
       tx.update(orderRef, {
-        items: updatedItems.map(i => ({
-          id: i.id,
-          name: i.name,
-          price: i.price,
-          costPrice: i.costPrice,
-          category: i.category,
-          imageUrl: i.imageUrl,
-          quantity: i.quantity,
-          servedQty: i.quantity,
-          remainingQty: 0
-        })),
+        items: updatedItems,
         orderStatus: 'SERVED',
         qrStatus: 'DESTROYED',
         qrState: 'SERVED',
         servedAt: serverTimestamp(),
         serveFlowStatus: 'SERVED'
       });
-
-      // Serve logs & Inventory Shards
-      const serveLogsRef = collection(db, "serveLogs");
-      for (const item of updatedItems) {
-        if (item.pendingServed > 0) {
-          const logRef = doc(serveLogsRef);
-          tx.set(logRef, {
-            orderId,
-            itemId: item.id,
-            itemName: item.name,
-            quantityServed: item.pendingServed,
-            servedBy,
-            servedAt: serverTimestamp()
-          });
-
-          const shardId = `shard_${Math.floor(Math.random() * 5)}`; // INVENTORY_SHARD_COUNT fallback
-          const shardRef = doc(db, "inventory_shards", item.id, "shards", shardId);
-          tx.set(shardRef, { 
-            count: increment(item.pendingServed),
-            lastUpdated: serverTimestamp() 
-          }, { merge: true });
-        }
-      }
     });
-
-    console.log('🏁 Full order served successfully:', orderId);
-  } catch (error) {
-    console.error("Error serving full order:", error);
-    throw error;
+  } catch (err: any) {
+    console.error("Error serving full order:", err);
+    throw err;
   }
 };
+
 
 export const toggleQrRedeemable = async (orderId: string, redeemable: boolean, staffId: string, reason: string): Promise<void> => {
   try {
@@ -2033,7 +1971,6 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
   return onSnapshot(
     query(
       collection(db, "prepBatches"), 
-      orderBy("arrivalTimeSlot", "asc"), 
       where("status", "in", ["QUEUED", "PREPARING", "READY"]),
       limit(50)
     ),
@@ -2047,7 +1984,9 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
           updatedAt: data.updatedAt?.toMillis?.() || Date.now()
         } as PrepBatch;
       });
-      callback(batches);
+      // Sort client-side to avoid needing a composite index
+      const sorted = batches.sort((a, b) => (a.arrivalTimeSlot || 0) - (b.arrivalTimeSlot || 0));
+      callback(sorted);
     },
     (error) => {
       console.error("Error listening to batches:", error);
@@ -2177,7 +2116,19 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
 
             for (const orderId of (batchData.orderIds || [])) {
                 const orderRef = doc(db, "orders", orderId);
-                const orderUpdate: any = { serveFlowStatus: status };
+                const orderSnap = await tx.get(orderRef);
+                if (!orderSnap.exists()) continue;
+
+                const orderData = orderSnap.data();
+                const items = (orderData.items || []).map((item: any) => {
+                    // Update ONLY items that match this batch's itemId and aren't already served
+                    if (item.id === batchData.itemId && item.status !== 'SERVED') {
+                        return { ...item, status };
+                    }
+                    return item;
+                });
+
+                const orderUpdate: any = { serveFlowStatus: status, items };
                 if (status === 'READY') {
                     orderUpdate.pickupWindow = {
                         startTime: now,
