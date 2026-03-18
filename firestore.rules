@@ -19,8 +19,9 @@ service cloud.firestore {
     }
 
     function isStaff() {
-      return isAuthenticated() && getRole() in ['ADMIN', 'SERVER', 'CASHIER'];
+      return isAuthenticated() && getRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK'];
     }
+
 
     function isAdmin() {
       return isAuthenticated() && getRole() == 'ADMIN';
@@ -102,6 +103,13 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin();
+      
+      // RULES FOR SUBCOLLECTION items
+      match /items/{itemId} {
+        allow read: if true;
+        allow create: if true; // During initial order batch
+        allow update: if isStaff();
+      }
     }
 
     // =========================================================================
