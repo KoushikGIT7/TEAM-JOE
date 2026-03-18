@@ -24,6 +24,13 @@ type ViewState =
   | 'STAFF_LOGIN'
   | 'STUDENT_HOME';
 
+// Lazy load student views to improve initial bundle size
+const HomeView = React.lazy(() => import('./views/Student/HomeView'));
+const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
+const OrdersView = React.lazy(() => import('./views/Student/OrdersView'));
+const QRView = React.lazy(() => import('./views/Student/QRView'));
+
+
 const App: React.FC = () => {
   const { user, profile: authProfile, loading: authLoading } = useAuth();
   const [guestProfile, setGuestProfile] = useState<UserProfile | null>(null);
@@ -190,7 +197,6 @@ const App: React.FC = () => {
                 {(() => {
                   switch (studentSubView) {
                     case 'HOME':
-                      const HomeView = React.lazy(() => import('./views/Student/HomeView'));
                       return (
                         <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
                           <HomeView 
@@ -206,7 +212,6 @@ const App: React.FC = () => {
                         </React.Suspense>
                       );
                     case 'PAYMENT':
-                      const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
                       return (
                         <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
                           <PaymentView 
@@ -220,7 +225,6 @@ const App: React.FC = () => {
                         </React.Suspense>
                       );
                     case 'ORDERS':
-                      const OrdersView = React.lazy(() => import('./views/Student/OrdersView'));
                       return (
                         <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
                           <OrdersView 
@@ -234,7 +238,6 @@ const App: React.FC = () => {
                         </React.Suspense>
                       );
                     case 'QR':
-                      const QRView = React.lazy(() => import('./views/Student/QRView'));
                       return (
                         <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
                           <QRView 
