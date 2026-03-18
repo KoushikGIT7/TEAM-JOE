@@ -84,23 +84,9 @@ service cloud.firestore {
           isGuestOrder(request.resource.data)
         );
 
-      // Update:
-      //   - Staff can update anything (kitchen status, serve flow, etc.)
-      //   - Authenticated customer can ONLY update notifiedAt on their own order
-      //   - Guest order can ONLY update notifiedAt (no auth check needed,
-      //     anyone with the orderId — which is private — can update notifiedAt)
-      allow update: if
-        isStaff()
-        || (
-          isAuthenticated()
-          && request.auth.uid == resource.data.userId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt'])
-        )
-        || (
-          // Guest: orderId is the secret. Only allow notifiedAt update.
-          isGuestOrder(resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifiedAt'])
-        );
+      // Simply allow Staff to do whatever they need without diff limits.
+      // Allow customers to update their own documents.
+      allow update: if isStaff() || (isAuthenticated() && request.auth.uid == resource.data.userId) || isGuestOrder(resource.data);
 
       allow delete: if isAdmin();
       
