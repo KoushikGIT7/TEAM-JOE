@@ -1397,10 +1397,12 @@ export const validateQRForServing = async (qrData: string): Promise<Order> => {
       throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
     }
 
-    // 4. Strict check: Only serve if READY or COLLECTING
+    // 4. Strict check: Only serve if READY or COLLECTING (skip check if fully FAST_ITEM)
     const pStatus = order.pickupWindow?.status;
     const fStatus = order.serveFlowStatus;
-    if (pStatus !== 'COLLECTING' && fStatus !== 'READY') {
+    const isStaticMeal = order.items.every(it => it.orderType === 'FAST_ITEM');
+
+    if (!isStaticMeal && pStatus !== 'COLLECTING' && fStatus !== 'READY') {
       throw new Error(`SERVE_BLOCKED - Item status is ${pStatus || fStatus || 'PENDING'}. Only READY items can be served.`);
     }
 

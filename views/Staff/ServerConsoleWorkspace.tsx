@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { Camera, Check, CheckCircle, Zap, X } from 'lucide-react';
-import { Order } from '../../types';
+import React, { useMemo, useEffect, useState } from 'react';
+import { Camera, Check, CheckCircle, X, ChevronRight } from 'lucide-react';
+import { Order, CartItem } from '../../types';
 
 interface ServerConsoleWorkspaceProps {
   activeOrders: Order[];
@@ -18,6 +18,17 @@ interface ServerConsoleWorkspaceProps {
     orderId?: string;
   };
 }
+
+// Map raw status to user-friendly plain language strings
+const getStatusDisplay = (item: CartItem): { text: string; flavor: 'READY' | 'WAITING' | 'DONE' } => {
+  const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
+  if (rem <= 0) return { text: 'Served', flavor: 'DONE' };
+  if (item.status === 'READY' || item.orderType === 'FAST_ITEM') return { text: 'Ready for pickup', flavor: 'READY' };
+  if (item.status === 'PREPARING') return { text: 'Preparing', flavor: 'WAITING' };
+  if (item.status === 'PENDING') return { text: 'Scheduled', flavor: 'WAITING' };
+  if (item.status === 'ABANDONED') return { text: 'Reassigned', flavor: 'DONE' };
+  return { text: item.status || 'Scheduled', flavor: 'WAITING' };
+};
 
 const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   activeOrders,
@@ -37,26 +48,54 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
     return activeOrders.find(o => o.id === focusedOrderId) || null;
   }, [activeOrders, focusedOrderId]);
 
+  // Force actionable items to the top to reduce eye-travel for the server
+  const sortedItems = useMemo(() => {
+    if (!scannedOrder) return [];
+    return [...scannedOrder.items].sort((a, b) => {
+      const aRem = a.remainingQty ?? (a.quantity - (a.servedQty || 0));
+      const bRem = b.remainingQty ?? (b.quantity - (b.servedQty || 0));
+      // Served items to bottom
+      if (aRem <= 0 && bRem > 0) return 1;
+      if (bRem <= 0 && aRem > 0) return -1;
+
+      const aReady = a.status === 'READY' || a.orderType === 'FAST_ITEM';
+      const bReady = b.status === 'READY' || b.orderType === 'FAST_ITEM';
+      return Number(bReady) - Number(aReady); 
+    });
+  }, [scannedOrder]);
+
+  // Highlight flash effect on new scan render
+  const [highlightFlash, setHighlightFlash] = useState(false);
+  useEffect(() => {
+    if (scannedOrder) {
+      setHighlightFlash(true);
+      const t = setTimeout(() => setHighlightFlash(false), 700);
+      return () => clearTimeout(t);
+    }
+  }, [scannedOrder?.id]);
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#FDFDFD] relative">
+    <div className="flex-1 flex flex-col h-full bg-slate-50 relative">
       {/* SCAN FEEDBACK OVERLAY (Static meal fast path or scan results) */}
       {scanFeedback.status && (
-        <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center transition-all duration-300 animate-in fade-in ${
+        <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center transition-all duration-200 ${
           scanFeedback.status === 'VALID' ? 'bg-green-600' : 'bg-red-600'
         }`}>
-          <div className="flex flex-col items-center text-white scale-125">
-            <div className="w-48 h-48 rounded-full bg-white/20 flex items-center justify-center mb-8 backdrop-blur-md">
+          <div className="flex flex-col items-center text-white scale-125 md:scale-[2]">
+            <div className={`w-36 h-36 rounded-[3rem] bg-white/20 flex items-center justify-center mb-10 backdrop-blur-md shadow-[0_0_100px_rgba(255,255,255,0.3)] ${scanFeedback.status === 'VALID' ? 'animate-[bounce_0.5s_ease-in-out_infinite]' : ''}`}>
               {scanFeedback.status === 'VALID' ? (
-                <Check className="w-32 h-32 text-white stroke-[4]" />
+                <Check className="w-20 h-20 text-white stroke-[4]" />
               ) : (
-                <X className="w-32 h-32 text-white stroke-[4]" />
+                <X className="w-20 h-20 text-white stroke-[4]" />
               )}
             </div>
-            <h1 className="text-8xl font-black tracking-tighter mb-2 italic uppercase">{scanFeedback.message}</h1>
-            <p className="text-2xl font-bold opacity-90 uppercase tracking-[0.2em]">{scanFeedback.subtext}</p>
+            <h1 className="text-8xl md:text-9xl font-black tracking-tighter mb-2 italic uppercase drop-shadow-2xl leading-none">
+              {scanFeedback.message}
+            </h1>
+            <p className="text-3xl font-bold opacity-90 uppercase tracking-[0.3em] font-mono">{scanFeedback.subtext}</p>
             {scanFeedback.orderId && (
-              <p className="mt-8 px-6 py-2 bg-black/20 rounded-full text-sm font-mono tracking-widest backdrop-blur-sm italic">
-                TOKEN #{scanFeedback.orderId}
+              <p className="mt-12 px-8 py-3 bg-black/30 border border-white/20 rounded-2xl text-2xl font-mono tracking-widest backdrop-blur-sm italic shadow-xl">
+                TKT #{scanFeedback.orderId}
               </p>
             )}
           </div>
@@ -64,91 +103,103 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
       )}
 
       {/* TOP: SCAN AREA HEADER / STATUS */}
-      <div className="px-10 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+      <div className="px-10 py-6 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white shadow-sm z-10">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-800">Scanner Status</h3>
-          <p className="text-xs font-bold text-green-500 uppercase tracking-widest">Hardware active • Ready</p>
+          <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 mb-1">Scanner Engine</h3>
+          <div className="flex items-center gap-2">
+             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+             <p className="text-sm font-bold text-slate-800 uppercase tracking-widest">Hardware Ready</p>
+          </div>
         </div>
         <button 
           onClick={() => setIsCameraOpen(true)}
-          className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all flex items-center gap-2"
+          className="px-8 py-4 bg-slate-100 hover:bg-slate-200 border-2 border-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-[0.2em] active:scale-[0.98] transition-all flex items-center gap-3"
         >
-          <Camera className="w-4 h-4" /> Open Interactive Camera
+          <Camera className="w-5 h-5" /> Fallback Camera
         </button>
       </div>
 
       {/* MAIN FOCUS: ACTIVE ORDER */}
-      <div className="flex-1 flex items-center justify-center p-10 bg-slate-50/50 relative overflow-hidden">
+      <div className="flex-1 flex items-center justify-center p-10 bg-slate-50 relative overflow-hidden">
         {scannedOrder ? (
-          <div className="w-full max-w-3xl bg-white border border-slate-200 rounded-[3rem] shadow-2xl shadow-slate-200/50 overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-full">
+          <div className={`w-full max-w-4xl bg-white border rounded-[3rem] shadow-2xl flex flex-col max-h-full transition-all duration-300 ${
+            highlightFlash ? 'ring-8 ring-green-100 ring-offset-4 border-green-200 scale-[1.02]' : 'border-slate-200 scale-100'
+          }`}>
             {/* Active Order Header */}
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/30 shrink-0">
-               <div className="flex items-center gap-6">
-                  <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-xl">
-                     <Check className="w-8 h-8 stroke-[3]" />
+            <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0 rounded-t-[3rem]">
+               <div className="flex items-center gap-8">
+                  <div className="w-20 h-20 bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-white shadow-xl shadow-slate-200/50">
+                     <Check className="w-10 h-10 stroke-[3]" />
                   </div>
                   <div>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Serving Now</p>
-                     <h2 className="text-4xl font-black text-slate-900 tracking-tighter italic leading-none">
+                     <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Active Dispatch</p>
+                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter italic leading-none font-mono">
                        #{scannedOrder.id.slice(-6).toUpperCase()}
                      </h2>
                   </div>
                </div>
-               <button 
-                 onClick={() => setScanQueue(prev => prev.filter(id => id !== scannedOrder.id))} 
-                 className="w-12 h-12 rounded-xl border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
-               >
-                 <X className="w-5 h-5" />
-               </button>
+               
+               {/* Quick Resolve Actions */}
+               <div className="flex flex-col gap-3">
+                 <button 
+                   onClick={() => handleServeAll(scannedOrder.id)}
+                   className="px-8 bg-slate-900 hover:bg-black text-white h-14 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl transition-all shadow-slate-200 active:scale-95 flex items-center justify-center gap-2"
+                 >
+                    Serve Ready Items <ChevronRight className="w-4 h-4 text-slate-400" />
+                 </button>
+                 <button 
+                   onClick={() => setScanQueue(prev => prev.filter(id => id !== scannedOrder.id))} 
+                   className="px-8 bg-white border-2 border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 h-12 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95"
+                 >
+                   Push to pending
+                 </button>
+               </div>
             </div>
 
             {/* Items List */}
-            <div className="p-8 overflow-y-auto space-y-4 custom-scrollbar">
-              {scannedOrder.items.map(it => {
+            <div className="p-10 overflow-y-auto space-y-4 custom-scrollbar bg-white">
+              {sortedItems.map(it => {
                 const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
-                const done = rem <= 0;
-                // Determine if it's cookable or static (For aesthetic coloring only)
-                const isReady = it.status === 'READY' || done || it.orderType === 'FAST_ITEM';
+                const statusInfo = getStatusDisplay(it);
                 
                 return (
-                  <div key={it.id} className={`flex items-center justify-between p-6 rounded-[2rem] border transition-all ${
-                    done 
-                      ? 'bg-green-50/50 border-green-100 opacity-60' 
-                      : (isReady ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-80')
+                  <div key={it.id} className={`flex items-center justify-between p-6 rounded-3xl border-2 transition-all ${
+                     statusInfo.flavor === 'DONE' ? 'border-slate-100 bg-slate-50 grayscale opacity-60' :
+                     statusInfo.flavor === 'READY' ? 'border-green-200 bg-white shadow-sm' :
+                     'border-slate-100 bg-slate-50/80'
                   }`}>
                     <div className="flex items-center gap-6">
-                      <div className={`w-14 h-14 rounded-2xl overflow-hidden shadow-inner ${done ? 'grayscale' : ''}`}>
-                         <img src={it.imageUrl} className="w-full h-full object-cover" alt={it.name} />
-                      </div>
-                      <div>
-                         <h4 className="text-lg font-black text-slate-900 leading-none mb-1">{it.name}</h4>
-                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                           {done ? 'Completed' : (isReady ? 'Ready to serve' : 'Wait... Preparing')}
-                         </p>
-                      </div>
+                       <h4 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight uppercase px-4">{it.name}</h4>
+                       <span className={`text-[10px] md:text-xs font-black px-4 py-2 rounded-xl uppercase tracking-widest ${
+                          statusInfo.flavor === 'READY' ? 'bg-green-100 text-green-700' :
+                          statusInfo.flavor === 'DONE' ? 'bg-slate-200 text-slate-500' :
+                          'bg-indigo-50 text-indigo-500' // WAITING
+                       }`}>
+                          {statusInfo.text}
+                       </span>
                     </div>
                     
-                    <div className="flex items-center gap-6">
-                       {!done && (
-                         <div className="flex flex-col items-center justify-center mr-4">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Qty</span>
-                            <span className="text-2xl font-black text-slate-900">{rem}</span>
+                    <div className="flex items-center gap-8">
+                       {statusInfo.flavor !== 'DONE' && (
+                         <div className="text-right flex flex-col justify-center items-end mr-4">
+                            <span className="text-[10px] uppercase font-black text-slate-400 tracking-[0.2em] mb-1">Queue Size</span>
+                            <span className="text-4xl font-black text-slate-900 font-mono tracking-tighter">×{rem}</span>
                          </div>
                        )}
-                       {!done ? (
+                       {statusInfo.flavor !== 'DONE' ? (
                          <button 
+                           disabled={statusInfo.flavor !== 'READY'}
                            onClick={() => handleServeItem(scannedOrder.id, it.id, rem)}
-                           disabled={!isReady}
-                           className={`h-14 px-8 font-black text-[11px] uppercase tracking-widest rounded-2xl transition-all shadow-xl active:scale-95 ${
-                             isReady 
-                               ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-200' 
-                               : 'bg-slate-100 text-slate-300 pointer-events-none shadow-none'
+                           className={`h-20 w-40 font-black text-sm uppercase tracking-[0.2em] rounded-[1.5rem] transition-all shadow-xl active:scale-95 ${
+                             statusInfo.flavor === 'READY' 
+                               ? 'bg-green-500 hover:bg-green-600 text-white border-b-4 border-green-700 shadow-green-200' 
+                               : 'bg-slate-200/50 text-slate-300 pointer-events-none shadow-none border-0'
                            }`}
                          >
-                           {isReady ? 'Serve' : 'Waiting'}
+                           {statusInfo.flavor === 'READY' ? 'SERVE' : 'WAIT'}
                          </button>
                        ) : (
-                         <div className="h-14 w-14 rounded-2xl bg-green-100 flex items-center justify-center text-green-600">
+                         <div className="h-20 w-40 rounded-[1.5rem] bg-slate-100 border-2 border-slate-200 flex items-center justify-center text-slate-400">
                            <CheckCircle className="w-8 h-8" />
                          </div>
                        )}
@@ -157,54 +208,57 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                 )
               })}
             </div>
-
-            {/* Actions Footer */}
-            <div className="p-8 pt-0 border-t border-slate-100 mt-auto bg-slate-50/30 flex gap-4 shrink-0">
-               <button 
-                 onClick={() => setScanQueue(prev => prev.filter(id => id !== scannedOrder.id))}
-                 className="flex-1 h-16 rounded-2xl border-2 border-slate-200 text-slate-500 text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-all hover:text-slate-900"
-               >
-                 Dismiss to Later
-               </button>
-               <button 
-                 onClick={() => handleServeAll(scannedOrder.id)}
-                 className="flex-[2] h-16 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-2xl shadow-slate-200"
-               >
-                 Serve Entire Order
-               </button>
-            </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center text-center">
-             <div className="w-48 h-48 bg-white border border-slate-100 rounded-[4rem] shadow-inner flex items-center justify-center mb-8 relative">
-                <Camera className="w-16 h-16 text-slate-200" />
-                <div className="absolute inset-6 border-[3px] border-slate-100 border-dashed rounded-[3rem] animate-[spin_10s_linear_infinite]" />
+          <div className="flex flex-col items-center justify-center text-center max-w-lg">
+             <div className="w-64 h-64 bg-white border border-slate-100 rounded-[5rem] shadow-xl flex items-center justify-center mb-12 relative">
+                <Camera className="w-20 h-20 text-slate-200" />
+                <div className="absolute inset-8 border-[4px] border-slate-100 border-dashed rounded-[4rem] animate-[spin_8s_linear_infinite]" />
              </div>
-             <h3 className="text-5xl font-black text-slate-900 tracking-tighter mb-4 italic">Ready to Scan</h3>
-             <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.2em]">Point standard barcode scanner at QR code</p>
+             <h3 className="text-6xl font-black text-slate-900 tracking-tighter mb-4 italic uppercase">Ready</h3>
+             <p className="text-slate-400 text-lg font-bold uppercase tracking-[0.3em] font-mono">Present barcode overlay</p>
           </div>
         )}
       </div>
 
-      {/* BOTTOM STRIP: QUEUE PREVIEW */}
-      <div className="h-24 bg-slate-900 px-10 flex items-center shrink-0 border-t border-slate-800">
-         <div className="mr-8 flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)] animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Scan Queue</span>
+      {/* BOTTOM STRIP: COMPACT BUFFER QUEUE */}
+      <div className="h-28 bg-slate-900 px-10 flex items-center shrink-0 border-t border-slate-800">
+         <div className="mr-10 flex flex-col justify-center border-r border-slate-800 pr-10">
+            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-2">Backlog</span>
+            <div className="flex items-center gap-3 min-w-[120px]">
+               <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" />
+               <span className="text-xl font-black text-white font-mono tracking-tight">{nextInQueueIds.length} <span className="text-sm text-slate-600">Pending</span></span>
+            </div>
          </div>
-         <div className="flex-1 flex gap-4 overflow-x-auto no-scrollbar items-center">
-            {nextInQueueIds.map((id, index) => (
-               <button
-                  key={id}
-                  onClick={() => setScanQueue(prev => [id, ...prev.filter(qId => qId !== id)])}
-                  className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl font-mono text-sm font-bold transition-all shrink-0 flex items-center gap-3"
-               >
-                  <span className="text-[10px] text-slate-500">#{index + 2}</span>
-                  {id.slice(-6).toUpperCase()}
-               </button>
-            ))}
+
+         <div className="flex-1 flex gap-4 overflow-x-auto no-scrollbar items-center py-4">
+            {nextInQueueIds.map((id, index) => {
+               const order = activeOrders.find(o => o.id === id);
+               const isFullyReady = order?.items.every(it => {
+                 const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
+                 return rem <= 0 || it.status === 'READY' || it.orderType === 'FAST_ITEM';
+               });
+
+               return (
+                  <button
+                     key={id}
+                     onClick={() => setScanQueue(prev => [id, ...prev.filter(qId => qId !== id)])}
+                     className={`px-8 h-16 rounded-[1.25rem] font-mono text-base font-black transition-all shrink-0 flex items-center gap-4 ${
+                       isFullyReady 
+                         ? 'bg-green-500 text-white shadow-lg shadow-green-900/20 hover:bg-green-400' 
+                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/50'
+                     }`}
+                  >
+                     <span className={`text-[11px] uppercase tracking-widest ${isFullyReady ? 'text-green-800' : 'text-slate-500'}`}>TKT</span>
+                     #{id.slice(-6).toUpperCase()}
+                     {isFullyReady && <div className="w-2 h-2 rounded-full bg-white ml-2 animate-pulse" />}
+                  </button>
+               )
+            })}
             {nextInQueueIds.length === 0 && (
-               <span className="text-xs font-bold text-slate-600 italic">Queue is currently empty.</span>
+               <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-700 italic border border-slate-800 px-6 py-3 rounded-xl border-dashed">
+                 Zero waiting tickets
+               </span>
             )}
          </div>
       </div>

@@ -184,10 +184,24 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
         <div className="w-full max-w-[320px] aspect-square bg-white border-[12px] border-gray-50 rounded-[3rem] shadow-2xl shadow-black/5 flex items-center justify-center relative overflow-hidden">
           {qrString ? (
-            <div className="p-4 relative bg-white">
-              <QRCodeSVG value={qrString} size={220} level="M" />
+            <div className="p-4 relative bg-white w-full h-full flex items-center justify-center">
+              {/* Blur/Hide logic */}
+              <div className={`transition-all duration-700 ${isReady || isServed || order.items.some(i => i.orderType === 'FAST_ITEM') ? 'opacity-100 blur-0' : 'opacity-10 blur-xl scale-90 pointer-events-none'}`}>
+                 <QRCodeSVG value={qrString} size={220} level="M" />
+              </div>
+              
+              {!(isReady || isServed || order.items.some(i => i.orderType === 'FAST_ITEM')) && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-10 animate-in fade-in zoom-in duration-500">
+                   <div className="w-20 h-20 bg-gray-900 rounded-[2rem] flex items-center justify-center shadow-2xl mb-4 text-white">
+                      <Clock className="w-10 h-10" />
+                   </div>
+                   <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Locked</h3>
+                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 text-center max-w-[200px]">QR Code reveals when food is ready</p>
+                </div>
+              )}
+
               {isServed && (
-                <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in duration-500">
+                <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in duration-500 z-20">
                   <CheckCircle2 className="w-20 h-20 text-green-500 mb-2" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-green-600">Served</span>
                 </div>
@@ -199,11 +213,11 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
           {/* Real-time scan pulse */}
           {!isServed && statusKey === 'READY' && (
-            <div className="absolute inset-0 border-4 border-green-500/20 rounded-[2.5rem] animate-pulse" />
+            <div className="absolute inset-0 border-4 border-green-500/20 rounded-[2.5rem] animate-pulse pointer-events-none z-30" />
           )}
         </div>
         <p className="mt-8 text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] text-center px-10">
-          Point this at counter scanner
+          {(isReady || isServed || order.items.some(i => i.orderType === 'FAST_ITEM')) ? 'Point this at counter scanner' : `Cooking in progress - #${order.id.slice(-6).toUpperCase()}`}
         </p>
       </div>
 

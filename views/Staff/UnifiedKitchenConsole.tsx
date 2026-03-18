@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ShieldCheck, Camera, X, ChefHat, 
-  UtensilsCrossed, AlertCircle, LogOut
+  ShieldCheck, X, AlertCircle, LogOut
 } from 'lucide-react';
 import { UserProfile, Order, PrepBatch } from '../../types';
 import {
@@ -96,7 +95,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         setScanFeedback({
           status: 'VALID',
           message: 'VALID',
-          subtext: isStaticMeal ? 'Instant Serve Approved' : 'Meal Verified',
+          subtext: isStaticMeal ? 'Instant Serve' : 'Meal Verified',
           orderId: order.id.slice(-6).toUpperCase()
         });
 
@@ -115,8 +114,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
            });
         }
 
-        // 4. Return to scan mode after 1.5 seconds (overlay fades)
-        setTimeout(() => setScanFeedback({ status: null }), 1500);
+        // 4. Return to scan mode after 1.2 seconds (overlay fades quickly)
+        setTimeout(() => setScanFeedback({ status: null }), 1200);
 
     } catch (err: any) {
         // Failure Feedback (Traffic Signal Red)
@@ -126,7 +125,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           subtext: err.message || 'QR not valid'
         });
         
-        setTimeout(() => setScanFeedback({ status: null }), 2000);
+        setTimeout(() => setScanFeedback({ status: null }), 1500);
     } finally {
         setIsScanning(false);
     }
@@ -147,7 +146,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
             return rem <= 0;
           });
           if (allDone) {
-            setTimeout(() => setScanQueue(prev => prev.filter(id => id !== orderId)), 800);
+            // Auto complete immediately if 0 items remaining
+            setTimeout(() => setScanQueue(prev => prev.filter(id => id !== orderId)), 300);
           }
         }
     } catch (err: any) {
@@ -168,85 +168,67 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // --- WORKSPACE RENDERING ---
 
   return (
-    <div className="h-screen w-screen bg-[#FDFDFD] flex overflow-hidden font-sans text-slate-900">
+    <div className="h-screen w-screen bg-[#FDFDFD] flex flex-col font-sans text-slate-900 overflow-hidden">
       
-      {/* ── SIDEBAR NAVIGATION (Minimal) ── */}
-      <aside className="w-20 lg:w-24 bg-white border-r border-slate-100 flex flex-col items-center py-10 gap-8 z-50 shrink-0">
-        <div className="w-12 h-12 bg-slate-950 rounded-2xl flex items-center justify-center text-white mb-6 shadow-xl">
-          <UtensilsCrossed className="w-6 h-6" />
-        </div>
-
-        <button 
-           onClick={() => setActiveWorkspace('SERVER')}
-           className={`p-4 rounded-2xl transition-all duration-300 group relative shadow-sm ${activeWorkspace === 'SERVER' ? 'bg-slate-900 text-white shadow-xl shadow-slate-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
-        >
-          <Camera className="w-6 h-6" />
-          {activeWorkspace === 'SERVER' && <div className="absolute left-full ml-4 px-3 py-1 bg-slate-900 text-white text-[10px] font-black rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">SERVER PORTAL</div>}
-        </button>
-
-        <button 
-           onClick={() => setActiveWorkspace('COOK')}
-           className={`p-4 rounded-2xl transition-all duration-300 group relative shadow-sm ${activeWorkspace === 'COOK' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
-        >
-          <ChefHat className="w-6 h-6" />
-          {activeWorkspace === 'COOK' && <div className="absolute left-full ml-4 px-3 py-1 bg-slate-900 text-white text-[10px] font-black rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">COOK CONSOLE</div>}
-        </button>
-
-        <div className="mt-auto flex flex-col gap-6">
-          <button onClick={onLogout} className="p-4 rounded-2xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
-            <LogOut className="w-6 h-6" />
-          </button>
-        </div>
-      </aside>
-
-      {/* ── MAIN WORKSPACE ── */}
-      <main className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-        
-        {/* Workspace Header */}
-        <header className="h-24 border-b border-slate-100 bg-white/80 backdrop-blur-md px-10 flex items-center justify-between sticky top-0 z-40 shrink-0">
-           <div className="flex items-center gap-4">
-             <h1 className="text-2xl font-black tracking-tight text-slate-900 leading-none">
-               {activeWorkspace === 'SERVER' ? 'Server Console' : 'Cook Console'}
-             </h1>
-             <span className="px-4 py-1.5 bg-slate-50 text-slate-400 text-[10px] font-black rounded-full border border-slate-100 uppercase tracking-[0.2em] hidden sm:block">
-               {activeWorkspace === 'SERVER' ? 'Scanning & Serving' : 'Production Pipeline'}
-             </span>
+      {/* Workspace Header - Top Bar */}
+      <header className="h-20 border-b border-slate-200 bg-white px-8 flex items-center justify-between shrink-0 z-40">
+         <div className="flex items-center gap-6">
+           {/* Segmented Workspace Switch */}
+           <div className="flex bg-slate-100 p-1.5 rounded-2xl shrink-0">
+              <button 
+                onClick={() => setActiveWorkspace('COOK')}
+                className={`px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all ${
+                  activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Production Pipeline
+              </button>
+              <button 
+                onClick={() => setActiveWorkspace('SERVER')}
+                className={`px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all ${
+                  activeWorkspace === 'SERVER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Scan & Serve
+              </button>
            </div>
+         </div>
 
-           <div className="flex items-center gap-8">
-             <div className="text-right hidden sm:block">
-               <p className="text-sm font-black text-slate-900 leading-none mb-1">
-                 {currentTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}
-               </p>
-               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">System Active</p>
-             </div>
-             <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 shadow-sm">
-               <ShieldCheck className="w-5 h-5" />
-             </div>
+         <div className="flex items-center gap-8">
+           <div className="text-right hidden sm:block">
+             <p className="text-sm font-black text-slate-900 leading-none mb-1">
+               {currentTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}
+             </p>
+             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+               {activeWorkspace === 'COOK' ? 'Kitchen Mode' : 'Counter Mode'}
+             </p>
            </div>
-        </header>
+           <button onClick={onLogout} className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm hover:text-red-500 hover:bg-red-50 transition-all">
+             <LogOut className="w-5 h-5" />
+           </button>
+         </div>
+      </header>
 
-        {/* Dynamic Content */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {activeWorkspace === 'SERVER' ? (
-             <ServerConsoleWorkspace 
-                activeOrders={activeOrders}
-                scanQueue={scanQueue}
-                setScanQueue={setScanQueue}
-                isCameraOpen={isCameraOpen}
-                setIsCameraOpen={setIsCameraOpen}
-                handleQRScan={handleQRScan}
-                handleServeItem={handleServeItem}
-                handleServeAll={handleServeAll}
-                scanFeedback={scanFeedback}
-             />
-          ) : (
-             <CookConsoleWorkspace batches={batches} />
-          )}
-        </div>
+      {/* Dynamic Content Area */}
+      <main className="flex-1 overflow-hidden flex flex-col relative w-full">
+        {activeWorkspace === 'SERVER' ? (
+           <ServerConsoleWorkspace 
+              activeOrders={activeOrders}
+              scanQueue={scanQueue}
+              setScanQueue={setScanQueue}
+              isCameraOpen={isCameraOpen}
+              setIsCameraOpen={setIsCameraOpen}
+              handleQRScan={handleQRScan}
+              handleServeItem={handleServeItem}
+              handleServeAll={handleServeAll}
+              scanFeedback={scanFeedback}
+           />
+        ) : (
+           <CookConsoleWorkspace batches={batches} />
+        )}
       </main>
 
-      {/* Manual Scanner Modal overlay handles are partly in ServerConsoleWorkspace, but keeping it globally accessbile if activated from server tab */}
+      {/* Manual Scanner Modal overlay */}
       {isCameraOpen && activeWorkspace === 'SERVER' && (
         <div className="fixed inset-0 z-[110] bg-slate-950/95 flex items-center justify-center p-6 backdrop-blur-md">
           <div className="bg-white w-full max-w-xl rounded-[3rem] overflow-hidden relative shadow-2xl animate-in zoom-in-95 duration-300 border border-slate-100">
