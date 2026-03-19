@@ -1135,10 +1135,12 @@ export const listenToOrder = (orderId: string, callback: (order: Order | null) =
 
 export const listenToAllOrders = (callback: (orders: Order[]) => void): (() => void) => {
   return onSnapshot(
-    query(collection(db, "orders"), orderBy("createdAt", "desc")),
+    collection(db, "orders"),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
+      // Sort client-side to avoid index requirements
+      const sorted = orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      callback(sorted);
     },
     (error) => {
       console.error("Error listening to orders:", error);
@@ -1223,12 +1225,13 @@ export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): 
     query(
       collection(db, "orders"),
       where("paymentType", "==", "CASH"),
-      where("paymentStatus", "==", "PENDING"),
-      orderBy("createdAt", "desc")
+      where("paymentStatus", "==", "PENDING")
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
+      // Sort client-side to avoid index requirements
+      const sorted = orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      callback(sorted);
     },
     (error) => {
       console.error("Error listening to pending cash orders:", error);
@@ -1510,15 +1513,15 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
          if (isStatic) {
             updateData.qrStatus = 'DESTROYED';
             updateData.qrState = 'SERVED';
-            updateData.orderStatus = 'SERVED';
+            updateData.orderStatus = 'COMPLETED';
             updateData.serveFlowStatus = 'SERVED';
             updateData.servedAt = now;
             updateData.items = order.items.map(it => ({ 
                ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity 
             }));
          } else {
-            // [SONIC-FORCE-DESTROY] User requested all QRs are destroyed after scan
-            updateData.qrStatus = 'DESTROYED';
+            // [ROOT-FIX] Dynamic QR remains ACTIVE until its items are served
+            updateData.qrStatus = 'ACTIVE';
             updateData.qrState = 'SCANNED';
          }
 
@@ -1646,7 +1649,7 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
       // Update item quantities and status
       const updatedItems = [...order.items];
       const newServedQty = (item.servedQty || 0) + quantity;
-      const newRemainingQty = item.remainingQty - quantity;
+      const newRemainingQty = Math.max(0, item.remainingQty - quantity);
       
       updatedItems[itemIndex] = {
         ...item,
@@ -1655,31 +1658,22 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
         status: newRemainingQty <= 0 ? 'SERVED' : item.status
       };
 
-      // Check if all items are completed (SERVED or ABANDONED)
-      const allResolved = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED' || (i.remainingQty === 0 && i.quantity > 0));
-      const newOrderStatus = allResolved ? 'SERVED' : order.orderStatus;
-      const newServeFlowStatus = allResolved ? 'SERVED' : (order.serveFlowStatus === 'READY' ? 'SERVED_PARTIAL' : order.serveFlowStatus);
+      // [DERIVED-STATE] Check if all items are completed
+      const allServed = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED' || (i.remainingQty === 0 && i.quantity > 0));
+      const hasAnyServed = updatedItems.some(i => i.status === 'SERVED');
+      
+      const newOrderStatus = allServed ? 'COMPLETED' : (hasAnyServed ? 'SERVED' : order.orderStatus);
+      const newServeFlowStatus = allServed ? 'SERVED' : (hasAnyServed ? 'SERVED_PARTIAL' : order.serveFlowStatus);
 
       // Update order
       tx.update(orderRef, {
-        items: updatedItems.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          costPrice: item.costPrice,
-          category: item.category,
-          imageUrl: item.imageUrl,
-          quantity: item.quantity,
-          servedQty: item.servedQty || 0,
-          remainingQty: item.remainingQty,
-          status: item.status
-        })),
+        items: updatedItems,
         orderStatus: newOrderStatus,
         serveFlowStatus: newServeFlowStatus,
-        servedAt: allResolved ? Date.now() : (order.servedAt || null),
+        servedAt: allServed ? Date.now() : (order.servedAt || null),
         updatedAt: serverTimestamp(),
-        qrStatus: allResolved ? 'DESTROYED' : order.qrStatus,
-        qrState: allResolved ? 'SERVED' : 'SCANNED',
+        qrStatus: allServed ? 'DESTROYED' : order.qrStatus,
+        qrState: allServed ? 'SERVED' : 'SCANNED',
       });
 
       // ✍️ SYNC PREP BATCHES: Decrement quantities in the production pipeline
@@ -1801,7 +1795,7 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
 
       tx.update(orderRef, {
         items: updatedItems,
-        orderStatus: 'SERVED',
+        orderStatus: 'COMPLETED',
         qrStatus: 'DESTROYED',
         qrState: 'SERVED',
         servedAt: serverTimestamp(),
@@ -2590,9 +2584,10 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
       } else {
         const reQueuedItems = (data.items || []).map((it: any) => {
            // ONLY RE-QUEUE if the item was READY or MISSED. 
-           // If it was already SERVED (partial order), don't re-cook it!
-           if (it.status === 'READY' || it.status === 'COLLECTING' || it.status === 'MISSED' || it.status === 'READY_SERVED') {
-             return { ...it, status: 'PENDING', remainingQty: it.remainingQty || it.quantity };
+           // If it was already SERVED (partial order), or its remainingQty is 0, don't re-cook it!
+           const remQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
+           if (remQty > 0 && (it.status === 'READY' || it.status === 'COLLECTING' || it.status === 'MISSED' || it.status === 'READY_SERVED')) {
+             return { ...it, status: 'PENDING', remainingQty: remQty };
            }
            return it;
         });
@@ -2624,21 +2619,25 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
                     quantity: 0
                  };
               }
-              aggregatedBatches[batchId].orderIds.add(d.id);
-              aggregatedBatches[batchId].quantity += (it.remainingQty || it.quantity);
+              const remQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
+              if (remQty > 0) {
+                aggregatedBatches[batchId].orderIds.add(d.id);
+                aggregatedBatches[batchId].quantity += remQty;
+              }
            }
         });
 
         // 3. Mark OLD batches for decrement
-        const oldBatchIds = data.batchIds || [];
         (data.items || []).forEach((it: any) => {
            // If this item was in old batches and we are re-queuing it, we must subtract its quantity from the old batch
            if (it.status === 'READY' || it.status === 'COLLECTING') {
-              // We find the specific old batch for this item in the previous slot
               const oldSlot = data.arrivalTimeSlot;
               if (oldSlot) {
                  const oldBatchId = `batch_${oldSlot}_${it.id}`;
-                 oldBatchDecrements[oldBatchId] = (oldBatchDecrements[oldBatchId] || 0) + (it.remainingQty || it.quantity);
+                 const decrQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
+                 if (decrQty > 0) {
+                   oldBatchDecrements[oldBatchId] = (oldBatchDecrements[oldBatchId] || 0) + decrQty;
+                 }
               }
            }
         });

@@ -133,11 +133,8 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       setOrderId(newOrderId);
       localStorage.removeItem('joe_cart');
       
-      if (isCash) {
-        setState('CASH_WAITING');
-      } else {
-        setState('SUCCESS');
-      }
+      // Navigate to QR View / Manifest immediately so user sees "Awaiting Cashier"
+      onSuccess(newOrderId);
     } catch (err: any) {
       setState('IDLE');
       alert(err?.message || 'Payment failed. Please try again.');

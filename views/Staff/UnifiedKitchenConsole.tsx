@@ -10,6 +10,7 @@ import {
   flushMissedPickups, 
   validateQRForServing, 
   serveFullOrder,
+  serveItemBatch,
   abandonItem
 } from '../../services/firestore-db';
 import { initializeScanner } from '../../services/scanner';
@@ -117,7 +118,11 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // This ensures the queue survives page refresh, crashes, or multi-tablet environments.
   const scanQueue = useMemo(() => {
     const firestoreQueue = (activeOrders || [])
-      .filter(o => (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && o.orderStatus !== 'SERVED')
+      .filter(o => 
+        (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && 
+        o.orderStatus !== 'SERVED' && 
+        o.orderStatus !== 'COMPLETED'
+      )
       .sort((a, b) => (a.scannedAt || a.createdAt || 0) - (b.scannedAt || b.createdAt || 0))
       .map(o => o.id);
     return Array.from(new Set([...localScanBuffer, ...firestoreQueue]));
@@ -274,7 +279,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-      await serveItem(orderId, itemId);
+      // [ROOT-FIX] Consolidate back to firestore-db serveItemBatch for atomic item-level consistency
+      await serveItemBatch(orderId, itemId, qty, profile.uid);
     } catch (err: any) {
       setError(err.message || "Serving failed");
     } finally {

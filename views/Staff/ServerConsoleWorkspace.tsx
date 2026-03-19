@@ -56,6 +56,10 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
        const order = activeOrders.find(o => o.id === orderId);
        if (order) {
           order.items.forEach(it => {
+             // [ARCHITECT-FIX] If item is already served, remove from the live manifest immediately
+             const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
+             if (rem <= 0 || it.status === 'SERVED' || it.status === 'COMPLETED') return;
+             
              if (filter && !it.name.toLowerCase().includes(filter.toLowerCase())) return;
              items.push({ ...it, parentOrderId: order.id });
           });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap, Check } from 'lucide-react';
+import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap, Check, Banknote } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order } from '../../types';
@@ -21,6 +21,7 @@ const STATUS: Record<string, { label: string; sub: string; icon: React.FC<any>; 
   READY:        { label: 'READY FOR PICKUP',    sub: 'Show this QR at the counter now',         icon: Zap,        color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   PREPARING:    { label: 'PREPARING FOOD',     sub: 'The kitchen is cooking your meal',        icon: ChefHat,    color: '#0284c7', bg: '#f0f9ff', border: '#bae6fd' },
   SCHEDULED:    { label: 'SCHEDULED',          sub: 'Waiting for your preparation slot',        icon: Clock,      color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  CASH_PENDING: { label: 'AWAITING CASHIER',   sub: 'Please pay at the cash counter now',      icon: Banknote,   color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
   MISSED:       { label: 'RE-QUEUED',       sub: 'Preparing for next available slot',     icon: Clock,      color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
   SERVED:       { label: 'ORDER COMPLETED',    sub: 'Thank you! Enjoy your meal 🎉',          icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   DEFAULT:      { label: 'ORDER PLACED',       sub: 'Waiting to start...',                     icon: ChefHat,    color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
@@ -140,6 +141,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   let statusKey = 'SCHEDULED';
   if (isServed) statusKey = 'SERVED';
   else if (isMissed) statusKey = 'MISSED';
+  else if (order.paymentType === 'CASH' && order.paymentStatus === 'PENDING') statusKey = 'CASH_PENDING';
   else if (flow === 'READY') statusKey = 'READY';
   else if (flow === 'PREPARING' || flow === 'ALMOST_READY') statusKey = 'PREPARING';
   else if (order.paymentStatus === 'SUCCESS') statusKey = 'SCHEDULED';
@@ -277,24 +279,32 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         </div>
         <div className="space-y-3">
           {order.items.map((item, idx) => {
-             const isItemServed = (item.remainingQty ?? (item.quantity - (item.servedQty || 0))) <= 0;
+             const isItemServed = item.status === 'SERVED' || item.status === 'COMPLETED' || (item.remainingQty === 0 && item.servedQty === item.quantity);
+             const isItemReady = item.status === 'READY';
              return (
-               <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+               <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                  isItemServed ? 'bg-green-50/50 border-green-100 opacity-80' : 
+                  isItemReady ? 'bg-indigo-50/50 border-indigo-100 ring-1 ring-indigo-50' : 'bg-gray-50 border-gray-100'
+               }`}>
                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg overflow-hidden grayscale">
+                    <div className={`w-8 h-8 rounded-lg overflow-hidden ${isItemServed ? 'grayscale opacity-40' : ''}`}>
                        <img src={item.imageUrl} className="w-full h-full object-cover" alt="" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-gray-900">{item.name}</h4>
+                      <h4 className={`text-xs font-black ${isItemServed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.name}</h4>
                       <p className="text-[9px] font-bold text-gray-400">Qty: {item.quantity}</p>
                     </div>
                  </div>
                  {isItemServed ? (
-                   <span className="text-[9px] font-black uppercase text-green-600 bg-green-50 px-3 py-1.5 rounded-full border border-green-100 flex items-center gap-2">
-                     <Check className="w-3 h-3" /> Served
+                   <span className="text-[9px] font-black uppercase text-green-600 flex items-center gap-1.5">
+                     <CheckCircle2 className="w-3.5 h-3.5" /> Received
+                   </span>
+                 ) : isItemReady ? (
+                   <span className="text-[8px] font-black uppercase text-indigo-600 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 animate-pulse">
+                     Ready at Counter
                    </span>
                  ) : (
-                   <span className="text-[9px] font-black uppercase text-gray-400 bg-white px-3 py-1.5 rounded-full border border-gray-200">
+                   <span className="text-[8px] font-black uppercase text-gray-400 bg-white px-2.5 py-1 rounded-lg border border-gray-200">
                      Reserved
                    </span>
                  )}

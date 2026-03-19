@@ -20,81 +20,74 @@ export type OrderUIState =
   | 'EXPIRED';             // Cryptographic token expiry (rare)
 
 export const getOrderUIState = (order: Order): OrderUIState => {
-  // Abandoned (Too many misses)
-  if (order.orderStatus === 'ABANDONED' || order.pickupWindow?.status === 'ABANDONED') {
-      return 'ABANDONED';
-  }
+  // 🏁 TERMINAL STATES (Highest Priority)
+  if (order.orderStatus === 'CANCELLED') return 'CANCELLED';
+  if (order.orderStatus === 'REJECTED' || order.paymentStatus === 'FAILED') return 'REJECTED';
+  if (order.orderStatus === 'ABANDONED' || order.pickupWindow?.status === 'ABANDONED') return 'ABANDONED';
+  if (order.orderStatus === 'EXPIRED') return 'EXPIRED';
 
-  // Missed pickup window logic (Industry-grade: checks Firestore flag OR local time)
-  const isTimeMissed = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
-  if (order.pickupWindow?.status === 'MISSED' || order.orderStatus === 'MISSED' || order.serveFlowStatus === 'MISSED' || isTimeMissed) {
-    return 'MISSED';
-  }
-
-  if (order.orderStatus === 'EXPIRED') {
-    return 'EXPIRED';
-  }
-
-  if (order.paymentStatus === 'FAILED' || (order.paymentStatus === 'PENDING' && order.qrStatus === 'REJECTED')) {
-    return 'REJECTED';
-  }
-
-  // Cancelled
-  if (order.orderStatus === 'CANCELLED') {
-    return 'CANCELLED';
-  }
-
-  // Cash waiting for cashier (paymentStatus = PENDING, qrStatus not ACTIVE)
-  if (order.paymentStatus === 'PENDING') {
-    return 'PENDING_PAYMENT';
-  }
-
-  // Order fully served
-  if (order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.qrState === 'SERVED' || order.serveFlowStatus === 'READY_SERVED' || order.serveFlowStatus === 'SERVED') {
+  // 🏆 COMPLETION CHECK (Item-Level Truth)
+  // All items served = COMPLETED regardless of global status
+  const allServed = order.items?.every(it => 
+    it.status === 'SERVED' || 
+    it.status === 'COMPLETED' || 
+    (it.remainingQty === 0 && it.servedQty === it.quantity)
+  );
+  if (allServed || order.orderStatus === 'COMPLETED' || order.orderStatus === 'SERVED') {
     return 'COMPLETED';
   }
 
-  // QR was scanned but order not yet fully served
+  // ⏱️ MISSED WINDOW
+  const isTimeMissed = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
+  if (order.pickupWindow?.status === 'MISSED' || order.orderStatus === 'MISSED' || isTimeMissed) {
+    return 'MISSED';
+  }
+
+  // 📸 SCAN-IN CHECK
+  // Specifically for dynamic orders where scan isn't an instant serve
   if (order.qrState === 'SCANNED' || order.serveFlowStatus === 'SERVED_PARTIAL') {
     return 'SCANNED';
   }
 
-  // QR is active and visible (only if NOT expired/served)
+  // 💰 PAYMENT STATES
+  if (order.paymentStatus === 'PENDING') return 'PENDING_PAYMENT';
+  
+  // 📱 ACTIVE QR
   if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
     return 'QR_ACTIVE';
   }
 
-  // Payment succeeded but QR not yet generated/not active
+  // ⏳ INITIAL STATES
   if (order.paymentStatus === 'SUCCESS' && order.orderStatus === 'PENDING') {
     return 'AWAITING_QR';
   }
 
-  // Default fallback
   return 'AWAITING_QR';
 };
 
 /**
  * Determine if QR should be visible
- * QR visible ONLY when: paymentStatus === SUCCESS AND qrStatus === ACTIVE
- * AND order is NOT in a terminal/spent state
+ * QR remains visible until 100% of items are SERVED
  */
 export const shouldShowQR = (order: Order): boolean => {
-  // QR visible UNTIL order is SERVED or explicitly REJECTED/CANCELLED/ABANDONED
-  const terminalStates = ['SERVED', 'REJECTED', 'CANCELLED', 'ABANDONED'];
-  if (terminalStates.includes(order.orderStatus || '')) return false;
-  
-  // If fully served at items level
-  const remItems = order.items?.reduce((sum, item) => sum + (item.remainingQty ?? (item.quantity - (item.servedQty || 0))), 0);
-  if (remItems === 0) return false;
+  const state = getOrderUIState(order);
+  const hideStates = ['COMPLETED', 'REJECTED', 'CANCELLED', 'ABANDONED', 'EXPIRED'];
+  if (hideStates.includes(state)) return false;
 
-  if (order.qrState === 'USED' || order.qrState === 'SERVED') return false;
-  
-  // ⏱️ Industry-grade Timeout Guard: Hide QR after window expires
+  // Final check: count unserved items
+  const unservedCount = order.items?.reduce((sum, it) => {
+    const isServed = it.status === 'SERVED' || it.status === 'COMPLETED' || (it.remainingQty === 0 && it.servedQty === it.quantity);
+    return sum + (isServed ? 0 : 1);
+  }, 0);
+
+  if (unservedCount === 0) return false;
+
+  // Lock QR if window expired (unless re-queued)
   if (order.pickupWindow?.endTime && Date.now() > order.pickupWindow.endTime) {
     return false;
   }
 
-  return order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE';
+  return order.paymentStatus === 'SUCCESS' && (order.qrStatus === 'ACTIVE' || order.qrState === 'SCANNED');
 };
 
 /**
@@ -113,7 +106,10 @@ export const getOrderStatusMessage = (order: Order): string => {
     case 'QR_ACTIVE':
       return 'Ready for Pickup - Show QR';
     case 'SCANNED':
-      return 'Processing at Counter';
+      // If some items are READY and some are SCANNED, show a hybrid message
+      const readyCount = order.items?.filter(it => it.status === 'READY').length;
+      if (readyCount > 0) return 'READY AT COUNTER';
+      return 'SCANNED - Processing Intake';
     case 'COMPLETED':
       return 'Order Completed';
     case 'REJECTED':
@@ -121,9 +117,9 @@ export const getOrderStatusMessage = (order: Order): string => {
     case 'CANCELLED':
       return 'Order Cancelled';
     case 'MISSED':
-      return 'Missed Window - Waiting for next Batch';
+      return 'Re-Queuing - Waiting for Slot';
     case 'ABANDONED':
-      return 'Pickup Overdue - Order Abandoned';
+      return 'Pickup Overdue';
     case 'EXPIRED':
       return 'Token Expired';
     default:
@@ -145,7 +141,7 @@ export const groupOrdersByStatus = (orders: Order[]): {
 
   orders.forEach(order => {
     const state = getOrderUIState(order);
-    if (state === 'QR_ACTIVE' || state === 'AWAITING_QR' || state === 'PENDING_PAYMENT') {
+    if (state === 'QR_ACTIVE' || state === 'AWAITING_QR' || state === 'PENDING_PAYMENT' || state === 'MISSED') {
       active.push(order);
     } else if (state === 'SCANNED') {
       scanned.push(order);
@@ -157,16 +153,8 @@ export const groupOrdersByStatus = (orders: Order[]): {
   return { active, scanned, completed };
 };
 
-/**
- * Determine if user can go back (or if locked to QR)
- */
-export const canNavigateBack = (order: Order): boolean => {
-  return true; // Always allow navigating back for better UX
-};
+export const canNavigateBack = (order: Order): boolean => true;
 
-/**
- * Determine if order is in a terminal state (can't be modified)
- */
 export const isOrderTerminal = (order: Order): boolean => {
   const state = getOrderUIState(order);
   const terminalStates = ['COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'ABANDONED'];
