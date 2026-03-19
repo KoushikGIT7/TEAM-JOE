@@ -79,9 +79,16 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     // - Cash order waiting for cashier (paymentStatus === 'PENDING'), OR
     // - Online / approved order with QR still ACTIVE and not yet scanned at counter
     return myOrders.find((o) => {
-      if (o.paymentStatus === 'REJECTED' || o.orderStatus === 'CANCELLED') return false;
+      // 🛑 Exclude Terminal/Completed states immediately
+      if (['REJECTED', 'CANCELLED', 'COMPLETED', 'SERVED', 'EXPIRED', 'ABANDONED'].includes(o.orderStatus)) return false;
+      
+      // 💰 Cash orders waiting for confirmation are ACTIVE
       if (o.paymentStatus === 'PENDING') return true;
-      if (o.paymentStatus === 'SUCCESS' && o.qrStatus === 'ACTIVE') return true;
+
+      // 🥗 Paid orders are ACTIVE if they are still preparing or waiting for scan
+      // We also check for 'SCANNED' because dynamic orders stay active after scan until fully served
+      if (o.paymentStatus === 'SUCCESS' && (o.qrStatus === 'ACTIVE' || o.qrStatus === 'SCANNED')) return true;
+      
       return false;
     });
   }, [myOrders]);
