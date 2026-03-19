@@ -1,14 +1,12 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LogOut, CheckCircle, Clock, Banknote, RefreshCw, Search, LayoutDashboard, 
   FileText, BarChart3, Settings, X, AlertCircle, TrendingUp, DollarSign,
   Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon,
-  Calculator, TrendingDown, ArrowUpRight, ChevronRight
+  Calculator, TrendingDown, ArrowUpRight, ChevronRight, User, ShieldCheck, Mail
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
 import { listenToPendingCashOrders, confirmCashPayment, rejectCashPayment, listenToAllOrders } from '../../services/firestore-db';
-import Logo from '../../components/Logo';
 import { offlineDetector } from '../../utils/offlineDetector';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
@@ -20,7 +18,7 @@ interface CashierViewProps {
 
 type CashierTab = 'Dashboard' | 'CashRequests' | 'AllOrders' | 'DailySummary' | 'Reports' | 'Settings';
 
-const COLORS = ['#F59E0B', '#10B981', '#6366F1', '#EC4899'];
+const COLORS = ['#D4AF37', '#1E293B', '#64748B', '#94A3B8']; // Hotel Gold and Slates
 
 const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   const [activeTab, setActiveTab] = useState<CashierTab>('CashRequests');
@@ -155,6 +153,25 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       paymentSplit
     };
   }, [allOrders, pendingOrders]);
+
+  const SidebarItem: React.FC<{ tab: CashierTab; icon: React.FC<any>; label: string }> = ({ tab, icon: Icon, label }) => {
+    const isActive = activeTab === tab;
+    return (
+      <button
+        onClick={() => { setActiveTab(tab); setIsSidebarOpen(false); }}
+        className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-300 group ${
+          isActive 
+            ? 'bg-[#D4AF37] text-white shadow-[0_10px_25px_rgba(212,175,55,0.3)]' 
+            : 'text-slate-400 hover:text-white hover:bg-white/5'
+        }`}
+      >
+        <Icon className={`w-5 h-5 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
+        <span className={`text-[11px] font-black uppercase tracking-[0.2em] ${isActive ? 'translate-x-1' : 'group-hover:translate-x-1'} transition-transform duration-300`}>
+          {label}
+        </span>
+      </button>
+    );
+  };
 
   // Daily Summary
   const dailySummary = useMemo(() => {
@@ -571,7 +588,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
               <p className="text-gray-400 font-bold text-sm">Automated cash reconciliation logic</p>
             </div>
           </div>
-          <button className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-800 transition-all active:scale-95 shadow-lg flex items-center gap-2">
+          <button 
+            onClick={() => handleExport('pdf')}
+            disabled={!hasReportData || reportLoading}
+            className="bg-[#D4AF37] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#B8860B] transition-all active:scale-95 shadow-lg flex items-center gap-2"
+          >
             <Download className="w-4 h-4" /> Export Audit
           </button>
         </div>
@@ -802,20 +823,6 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     </div>
   );
 
-  const navItems = [
-    { id: 'Dashboard', icon: LayoutDashboard },
-    { id: 'CashRequests', icon: Banknote },
-    { id: 'AllOrders', icon: FileText },
-    { id: 'DailySummary', icon: BarChart3 },
-    { id: 'Reports', icon: Download },
-    { id: 'Settings', icon: Settings },
-  ] as const;
-
-  // Log nav items on mount
-  useEffect(() => {
-    console.log('📋 NavItems available:', navItems.map(n => n.id));
-  }, []);
-
   const handleTabChange = (tab: CashierTab) => {
     console.log('🔄 Switching tab from', activeTab, 'to', tab);
     setActiveTab(tab);
@@ -823,155 +830,115 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row relative">
-      {/* Mobile Menu Modal */}
-      {isSidebarOpen && (
-        <>
-          {/* Overlay */}
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-            onClick={() => {
-              console.log('Overlay clicked - closing sidebar');
-              setIsSidebarOpen(false);
-            }}
-          />
-          {/* Mobile Sidebar */}
-          <div className="fixed inset-y-0 left-0 w-72 bg-white z-50 lg:hidden flex flex-col shadow-2xl pointer-events-auto rounded-r-[2.5rem] overflow-hidden">
-            <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-              <Logo size="md" />
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(false)}
-                className="p-3 hover:bg-white rounded-2xl transition-all shadow-sm border border-gray-100 active:scale-90"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
+    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans">
+      
+      {/* 🏰 THE LUXURY SIDEBAR */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-72 bg-[#0f172a] transform transition-transform duration-500 ease-in-out lg:relative lg:translate-x-0
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="h-full flex flex-col p-8">
+          {/* Logo / Brand */}
+          <div className="flex items-center gap-4 mb-16">
+            <div className="w-12 h-12 bg-[#D4AF37] rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.4)]">
+               <ShieldCheck className="w-7 h-7 text-white" />
             </div>
-            
-            <nav className="flex-1 p-6 space-y-3 overflow-y-auto bg-white">
-              <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-4">Management</div>
-              {navItems.map(item => (
-                <button
-                  type="button"
-                  key={item.id}
-                  onClick={() => handleTabChange(item.id as CashierTab)}
-                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.5rem] transition-all font-black text-sm uppercase tracking-wider cursor-pointer ${
-                    activeTab === item.id
-                      ? 'bg-amber-500 text-white shadow-[0_10px_25px_rgba(245,158,11,0.3)]'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
-                  }`}
-                >
-                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-amber-500'}`} />
-                  <span className="truncate">{item.id === 'CashRequests' ? 'Cash Requests' : item.id}</span>
-                </button>
-              ))}
-            </nav>
-
-            <div className="p-6 border-t border-gray-100 bg-gray-50/50">
-              <button
-                type="button"
-                onClick={onLogout}
-                className="w-full flex items-center gap-4 px-5 py-4 rounded-[1.5rem] bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-wider shadow-sm"
-              >
-                <LogOut className="w-5 h-5 shrink-0" />
-                <span className="truncate">Station Exit</span>
-              </button>
+            <div>
+              <h1 className="text-xl font-black text-white tracking-tighter leading-none">GRAND HOTEL</h1>
+              <p className="text-[9px] font-black text-[#D4AF37] uppercase tracking-[0.3em]">Cashier Portal</p>
             </div>
           </div>
-        </>
-      )}
 
-      <aside className="w-80 bg-white border-r border-gray-100 flex flex-col shrink-0 hidden lg:flex shadow-sm relative z-20">
-        <div className="p-10 border-b border-gray-100">
-          <Logo size="lg" />
-        </div>
-        
-        <nav className="flex-1 p-8 space-y-3 overflow-y-auto">
-          <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-4">Terminal Console</div>
-          {navItems.map(item => (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => handleTabChange(item.id as CashierTab)}
-              className={`w-full flex items-center gap-4 px-6 py-4 rounded-[1.5rem] transition-all font-black text-sm uppercase tracking-wider cursor-pointer group ${
-                activeTab === item.id
-                  ? 'bg-amber-500 text-white shadow-[0_15px_35px_rgba(245,158,11,0.25)] scale-[1.02]'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
-              }`}
-            >
-              <item.icon className={`w-5 h-5 shrink-0 transition-colors ${activeTab === item.id ? 'text-white' : 'text-amber-500 group-hover:text-amber-600'}`} />
-              <span className="truncate">{item.id === 'CashRequests' ? 'Cash Requests' : item.id}</span>
-            </button>
-          ))}
-        </nav>
+          {/* Navigation */}
+          <nav className="flex-1 space-y-2">
+            <SidebarItem tab="CashRequests" icon={Banknote} label="Pending Cash" />
+            <SidebarItem tab="Dashboard" icon={LayoutDashboard} label="Insight Deck" />
+            <SidebarItem tab="AllOrders" icon={Receipt} label="Transaction Log" />
+            <SidebarItem tab="DailySummary" icon={Calculator} label="Shift Balance" />
+            <SidebarItem tab="Reports" icon={BarChart3} label="Audit Reports" />
+            <SidebarItem tab="Settings" icon={Settings} label="Preferences" />
+          </nav>
 
-        <div className="p-8 border-t border-gray-100 bg-gray-50/50">
-          <button
-            type="button"
-            onClick={onLogout}
-            className="w-full flex items-center gap-4 px-6 py-4 rounded-[1.5rem] bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all font-black text-sm uppercase tracking-widest shadow-sm active:scale-95"
-          >
-            <LogOut className="w-5 h-5 shrink-0" />
-            <span className="truncate">End Shift</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto min-w-0">
-        <header className="bg-white border-b border-gray-200 p-4 lg:p-6 sticky top-0 z-10">
-          <div className="flex justify-between items-center gap-4">
-            <div className="flex items-center gap-4 flex-1 min-w-0">
-              {/* Hamburger Menu Button - Mobile Only */}
-              <button
-                type="button"
-                onClick={() => {
-                  console.log('Hamburger menu clicked');
-                  setIsSidebarOpen(true);
-                }}
-                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors shrink-0 cursor-pointer"
-                aria-label="Open menu"
-              >
-                <Menu className="w-6 h-6 text-textMain" />
-              </button>
-              
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl lg:text-2xl font-black text-textMain uppercase truncate">
-                  {activeTab === 'CashRequests' ? 'Cash Requests' : activeTab}
-                </h1>
-                <p className="text-xs lg:text-sm text-textSecondary font-bold mt-1 truncate">
-                  {activeTab === 'Dashboard' && 'Quick health check of cafeteria'}
-                  {activeTab === 'CashRequests' && 'Real-time cash payment approvals'}
-                  {activeTab === 'AllOrders' && 'Search & audit all orders'}
-                  {activeTab === 'DailySummary' && 'Daily cash reconciliation'}
-                  {activeTab === 'Reports' && 'Export reports and analytics'}
-                  {activeTab === 'Settings' && 'Configure cashier preferences'}
-                </p>
+          {/* User Profile / Logout */}
+          <div className="mt-auto pt-8 border-t border-white/5">
+            <div className="flex items-center gap-4 px-2 mb-6">
+              <div className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-[#D4AF37] font-black">
+                {profile.name?.charAt(0)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-white truncate">{profile.name}</p>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{profile.uid.slice(0, 8)}</p>
               </div>
             </div>
-            
-            <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-              <div className="hidden sm:block text-right">
-                <p className="text-xs font-black text-textSecondary uppercase">Cashier</p>
-                <p className="text-sm font-black text-textMain truncate">{profile.name}</p>
-              </div>
+            <button 
+              onClick={onLogout}
+              className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-slate-400 hover:text-white hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
+            >
+              <LogOut className="w-5 h-5 text-red-500" />
+              <span className="text-[11px] font-black uppercase tracking-widest">Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+      {/* 🚀 MAIN STAGE */}
+      <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden bg-slate-50">
+        
+        {/* Header / Top Nav */}
+        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-8 py-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+               <button 
+                 onClick={() => setIsSidebarOpen(true)}
+                 className="lg:hidden p-2 -ml-2 text-slate-600"
+               >
+                 <Menu className="w-6 h-6" />
+               </button>
+               <div className="flex flex-col">
+                  <h2 className="text-base font-black text-slate-900 uppercase tracking-tight italic">
+                    {activeTab === 'Dashboard' ? 'Strategic Insight' : 
+                     activeTab === 'CashRequests' ? 'Real-time Requests' :
+                     activeTab === 'AllOrders' ? 'Global Ledger' :
+                     activeTab === 'DailySummary' ? 'Shift Reconciliation' :
+                     activeTab === 'Reports' ? 'Analytical Audit' : 'Management'}
+                  </h2>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Operational Console</p>
+               </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+               <div className="hidden md:flex flex-col text-right">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Current Shift Status</p>
+                  <p className="text-xs font-black text-green-600 flex items-center justify-end gap-1.5 uppercase">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live & Protected
+                  </p>
+               </div>
             </div>
           </div>
         </header>
 
-        <div className="p-4 lg:p-6">
-          {(() => {
-            console.log('📺 Rendering content for activeTab:', activeTab);
-            if (activeTab === 'Dashboard') return renderDashboard();
-            if (activeTab === 'CashRequests') return renderCashRequests();
-            if (activeTab === 'AllOrders') return renderAllOrders();
-            if (activeTab === 'DailySummary') return renderDailySummary();
-            if (activeTab === 'Reports') return renderReports();
-            if (activeTab === 'Settings') return renderSettings();
-            return null;
-          })()}
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-8 relative">
+          <div className="max-w-7xl mx-auto pb-12">
+            {activeTab === 'Dashboard' && renderDashboard()}
+            {activeTab === 'CashRequests' && renderCashRequests()}
+            {activeTab === 'AllOrders' && renderAllOrders()}
+            {activeTab === 'DailySummary' && renderDailySummary()}
+            {activeTab === 'Reports' && renderReports()}
+            {activeTab === 'Settings' && renderSettings()}
+          </div>
+          
+          {/* Subtle noise pattern overlay */}
+          <div className="fixed inset-0 pointer-events-none opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] z-50" />
         </div>
       </main>
+
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 };
