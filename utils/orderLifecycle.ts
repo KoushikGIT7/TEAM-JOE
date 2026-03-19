@@ -53,7 +53,7 @@ export const getOrderUIState = (order: Order): OrderUIState => {
   if (order.paymentStatus === 'PENDING') return 'PENDING_PAYMENT';
   
   // 📱 ACTIVE QR
-  if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
+  if (order.paymentStatus === 'SUCCESS' && (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED')) {
     return 'QR_ACTIVE';
   }
 
@@ -145,7 +145,7 @@ export const groupOrdersByStatus = (orders: Order[]): {
       active.push(order);
     } else if (state === 'SCANNED') {
       scanned.push(order);
-    } else if (state === 'COMPLETED') {
+    } else if (['COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'ABANDONED'].includes(state)) {
       completed.push(order);
     }
   });
