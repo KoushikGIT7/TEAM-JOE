@@ -67,9 +67,9 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
         <div className="flex items-center gap-1 mb-4 h-1 px-1">
            {[ 'SCHEDULED', 'PREPARING', 'READY', 'SERVED' ].map((step, idx) => {
               const currentIdx = 
-                order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || uiState === 'SCANNED' ? 3 :
-                order.serveFlowStatus === 'READY' ? 2 :
-                order.serveFlowStatus === 'PREPARING' || order.serveFlowStatus === 'ALMOST_READY' ? 1 : 0;
+                uiState === 'COMPLETED' || order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' ? 3 :
+                order.serveFlowStatus === 'READY' || order.serveFlowStatus === 'ALMOST_READY' ? 2 :
+                order.serveFlowStatus === 'PREPARING' ? 1 : 0;
               
               const isPast = idx < currentIdx;
               const isCurrent = idx === currentIdx;

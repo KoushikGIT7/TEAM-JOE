@@ -49,14 +49,14 @@ export const getOrderUIState = (order: Order): OrderUIState => {
     return 'PENDING_PAYMENT';
   }
 
+  // Order fully served
+  if (order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.qrState === 'SERVED' || order.serveFlowStatus === 'READY_SERVED' || order.serveFlowStatus === 'SERVED') {
+    return 'COMPLETED';
+  }
+
   // QR was scanned but order not yet fully served
   if (order.qrState === 'SCANNED' || order.serveFlowStatus === 'SERVED_PARTIAL') {
     return 'SCANNED';
-  }
-
-  // Order fully served
-  if (order.orderStatus === 'SERVED' || order.qrState === 'SERVED' || order.serveFlowStatus === 'READY_SERVED') {
-    return 'COMPLETED';
   }
 
   // QR is active and visible (only if NOT expired/served)
