@@ -128,6 +128,17 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     return Array.from(new Set([...localScanBuffer, ...firestoreQueue]));
   }, [activeOrders, localScanBuffer]);
 
+  const mergedActiveOrders = useMemo(() => {
+    // Merge optimistic (recently scanned) orders with active orders for sub-millisecond rendering
+    const merged = [...activeOrders];
+    Object.values(optimisticOrders).forEach(oo => {
+      if (!merged.find(m => m.id === oo.id)) {
+        merged.push(oo);
+      }
+    });
+    return merged;
+  }, [activeOrders, optimisticOrders]);
+
   // 🔊 [SONIC-SYNC] Full Screen Feedback State
   const [sonicMode, setSonicMode] = useState<{
     status: 'SUCCESS' | 'ERROR' | 'IDLE';
@@ -344,20 +355,11 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
              <CookConsoleWorkspace batches={batches} />
           ) : (
              <ServerConsoleWorkspace 
-            activeOrders={useMemo(() => {
-              // Merge optimistic (recently scanned) orders with active orders for sub-millisecond rendering
-              const merged = [...activeOrders];
-              Object.values(optimisticOrders).forEach(oo => {
-                if (!merged.find(m => m.id === oo.id)) {
-                  merged.push(oo);
-                }
-              });
-              return merged;
-            }, [activeOrders, optimisticOrders])}
-            scanQueue={localScanBuffer}
-            setScanQueue={setLocalScanBuffer}
-            isCameraOpen={isCameraOpen}
-            setIsCameraOpen={setIsCameraOpen}
+                activeOrders={mergedActiveOrders}
+                scanQueue={localScanBuffer}
+                setScanQueue={setLocalScanBuffer}
+                isCameraOpen={isCameraOpen}
+                setIsCameraOpen={setIsCameraOpen}
                 handleQRScan={handleQRScan}
                 handleServeItem={handleServeItem}
                 handleServeAll={handleServeFullOrder}
