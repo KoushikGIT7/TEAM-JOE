@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Firestore Database Service
  * Production-grade replacement for localStorage mock database
  * All operations use Firestore with real-time listeners
@@ -29,6 +29,7 @@ import { db } from "../firebase";
 import {
   UserProfile,
   Order,
+  CartItem,
   MenuItem,
   SystemSettings,
   ScanLog,
@@ -49,7 +50,7 @@ import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SER
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
-export const PICKUP_WINDOW_DURATION_MS = 7 * 60 * 1000;
+export const PICKUP_WINDOW_DURATION_MS = 60 * 1000; // ⏱️ TEST MODE: 1 Minute Pickup Window
 import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
   useCallables,
@@ -1277,7 +1278,8 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
         qrStatus: 'ACTIVE',
         qr: { token, status: 'ACTIVE', createdAt: serverTimestamp() },
         confirmedBy: _cashierUid,
-        confirmedAt: serverTimestamp()
+        confirmedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
     });
     try {
@@ -1343,18 +1345,25 @@ export interface PendingItem {
   remainingQty: number;
   orderedQty: number;
   servedQty: number;
+  updatedAt?: number;
 }
 
 export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() => void) => {
   return onSnapshot(
     query(
       collection(db, "orders"),
-      where("qrState", "==", "SCANNED")
+      where("orderStatus", "in", ["PAID", "ACTIVE", "MISSED", "ABANDONED"]),
+      limit(100)
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      // Sort client-side by scannedAt (FIFO) to avoid index overhead while ensuring line integrity
-      const sorted = orders.sort((a, b) => (a.scannedAt || 0) - (b.scannedAt || 0));
+      // Filter for SCANNED or ACTIVE tokens client-side
+      const relevant = orders.filter(o => 
+        o.qrStatus === 'SCANNED' || o.qrStatus === 'ACTIVE' || 
+        o.qrState === 'SCANNED' || o.qrState === 'ACTIVE'
+      );
+      // Sort client-side by createdAt to ensure stable FIFO ordering
+      const sorted = relevant.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       callback(sorted);
     },
     (error) => {
@@ -1403,88 +1412,138 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
   );
 };
 
-export const validateQRForServing = async (qrData: string): Promise<Order> => {
-  console.log('ðŸ›¡ï¸ [FIREBASE-ORDER] Validating Meal Token...');
-  
-  try {
-    let orderId: string;
-    let secureHash: string;
-    let payloadExpiresAt: number | undefined;
+/**
+ * ⚡ [SONIC-ATOMIC] SUPERSONIC INTAKE ENGINE
+ * Single transaction for: Validate -> Consume/Manifest -> Result.
+ * This is the ROOT FIX for duplications and infinite loops.
+ */
+export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
+   let orderId = qrPayload;
+   let secureHash = 'MANUAL_OVERRIDE';
+   let payloadExpiresAt: number | undefined;
 
-    if (qrData.startsWith('order_')) {
-      orderId = qrData;
+   let parsedPayload = await parseQRPayload(qrPayload);
+   
+   if (!parsedPayload) {
+      // Manual overrides or raw IDs will skip the deep security check.
+      // E.g. manual typing of "order_123" by cashier.
+      orderId = qrPayload;
       secureHash = 'MANUAL_OVERRIDE';
-    } else {
-      const payload = await parseQRPayload(qrData);
-      if (!payload?.orderId) {
-        throw new Error("INVALID_TOKEN_FORMAT - This does not look like a JOE Meal Token.");
-      }
-      orderId = payload.orderId;
-      secureHash = payload.secureHash;
-      payloadExpiresAt = payload.expiresAt;
-    }
+   } else {
+      orderId = parsedPayload.orderId;
+      secureHash = parsedPayload.secureHash;
+      payloadExpiresAt = parsedPayload.expiresAt;
+   }
 
-    // 2. Direct Firestore Fetch (The Source of Truth)
-    const orderDoc = await getDoc(doc(db, "orders", orderId));
-    if (!orderDoc.exists()) {
-      throw new Error("ORDER_NOT_FOUND - Token corresponds to a non-existent order.");
-    }
+   const orderRef = doc(db, "orders", orderId);
 
-    const orderData = orderDoc.data();
-    const order = firestoreToOrder(orderDoc.id, orderData);
+   try {
+      return await runTransaction(db, async (tx) => {
+         const snap = await tx.get(orderRef);
+         if (!snap.exists()) throw new Error("Order not found");
+         const data = snap.data();
+         const order = firestoreToOrder(snap.id, data);
 
-    // 3. Status Checks (Fail fast)
-    if (order.paymentStatus !== 'SUCCESS') {
-      throw new Error("PAYMENT_REQUIRED - This order has not been paid for yet.");
-    }
-    if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED') {
-      throw new Error("ALREADY_SERVED - This token has already been scanned and used.");
-    }
+         // 🛑 CONSUMPTION CHECK
+         if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED' || order.orderStatus === 'SERVED') {
+            throw new Error("ALREADY_CONSUMED - Ticket already scanned.");
+         }
 
-    // 4. Strict check: Only serve if READY or COLLECTING (skip check if fully FAST_ITEM)
-    const pStatus = order.pickupWindow?.status;
-    const fStatus = order.serveFlowStatus;
-    const isStaticMeal = order.items.every(it => it.orderType === 'FAST_ITEM');
+         // 🛡️ IDEMPOTENT MANIFEST CHECK (Silent Mode)
+         if (order.qrStatus === 'SCANNED') {
+            return { order, result: 'ALREADY_MANIFESTED' as const };
+         }
 
-    if (!isStaticMeal && pStatus !== 'COLLECTING' && fStatus !== 'READY') {
-      throw new Error(`SERVE_BLOCKED - Item status is ${pStatus || fStatus || 'PENDING'}. Only READY items can be served.`);
-    }
+         // 5. Strict Security Check
+         if (secureHash !== 'MANUAL_OVERRIDE') {
+            const verifExpiresAt = payloadExpiresAt || (order.createdAt + QR_EXPIRY_MS);
+            const isValid = await verifySecureHash(
+               order.id, order.userId, order.cafeteriaId, order.createdAt, verifExpiresAt, secureHash
+            );
+            
+            if (!isValid) {
+               console.error('⛔ SECURITY_BREACH DEBUG:', {
+                  dbOrderId: order.id,
+                  dbUserId: order.userId,
+                  dbCafe: order.cafeteriaId,
+                  dbCreated: order.createdAt,
+                  verifExpiresAt,
+                  providedHash: secureHash,
+                  rawPayload: qrPayload
+               });
+               throw new Error("SECURITY_BREACH - Token invalid.");
+            }
+         }
 
-    // 4. Cryptographic Signature Verification
-    if (secureHash !== 'MANUAL_OVERRIDE') {
-      // Reconstruct components for verification using DB data
-      const verifCreatedAt = order.createdAt;
-      const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
+         // 💼 BUSINESS RULES
+         const isStatic = order.items.every(it => it.orderType === 'FAST_ITEM');
+         const pStatus = order.pickupWindow?.status;
+         const fStatus = order.serveFlowStatus;
 
-      const isValid = await verifySecureHash(
-        order.id,
-        order.userId, 
-        order.cafeteriaId, 
-        verifCreatedAt, 
-        verifExpiresAt, 
-        secureHash
-      );
+         // Static (FAST_ITEM) orders are always intakeable if not already destroyed.
+         // Dynamic (PREPARATION_ITEM) orders are intakeable in any active kitchen state.
+         const canIntake = 
+            isStatic ||
+            pStatus === 'COLLECTING' ||
+            fStatus === 'READY' || fStatus === 'ALMOST_READY' ||
+            fStatus === 'MISSED' || fStatus === 'MISSED_PREVIOUS' ||
+            fStatus === 'SERVED_PARTIAL' ||
+            pStatus === 'MISSED_PREVIOUS' ||
+            pStatus === 'ABANDONED' || fStatus === 'ABANDONED' ||
+            (!isStatic && (
+               fStatus === 'PENDING' || fStatus === 'NEW' ||
+               fStatus === 'QUEUED' || fStatus === 'PREPARING'
+            ));
 
-      if (!isValid) {
-        throw new Error("SECURITY_BREACH - Token signature is invalid.");
-      }
-    }
+         if (!canIntake) {
+            throw new Error(`SERVE_BLOCKED - Status: ${pStatus || fStatus || 'PENDING'}.`);
+         }
 
-    console.log('âœ… [FIREBASE-ORDER] Token validated successfully:', orderId);
+         // 📸 INTAKE ACTION
+         const now = Date.now();
+         const updateData: any = {
+            scannedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            lastScannedBy: staffId
+         };
 
-    // 5. Mark as SCANNED in database so it appears at serving counter
-    const orderRef = doc(db, "orders", orderId);
-    await updateDoc(orderRef, {
-      scannedAt: serverTimestamp(),
-      qrState: 'SCANNED'
-    });
+         if (isStatic) {
+            updateData.qrStatus = 'DESTROYED';
+            updateData.qrState = 'SERVED';
+            updateData.orderStatus = 'SERVED';
+            updateData.serveFlowStatus = 'SERVED';
+            updateData.servedAt = now;
+            updateData.items = order.items.map(it => ({ 
+               ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity 
+            }));
+         } else {
+            // [SONIC-FORCE-DESTROY] User requested all QRs are destroyed after scan
+            updateData.qrStatus = 'DESTROYED';
+            updateData.qrState = 'SCANNED';
+         }
 
-    return { ...order, scannedAt: Date.now(), qrState: 'SCANNED' };
-  } catch (error: any) {
-    console.error('âŒ [SCAN-ERROR]:', error.message);
-    throw error;
-  }
+         tx.update(orderRef, updateData);
+         return { 
+            order: { ...order, ...updateData, scannedAt: now }, 
+            result: isStatic ? ('CONSUMED' as const) : ('MANIFESTED' as const)
+         };
+      });
+   } catch (error: any) {
+      console.error('❌ [ATOMIC-INTAKE-ERROR]:', error.message);
+      throw error;
+   }
 };
+;
+
+/**
+ * ALIAS: validateQRForServing -> processAtomicIntake
+ * All staff views import this symbol. processAtomicIntake handles:
+ *   - Static FAST_ITEM orders  -> result: CONSUMED  (qrStatus=DESTROYED)
+ *   - Dynamic PREP_ITEM orders -> result: MANIFESTED (qrStatus=SCANNED)
+ *   - Already manifested       -> result: ALREADY_MANIFESTED
+ *   - Already consumed         -> throws  ALREADY_CONSUMED
+ */
+export const validateQRForServing = processAtomicIntake;
 
 /**
  * ðŸ› ï¸ FORCE READY: Manual override for servers when an item is physically ready 
@@ -1562,6 +1621,10 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
       const orderData = orderSnap.data();
       const order = firestoreToOrder(orderSnap.id, orderData);
 
+      // 🔍 READ ALL BATCHES FIRST (CRITICAL: READS BEFORE WRITES)
+      const batchIds = order.batchIds || [];
+      const batchSnaps = await Promise.all(batchIds.map(bId => tx.get(doc(db, "prepBatches", bId))));
+
       if (order.orderStatus === 'SERVED') throw new Error("Order already served");
       if (order.paymentStatus !== 'SUCCESS') throw new Error("Payment not verified");
 
@@ -1619,12 +1682,8 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
         qrState: allResolved ? 'SERVED' : 'SCANNED',
       });
 
-      // ðŸ”„ SYNC PREP BATCHES: Decrement quantities in the production pipeline
-      // This ensures the Cook Console clears items after they are physically handed over.
-      const batchIds = order.batchIds || [];
-      for (const bId of batchIds) {
-         const bRef = doc(db, "prepBatches", bId);
-         const bSnap = await tx.get(bRef);
+      // ✍️ SYNC PREP BATCHES: Decrement quantities in the production pipeline
+      for (const bSnap of batchSnaps) {
          if (!bSnap.exists()) continue;
          const bData = bSnap.data() as PrepBatch;
 
@@ -1632,7 +1691,7 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
          if (bData.itemId === itemId && bData.status !== 'COMPLETED') {
             const newQty = Math.max(0, bData.quantity - quantity);
             const newStatus = newQty <= 0 ? 'COMPLETED' : bData.status;
-            tx.update(bRef, { 
+            tx.update(bSnap.ref, { 
                quantity: newQty, 
                status: newStatus,
                updatedAt: serverTimestamp() 
@@ -1646,6 +1705,66 @@ export const serveItemBatch = async (orderId: string, itemId: string, quantity: 
   }
 };
 
+/**
+ * ❌ ABANDON ITEM: Manual override to void an item from the intake manifest.
+ * Used when a student rejects an item or it's unavailable.
+ * Invalidate QR if this was the last remaining item.
+ */
+export const abandonItem = async (orderId: string, itemId: string): Promise<void> => {
+   try {
+     const orderRef = doc(db, "orders", orderId);
+     await runTransaction(db, async (tx) => {
+       const snap = await tx.get(orderRef);
+       if (!snap.exists()) throw new Error("Order not found");
+       const order = firestoreToOrder(snap.id, snap.data());
+
+       // 🔍 READ BATCHES FIRST (CRITICAL: READS BEFORE WRITES)
+       const batchIds = order.batchIds || [];
+       const batchSnaps = await Promise.all(batchIds.map(bId => tx.get(doc(db, "prepBatches", bId))));
+ 
+       const itemIndex = order.items.findIndex(i => i.id === itemId);
+       if (itemIndex === -1) throw new Error("Item not found");
+ 
+       const updatedItems = [...order.items];
+       const item = updatedItems[itemIndex];
+       
+       updatedItems[itemIndex] = {
+         ...item,
+         status: 'ABANDONED',
+         remainingQty: 0 // Void remaining quantity
+       };
+ 
+       const allResolved = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED');
+       
+       tx.update(orderRef, {
+         items: updatedItems,
+         qrStatus: allResolved ? 'DESTROYED' : order.qrStatus,
+         qrState: allResolved ? 'SERVED' : order.qrState,
+         orderStatus: allResolved ? 'SERVED' : order.orderStatus,
+         serveFlowStatus: allResolved ? 'SERVED' : order.serveFlowStatus,
+         updatedAt: serverTimestamp()
+       });
+ 
+       // 🔄 SYNC PREP BATCHES
+       for (const bSnap of batchSnaps) {
+          if (!bSnap.exists()) continue;
+          const bData = bSnap.data() as PrepBatch;
+          if (bData.itemId === itemId && bData.status !== 'COMPLETED') {
+             const newQty = Math.max(0, bData.quantity - item.quantity);
+             tx.update(bSnap.ref, { 
+                quantity: newQty, 
+                status: newQty <= 0 ? 'COMPLETED' : bData.status,
+                updatedAt: serverTimestamp() 
+             });
+          }
+       }
+     });
+   } catch (err: any) {
+     console.error("Abandon Item Failed:", err);
+     throw err;
+   }
+};
+
 export const serveFullOrder = async (orderId: string, servedBy: string): Promise<void> => {
   try {
     const orderRef = doc(db, "orders", orderId);
@@ -1655,11 +1774,18 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
       const data = orderSnap.data();
       const order = firestoreToOrder(orderSnap.id, data);
 
+      // 🔍 READ ALL BATCHES FIRST (CRITICAL: READS BEFORE WRITES)
+      const batchIds = order.batchIds || [];
+      const batchSnaps = await Promise.all(batchIds.map(bId => tx.get(doc(db, "prepBatches", bId))));
+
       if (order.orderStatus === 'SERVED') return;
 
       const isAllowedToServe =
         order.pickupWindow?.status === 'COLLECTING' ||
         order.serveFlowStatus === 'READY' ||
+        order.serveFlowStatus === 'ALMOST_READY' ||
+        order.qrStatus === 'SCANNED' ||  // Dynamic order already manifested — serve it
+        order.qrStatus === 'ACTIVE' ||   // Static fast-item marked ACTIVE — allow serve
         order.qrRedeemable === true;
 
       if (!isAllowedToServe) {
@@ -1682,24 +1808,20 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
         serveFlowStatus: 'SERVED'
       });
 
-      // ðŸ”„ SYNC ALL RELATED BATCHES
-      const batchIds = order.batchIds || [];
-      for (const bId of batchIds) {
-         const bRef = doc(db, "prepBatches", bId);
-         const bSnap = await tx.get(bRef);
+      // 🔄 SYNC ALL RELATED BATCHES
+      for (const bSnap of batchSnaps) {
          if (!bSnap.exists()) continue;
          const bData = bSnap.data() as PrepBatch;
 
          // Force complete all batches associated with this full order
          if (bData.status !== 'COMPLETED') {
-            // Find how much of THIS order was in THIS batch
-            // (Simple approach for full serve: just decrement the whole order's items from the batch)
             const itemInBatch = order.items.find(i => i.id === bData.itemId);
             if (itemInBatch) {
                const newQty = Math.max(0, bData.quantity - itemInBatch.quantity);
-               tx.update(bRef, { 
+               const newStatus = newQty <= 0 ? 'COMPLETED' : bData.status;
+               tx.update(bSnap.ref, { 
                   quantity: newQty, 
-                  status: newQty <= 0 ? 'COMPLETED' : bData.status,
+                  status: newStatus,
                   updatedAt: serverTimestamp() 
                });
             }
@@ -2115,6 +2237,39 @@ export const getPopularMenuItems = async (limitOrders: number = 500): Promise<{ 
 // 7. BATCH PREPARATION SYSTEM (Smart Queue)
 // ============================================================================
 
+/** Internal helper for Re-batching */
+const internalCreateBatchFromOrder = async (orderId: string, item: CartItem, slot: number): Promise<void> => {
+    const batchId = `batch_${slot}_${item.id}`;
+    const batchRef = doc(db, "prepBatches", batchId);
+    
+    await runTransaction(db, async (tx) => {
+        const snap = await tx.get(batchRef);
+        if (!snap.exists()) {
+            tx.set(batchRef, {
+                id: batchId,
+                itemId: item.id,
+                itemName: item.name,
+                arrivalTimeSlot: slot,
+                orderIds: [orderId],
+                quantity: item.quantity,
+                status: 'QUEUED',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+        } else {
+            const data = snap.data() as PrepBatch;
+            const existingOrderIds = data.orderIds || [];
+            if (!existingOrderIds.includes(orderId)) {
+                tx.update(batchRef, {
+                    orderIds: [...existingOrderIds, orderId],
+                    quantity: data.quantity + item.quantity,
+                    updatedAt: serverTimestamp()
+                });
+            }
+        }
+    });
+};
+
 export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
   return onSnapshot(
     query(
@@ -2330,6 +2485,7 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
 
                 const orderData = entry.snap.data();
                 const items = (orderData.items || []).map((item: any) => {
+                    // Authorize 'ABANDONED', 'MISSED', or 'READY' items to be updated to the new status
                     if (item.id === batchData.itemId && item.status !== 'SERVED') {
                         return { ...item, status };
                     }
@@ -2354,12 +2510,12 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
 /**
  * tryAcquireMaintenanceLock â€” Leader election for background maintenance tasks.
  * Reads system/maintenance doc. If it doesn't exist, creates it.
- * If the doc is stale (>30s), takes over. Otherwise yields.
+ * If the doc is stale (>10s), takes over. Otherwise yields.
  */
 export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean> => {
   const maintenanceRef = doc(db, "system", "maintenance");
   const now = Date.now();
-  
+
   try {
     return await runTransaction(db, async (tx) => {
       const snap = await tx.get(maintenanceRef);
@@ -2374,11 +2530,6 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
         return true;
       }
       
-      if (data.activeNodeId === nodeId) {
-        tx.update(maintenanceRef, { lastHeartbeatAt: now });
-        return true;
-      }
-      
       return false;
     });
   } catch (err) {
@@ -2387,163 +2538,150 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
   }
 };
 
-
-
 export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
   const now = Date.now();
 
-  // If a nodeId is provided, try to acquire the lock first
-  if (nodeId) {
-     const hasLock = await tryAcquireMaintenanceLock(nodeId);
-     if (!hasLock) return 0;
-  }
-
-  const qWithItems = query(
-    collection(db, "orders"),
-    where("pickupWindow.status", "==", "COLLECTING"),
-    where("orderStatus", "==", "PAID")
-  );
-
   try {
-    const snap = await getDocs(qWithItems);
+    const q = query(
+      collection(db, "orders"),
+      where("pickupWindow.status", "==", "COLLECTING"),
+      where("orderStatus", "!=", "SERVED")
+    );
+
+    const snap = await getDocs(q);
     if (snap.empty) return 0;
 
-    let reassignedCount = 0;
+    const masterBatch = writeBatch(db);
+    let updatedCount = 0;
+    const graceNow = now + 100; // Ultra-slim buffer
     
-    // Calculate the logical next slot (30-45 mins from now to avoid overlaps)
-    const getNextAvailableSlot = (baseTime: number) => {
-      const d = new Date(baseTime + 30 * 60 * 1000);
-      const h = d.getHours();
-      const m = Math.ceil(d.getMinutes() / 15) * 15;
-      const finalH = m >= 60 ? h + 1 : h;
-      const finalM = m >= 60 ? 0 : m;
-      return finalH * 100 + finalM;
-    };
+    // 🛡️ [SONIC-AGGREGATOR]
+    // We must collect all re-queues into a manifest first to avoid 'duplicate-key' overwrites 
+    // within the single Firestore Batch commit.
+    const aggregatedBatches: Record<string, any> = {};
+    const oldBatchDecrements: Record<string, number> = {};
 
-    // 5-second Grace Buffer for Timer Consistency
-    const graceNow = now - 5000;
-    const targetSlot = getNextAvailableSlot(now);
+    for (const d of snap.docs) {
+      const data = d.data();
+      const endTime = data.pickupWindow?.endTime || 0;
+      
+      if (endTime > graceNow) continue;
 
-    await runTransaction(db, async (tx) => {
-      for (const d of snap.docs) {
-        const orderData = d.data();
-        const order = firestoreToOrder(d.id, orderData);
-        
-        // 1. Time Check (Hard Consistency with Grace)
-        const windowEnd = order.pickupWindow?.endTime || 0;
-        if (windowEnd > graceNow) continue;
+      const currentMissedCount = (data.missedCount || 0) + 1;
+      const nowTime = new Date();
+      // ⏱️ [SONIC-SLOT] Move to the IMMEDIATE Next 15-min block
+      const totalMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+      const currentBlockMins = Math.floor(totalMins / 15) * 15;
+      const nextSlotMins = currentBlockMins; // Re-queue to CURRENT slot for immediate attention
+      
+      const slotH = Math.floor(nextSlotMins / 60);
+      const slotM = nextSlotMins % 60;
+      const nextSlot = Number(`${slotH.toString().padStart(2, '0')}${slotM.toString().padStart(2, '0')}`);
 
-        const currentMissedCount = (order.missedCount || 0) + 1;
-
-        // 2. Prevent Infinite Reassignment
-        if (currentMissedCount >= 2) {
-          const abandonedItems = order.items.map(it => ({
-            ...it,
-            status: it.status === 'SERVED' ? 'SERVED' : 'ABANDONED'
-          }));
-          
-          tx.update(doc(db, "orders", d.id), {
-            "pickupWindow.status": 'ABANDONED',
-            "serveFlowStatus": 'ABANDONED',
-            "orderStatus": 'ABANDONED',
-            "missedCount": currentMissedCount,
-            "items": abandonedItems,
-            "updatedAt": serverTimestamp()
-          });
-          continue;
-        }
-
-        // 3. Penalty Logic: Missed users get shifted to a LATER slot to prioritize first-timers
-        const penalizedSlot = currentMissedCount > 0 ? getNextLogicalSlot(targetSlot) : targetSlot;
-
-        // 4. Batch Reassignment for ALL PREPARATION items in the order
-        const prepItems = order.items.filter(it => it.orderType === 'PREPARATION_ITEM' && (it.remainingQty ?? it.quantity) > 0);
-        const lastBatchIds: string[] = [];
-
-        for (const prepItem of prepItems) {
-          // --- CLEANUP OLD BATCH ---
-          // Find the batch this item was previously in (based on previous arrivalTime)
-          const oldSlot = order.arrivalTime;
-          if (oldSlot) {
-            // We search for the batch the student was in. Since there might be multiple indexes, 
-            // we check up to 20 (consistent with creation logic)
-            for (let i = 0; i < 20; i++) {
-              const oldBatchId = `batch_${oldSlot}_${prepItem.id}_${i}`;
-              const oldRef = doc(db, "prepBatches", oldBatchId);
-              const oldSnap = await tx.get(oldRef);
-              if (oldSnap.exists()) {
-                const oldData = oldSnap.data() as PrepBatch;
-                if (oldData.orderIds.includes(d.id)) {
-                  tx.update(oldRef, {
-                    orderIds: oldData.orderIds.filter(id => id !== d.id),
-                    quantity: increment(-prepItem.quantity),
-                    updatedAt: serverTimestamp()
-                  });
-                  break; 
-                }
-              }
-            }
-          }
-
-          // --- ASSIGN TO NEW BATCH ---
-          let assignedBatchId = "";
-          let index = 0;
-          let foundBatch = false;
-
-          while (!foundBatch && index < 20) {
-            const potentialId = `batch_${penalizedSlot}_${prepItem.id}_${index}`;
-            const bRef = doc(db, "prepBatches", potentialId);
-            const bSnap = await tx.get(bRef);
-
-            if (!bSnap.exists()) {
-              tx.set(bRef, {
-                id: potentialId,
-                itemId: prepItem.id,
-                itemName: prepItem.name,
-                arrivalTimeSlot: penalizedSlot,
-                orderIds: [d.id],
-                quantity: prepItem.quantity,
-                status: 'QUEUED',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-              });
-              assignedBatchId = potentialId;
-              foundBatch = true;
-            } else {
-              const bData = bSnap.data() as PrepBatch;
-              if (bData.status === 'QUEUED' && (bData.quantity + prepItem.quantity) <= MAX_BATCH_SIZE) {
-                tx.update(bRef, {
-                  orderIds: arrayUnion(d.id),
-                  quantity: increment(prepItem.quantity),
-                  updatedAt: serverTimestamp()
-                });
-                assignedBatchId = potentialId;
-                foundBatch = true;
-              } else {
-                index++;
-              }
-            }
-          }
-          if (assignedBatchId) lastBatchIds.push(assignedBatchId);
-        }
-
-        tx.update(doc(db, "orders", d.id), {
-          "pickupWindow.status": 'MISSED',
-          "serveFlowStatus": 'MISSED',
-          "missedFromBatchId": order.batchIds?.[0] || null,
-          "batchIds": lastBatchIds,
+      if (currentMissedCount >= 3) {
+        masterBatch.update(d.ref, {
+          "pickupWindow.status": 'ABANDONED',
+          "serveFlowStatus": 'ABANDONED',
+          "orderStatus": 'ABANDONED',
           "missedCount": currentMissedCount,
-          "arrivalTime": penalizedSlot,
+          "updatedAt": serverTimestamp(),
+          "items": (data.items || []).map((it: any) => ({ ...it, status: 'ABANDONED' }))
+        });
+      } else {
+        const reQueuedItems = (data.items || []).map((it: any) => {
+           // ONLY RE-QUEUE if the item was READY or MISSED. 
+           // If it was already SERVED (partial order), don't re-cook it!
+           if (it.status === 'READY' || it.status === 'COLLECTING' || it.status === 'MISSED' || it.status === 'READY_SERVED') {
+             return { ...it, status: 'PENDING', remainingQty: it.remainingQty || it.quantity };
+           }
+           return it;
+        });
+
+        // 1. Update the Order doc
+        masterBatch.update(d.ref, {
+          "pickupWindow.status": 'MISSED_PREVIOUS', 
+          "serveFlowStatus": 'PENDING',
+          "orderStatus": 'ACTIVE',
+          "qrStatus": 'ACTIVE',
+          "qrState": 'ACTIVE',
+          "missedCount": currentMissedCount,
+          "arrivalTimeSlot": nextSlot,
+          "items": reQueuedItems,
           "updatedAt": serverTimestamp()
         });
-        reassignedCount++;
+
+        // 2. Aggregate for NEW batches (only for items now marked PENDING)
+        reQueuedItems.forEach((it: any) => {
+           if (it.status === 'PENDING') {
+              const batchId = `batch_${nextSlot}_${it.id}`;
+              if (!aggregatedBatches[batchId]) {
+                 aggregatedBatches[batchId] = {
+                    id: batchId,
+                    itemId: it.id,
+                    itemName: it.name,
+                    arrivalTimeSlot: nextSlot,
+                    orderIds: new Set<string>(),
+                    quantity: 0
+                 };
+              }
+              aggregatedBatches[batchId].orderIds.add(d.id);
+              aggregatedBatches[batchId].quantity += (it.remainingQty || it.quantity);
+           }
+        });
+
+        // 3. Mark OLD batches for decrement
+        const oldBatchIds = data.batchIds || [];
+        (data.items || []).forEach((it: any) => {
+           // If this item was in old batches and we are re-queuing it, we must subtract its quantity from the old batch
+           if (it.status === 'READY' || it.status === 'COLLECTING') {
+              // We find the specific old batch for this item in the previous slot
+              const oldSlot = data.arrivalTimeSlot;
+              if (oldSlot) {
+                 const oldBatchId = `batch_${oldSlot}_${it.id}`;
+                 oldBatchDecrements[oldBatchId] = (oldBatchDecrements[oldBatchId] || 0) + (it.remainingQty || it.quantity);
+              }
+           }
+        });
       }
+      updatedCount++;
+    }
+
+    // 🏎️💨 STAGE 2: COMMIT AGGREGATED MANIFEST (Atomic Sonic Write)
+    // 2.1 CREATE NEW BATCHES
+    Object.values(aggregatedBatches).forEach((b: any) => {
+       const bRef = doc(db, "prepBatches", b.id);
+       masterBatch.set(bRef, {
+          id: b.id,
+          itemId: b.itemId,
+          itemName: b.itemName,
+          arrivalTimeSlot: b.arrivalTimeSlot,
+          orderIds: arrayUnion(...Array.from(b.orderIds)),
+          quantity: increment(b.quantity),
+          status: 'QUEUED',
+          isRequeued: true, // 🏷️ FLAG FOR KITCHEN UI
+          updatedAt: serverTimestamp()
+       }, { merge: true });
     });
 
-    return reassignedCount;
-  } catch (err) {
-    console.error("Error flushing missed pickups:", err);
-    throw err;
+    // 2.2 CLEANUP OLD BATCHES (Decrement)
+    Object.entries(oldBatchDecrements).forEach(([bId, qty]) => {
+       const bRef = doc(db, "prepBatches", bId);
+       // We use increment(-qty). If quantity hits 0, the Cook Console handles the hidden state 
+       // Or we could try to set status to COMPLETED if it hits 0, but increment is safer.
+       masterBatch.update(bRef, {
+          quantity: increment(-qty),
+          updatedAt: serverTimestamp()
+       });
+    });
+
+    if (updatedCount > 0) {
+      await masterBatch.commit();
+      console.log(`⚡ [SONIC-SYNC] Re-queued ${updatedCount} orders atomically.`);
+    }
+    return updatedCount;
+  } catch (error) {
+    console.error("❌ Flush missed pickups failed:", error);
+    return 0;
   }
 };
 

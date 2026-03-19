@@ -64,7 +64,8 @@ const SmoothImage: React.FC<SmoothImageProps> = ({
         <img
           src={optimizedSrc}
           alt={alt}
-          loading="lazy"
+          loading="eager"
+          decoding="async"
           className={`
             transition-all duration-700 ease-out
             ${isLoaded ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-105 blur-lg'}

@@ -4,7 +4,7 @@ import { useOrderNotifications } from './hooks/useOrderNotifications';
 import SplashScreen from './components/SplashScreen';
 import { signInWithGoogle } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
-import { UserProfile } from './types';
+import { UserProfile, ROLES } from './types';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -71,6 +71,16 @@ const App: React.FC = () => {
   }, [user]);
 
   // ─── ROLE-BASED ROUTING ──────────────────────────────────────────────────
+  // Shared helper for all navigation entry points (Auth Change, Login Success)
+  const getViewForRole = (r: UserProfile['role']): ViewState => {
+    switch (r) {
+      case ROLES.ADMIN:   return 'ADMIN';
+      case ROLES.CASHIER: return 'CASHIER';
+      case ROLES.SERVER:  return 'KITCHEN';
+      default:        return 'STUDENT_HOME';
+    }
+  };
+
   // Only runs after splash is gone AND auth is fully resolved (including profile).
   // This eliminates the 1st-login wrong-redirect bug.
   useEffect(() => {
@@ -86,12 +96,9 @@ const App: React.FC = () => {
     }
 
     // User is logged in and profile is confirmed
-    // Only auto-redirect when on a neutral / login view
+    // Only auto-redirect when on a neutral / login view to avoid kicking someone off a subview
     if (role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
-      if      (role === 'ADMIN')   setView('ADMIN');
-      else if (role === 'CASHIER') setView('CASHIER');
-      else if (role === 'SERVER')  setView('KITCHEN');
-      else if (role === 'STUDENT' || role === 'GUEST') setView('STUDENT_HOME');
+      setView(getViewForRole(role));
     }
   }, [authLoading, showSplash, profile, role, view]);
 
@@ -103,9 +110,7 @@ const App: React.FC = () => {
     setGoogleSignInLoading(true);
     try {
       const { profile: newProfile } = await signInWithGoogle();
-      if (newProfile.role === 'STUDENT') {
-        setView('STUDENT_HOME');
-      }
+      setView(getViewForRole(newProfile.role));
     } catch (error: any) {
       console.error('❌ Google sign-in error:', error);
     } finally {
@@ -133,6 +138,7 @@ const App: React.FC = () => {
     setGuestProfile(null);
     setView('WELCOME');
     setStudentSubView('HOME');
+    setActiveOrderId(null); // Clear active order state
   };
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
@@ -158,15 +164,7 @@ const App: React.FC = () => {
             return (
               <LoginView
                 onBack={() => setView('WELCOME')}
-                onSuccess={(p) => {
-                  // Direct nav from LoginView — profile comes from the signIn()
-                  // call which already validated the role. We set the view
-                  // immediately; the useEffect will also fire but view won't
-                  // be 'WELCOME' / 'STAFF_LOGIN' so it becomes a no-op.
-                  if      (p.role === 'ADMIN')   setView('ADMIN');
-                  else if (p.role === 'CASHIER') setView('CASHIER');
-                  else if (p.role === 'SERVER')  setView('KITCHEN');
-                }}
+                onSuccess={(p) => setView(getViewForRole(p.role))}
               />
             );
 
@@ -188,6 +186,7 @@ const App: React.FC = () => {
               <UnifiedKitchenConsole 
                 profile={profile!} 
                 onLogout={handleLogout} 
+                onBack={() => setView('ADMIN')}
               />
             );
 

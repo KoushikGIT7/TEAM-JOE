@@ -32,9 +32,9 @@
     const { doc: firestoreDoc, setDoc: firestoreSetDoc, serverTimestamp } = await import('firebase/firestore');
     
     const users = [
-      { email: 'admin@joecafe.com', password: 'joeadmin2026', name: 'JOE Admin', role: 'admin' },
-      { email: 'cashier@joecafe.com', password: 'joecashier2026', name: 'Cashier Node', role: 'cashier' },
-      { email: 'server@joecafe.com', password: 'joeserver2026', name: 'Server Node', role: 'server' }
+      { email: 'admin@joecafe.com', password: 'joeadmin2026', name: 'JOE Admin', role: 'ADMIN' },
+      { email: 'cashier@joecafe.com', password: 'joecashier2026', name: 'Cashier Node', role: 'CASHIER' },
+      { email: 'server@joecafe.com', password: 'joeserver2026', name: 'Server Node', role: 'SERVER' }
     ];
     
     for (const userData of users) {

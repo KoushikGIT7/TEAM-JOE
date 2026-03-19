@@ -1,77 +1,159 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  ShieldCheck, X, AlertCircle, LogOut
-} from 'lucide-react';
-import { updateDoc, doc } from 'firebase/firestore';
+import { Camera, Check, CheckCircle, X, ChevronRight, Utensils, Clock, Zap, AlertTriangle, Search, CookingPot, PackageCheck, ShieldCheck, ShieldAlert, LogOut, LayoutDashboard } from 'lucide-react';
+import { startBatchPreparation, markBatchReady, serveItem, updateSlotStatus, requeueMissedOrder } from '../../services/cook-workflow';
+import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { UserProfile, Order, PrepBatch } from '../../types';
-import {
-  listenToBatches,
-  validateQRForServing,
-  serveItemBatch,
+import { PrepBatch, Order, UserProfile } from '../../types';
+import { 
+  listenToBatches, 
+  listenToActiveOrders, 
+  flushMissedPickups, 
+  validateQRForServing, 
   serveFullOrder,
-  listenToActiveOrders,
-  flushMissedPickups,
-  forceReadyOrder
+  abandonItem
 } from '../../services/firestore-db';
 import { initializeScanner } from '../../services/scanner';
-import QRScanner from '../../components/QRScanner';
-
 import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
+import QRScanner from '../../components/QRScanner';
+
 
 interface UnifiedKitchenConsoleProps {
   profile: UserProfile;
   onLogout: () => void;
+  onBack?: () => void;
 }
 
-const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout }) => {
+// New UnifiedHeader component
+interface UnifiedHeaderProps {
+  profile: UserProfile;
+  onLogout: () => void;
+  onBack?: () => void;
+  currentTime: Date;
+  activeWorkspace: 'COOK' | 'SERVER';
+  setActiveWorkspace: (workspace: 'COOK' | 'SERVER') => void;
+}
+
+const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack, currentTime, activeWorkspace, setActiveWorkspace }) => {
+  return (
+    <header className="bg-white px-8 h-20 flex items-center justify-between border-b border-slate-200 shrink-0 shadow-sm z-30">
+      <div className="flex items-center gap-6">
+         <div className="bg-slate-900 px-5 py-2 rounded-lg">
+            <span className="text-white font-bold text-lg tracking-tight uppercase">JOE CAFE</span>
+         </div>
+         
+         {/* Workspace Switcher */}
+         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button 
+              onClick={() => setActiveWorkspace('COOK')}
+              className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
+                activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Cook Station
+            </button>
+            <button 
+              onClick={() => setActiveWorkspace('SERVER')}
+              className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
+                activeWorkspace === 'SERVER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Server Desk
+            </button>
+         </div>
+      </div>
+
+      <div className="flex items-center gap-8">
+         <div className="text-right flex flex-col items-end">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Live Ops Time</span>
+            <span className="text-2xl font-black text-slate-900 font-mono tracking-tighter leading-none">
+               {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+         </div>
+         
+         <div className="h-10 w-[1px] bg-slate-200" />
+
+         <div className="flex items-center gap-4">
+            {profile.role === 'ADMIN' && onBack && (
+              <button 
+                onClick={onBack}
+                className="px-4 h-11 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-bold text-xs uppercase hover:bg-slate-100 transition-all flex items-center gap-2"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                Dashboard
+              </button>
+            )}
+            <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold shadow-lg">
+               {profile.name?.charAt(0) || 'S'}
+            </div>
+            <button onClick={onLogout} className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all">
+              <LogOut className="w-5 h-5" />
+            </button>
+         </div>
+      </div>
+    </header>
+  );
+};
+
+
+const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
   // --- CORE DATA STATE ---
   const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+
+  // Operational sync is handled by the global maintenance loop in the next useEffect.
+
   
   // --- UI STATE ---
   const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER'>('SERVER');
-  const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [localScanBuffer, setLocalScanBuffer] = useState<string[]>([]);
+
 
   // 🛡️ SCAN QUEUE SYNC: Derived from Firestore 'SCANNED' state
   // This ensures the queue survives page refresh, crashes, or multi-tablet environments.
   const scanQueue = useMemo(() => {
-    return activeOrders
-      .filter(o => o.qrState === 'SCANNED' && o.orderStatus !== 'SERVED')
-      .sort((a, b) => (a.scannedAt || 0) - (b.scannedAt || 0))
+    const firestoreQueue = (activeOrders || [])
+      .filter(o => (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && o.orderStatus !== 'SERVED')
+      .sort((a, b) => (a.scannedAt || a.createdAt || 0) - (b.scannedAt || b.createdAt || 0))
       .map(o => o.id);
-  }, [activeOrders]);
+    return Array.from(new Set([...localScanBuffer, ...firestoreQueue]));
+  }, [activeOrders, localScanBuffer]);
 
-  const [scanFeedback, setScanFeedback] = useState<{
-    status: 'VALID' | 'INVALID' | null;
-    message?: string;
-    subtext?: string;
-    orderId?: string;
-  }>({ status: null });
+  // 🔊 [SONIC-SYNC] Full Screen Feedback State
+  const [sonicMode, setSonicMode] = useState<{
+    status: 'SUCCESS' | 'ERROR' | 'IDLE';
+    title: string;
+    sub: string;
+    icon: 'CHECK' | 'X' | 'CLOCK';
+  }>({ status: 'IDLE', title: '', sub: '', icon: 'CHECK' });
+
+  const triggerSonicPulse = (status: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
+    setSonicMode({ status, title, sub, icon: status === 'SUCCESS' ? 'CHECK' : 'X' });
+    if ('vibrate' in navigator) {
+      if (status === 'SUCCESS') navigator.vibrate(100);
+      else navigator.vibrate([200, 100, 200]);
+    }
+    setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 1000 : 2500);
+  };
 
   // --- REFS ---
-  const lastScanTimestamp = useRef<number>(0);
+  const inFlightTokenRef = useRef<string | null>(null);
 
-  // --- MAINTENANCE & CLOCK ---
+  // --- ETIOLOGY: GLOBAL MAINTENANCE LOOP ---
   useEffect(() => {
-    const clockT = setInterval(() => setCurrentTime(new Date()), 1000);
-    
-    // 🚀 PRODUCTION MAINTENANCE: Flush Missed Pickups (Every 60s)
     const maintenanceLoop = setInterval(async () => {
-       const nodeId = `node_${profile.uid.slice(0,8)}`;
-       await flushMissedPickups(nodeId).catch(console.warn);
-    }, 60000);
+      setCurrentTime(new Date());
+      await flushMissedPickups(); 
+    }, 3000); 
 
     const unsubBatches = listenToBatches(setBatches);
     const unsubOrders = listenToActiveOrders(setActiveOrders);
 
     return () => {
-      clearInterval(clockT);
       clearInterval(maintenanceLoop);
       unsubBatches();
       unsubOrders();
@@ -101,45 +183,90 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   }, [activeWorkspace]);
 
   // --- OPERATIONAL HANDLERS ---
-  const handleQRScan = async (data: string) => {
-    if (!data?.trim() || isScanning) return;
+  const handleQRScan = async (rawData: string, resumeScanner: () => void = () => {}) => {
+    if (!rawData?.trim()) {
+      resumeScanner();
+      return;
+    }
+    
+    let orderId = rawData.trim();
+    if (orderId.startsWith('v1.')) {
+        orderId = orderId.split('.')[1]; 
+    }
 
-    const now = Date.now();
-    if (now - lastScanTimestamp.current < 500) return;
-    lastScanTimestamp.current = now;
+    // 🔒 [SONIC-LOCK] Belt and suspenders application-level lock
+    if (inFlightTokenRef.current === orderId) {
+        resumeScanner();
+        return;
+    }
+    inFlightTokenRef.current = orderId;
 
-    setIsScanning(true);
-    setError(null);
+    const resetAndResume = (delayMs = 0) => {
+      setTimeout(() => {
+        inFlightTokenRef.current = null;
+        resumeScanner();
+      }, delayMs);
+    };
+
+    const cachedOrder = activeOrders?.find(o => o.id === orderId);
+    let optimisticFired = false;
+
+    // 🚀 MICROSECOND OPTIMISTIC UI
+    if (cachedOrder && cachedOrder.qrStatus !== 'USED' && cachedOrder.orderStatus !== 'SERVED') {
+       const isStatic = cachedOrder.items.every(it => it.orderType === 'FAST_ITEM');
+       if (isStatic) {
+          triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${orderId.slice(-4).toUpperCase()} – Served.`);
+       } else {
+          setLocalScanBuffer(prev => prev.includes(orderId) ? prev : [orderId, ...prev]);
+          if (!localScanBuffer.includes(orderId) && cachedOrder.qrStatus !== 'SCANNED') {
+             triggerSonicPulse('SUCCESS', 'QUEUED', `#${orderId.slice(-4).toUpperCase()} – In Stack.`);
+          } else {
+             triggerSonicPulse('SUCCESS', 'IN QUEUE', `#${orderId.slice(-4).toUpperCase()} – Manifested.`);
+          }
+       }
+       optimisticFired = true;
+       // Fast release since we already assured the UI
+       resetAndResume(800);
+    }
+
     try {
-        if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+      // Background / delayed decisive verification
+      const { order, result } = await validateQRForServing(rawData.trim(), profile.uid);
 
-        // 1. Validate & Mark as SCANNED in DB
-        const order = await validateQRForServing(data);
-        const isStaticMeal = order.items.every(it => it.orderType === 'FAST_ITEM');
-
-        // 2. Success Feedback
-        setScanFeedback({
-          status: 'VALID',
-          message: 'VALID',
-          subtext: isStaticMeal ? 'Instant Serve' : 'Meal Verified',
-          orderId: order.id.slice(-6).toUpperCase()
-        });
-
-        // 3. Fast Path completion
-        if (isStaticMeal) {
-           serveFullOrder(order.id, profile.uid).catch(console.error);
-        }
-
-        setTimeout(() => setScanFeedback({ status: null }), 1500);
+      if (!optimisticFired) {
+         if (result === 'CONSUMED') {
+           triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`);
+           resetAndResume(1200); 
+         } else if (result === 'MANIFESTED') {
+           setLocalScanBuffer(prev => prev.includes(order.id) ? prev : [order.id, ...prev]);
+           triggerSonicPulse('SUCCESS', 'QUEUED', `#${order.id.slice(-4).toUpperCase()} – In Stack.`);
+           resetAndResume(800);
+         } else if (result === 'ALREADY_MANIFESTED') {
+           triggerSonicPulse('SUCCESS', 'IN QUEUE', `#${order.id.slice(-4).toUpperCase()} – Manifested.`);
+           resetAndResume(600);
+         }
+      }
     } catch (err: any) {
-        setScanFeedback({
-          status: 'INVALID',
-          message: 'INVALID',
-          subtext: err.message || 'Validation Failed'
-        });
-        setTimeout(() => setScanFeedback({ status: null }), 2000);
-    } finally {
-        setIsScanning(false);
+      const msg = err?.message || String(err);
+      console.log('❌ SCAN FAILED:', msg);
+      
+      // Overwrite optimistic UI if it critically failed (e.g. signature forged, or exact millisecond race condition)
+      if (msg.includes('ALREADY_CONSUMED')) {
+        triggerSonicPulse('ERROR', 'ALREADY SERVED', 'Ticket was consumed.');
+        resetAndResume(1200);
+      } else if (msg.includes('SERVE_BLOCKED')) {
+        triggerSonicPulse('ERROR', 'NOT READY', 'Please wait for preparation.');
+        resetAndResume(1500);
+      } else if (msg.includes('SECURITY_BREACH')) {
+        triggerSonicPulse('ERROR', 'INVALID', 'Bad signature.');
+        resetAndResume(1500);
+      } else if (msg.includes('Order not found')) {
+        triggerSonicPulse('ERROR', 'UNKNOWN TICKET', 'Not in system.');
+        resetAndResume(1500);
+      } else {
+        triggerSonicPulse('ERROR', 'SCAN ERROR', msg);
+        resetAndResume(1200);
+      }
     }
   };
 
@@ -147,180 +274,115 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-        await serveItemBatch(orderId, itemId, qty, profile.uid);
-        if ('vibrate' in navigator) navigator.vibrate(50);
+      await serveItem(orderId, itemId);
     } catch (err: any) {
-        setError(err.message || 'Serve Failed');
+      setError(err.message || "Serving failed");
     } finally {
-        setIsProcessing(false);
+      setIsProcessing(false);
     }
   };
 
-  const handleServeAll = async (orderId: string) => {
+  const handleServeFullOrder = async (orderId: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-        await serveFullOrder(orderId, profile.uid);
-        if ('vibrate' in navigator) navigator.vibrate([50, 50, 50]);
+      await serveFullOrder(orderId, profile.uid);
+      setLocalScanBuffer(prev => prev.filter(id => id !== orderId));
     } catch (err: any) {
-        setError(err.message || 'Serve Failed');
+      setError(err.message || "Completing order failed");
     } finally {
-        setIsProcessing(false);
-    }
-  };
-
-  const promoteOrder = async (orderId: string) => {
-    try {
-        await updateDoc(doc(db, 'orders', orderId), { scannedAt: Date.now() });
-    } catch (err: any) {
-        setError('Failed to focus order');
+      setIsProcessing(false);
     }
   };
 
   const handleForceReady = async (orderId: string) => {
+     try {
+       const orderRef = doc(db, 'orders', orderId);
+       await updateDoc(orderRef, { serveFlowStatus: 'READY', updatedAt: serverTimestamp() });
+     } catch (err) {
+       console.error("Force ready error:", err);
+     }
+  };
+  const handleAbandonItem = async (orderId: string, itemId: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-        await forceReadyOrder(orderId, profile.uid);
-        if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+      await abandonItem(orderId, itemId);
     } catch (err: any) {
-        setError(err.message || 'Action Failed');
+      setError(err.message || "Abandon failed");
     } finally {
-        setIsProcessing(false);
+      setIsProcessing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans select-none overflow-hidden h-screen">
-      {/* GLOBAL BACKGROUND FEEDBACK - STATIC FAST PATH */}
-      {scanFeedback.status === 'VALID' && (
-        <div className="fixed inset-0 z-[100] bg-green-600 flex flex-col items-center justify-center animate-in fade-in duration-300 pointer-events-none">
-          <div className="bg-white/10 p-12 rounded-3xl backdrop-blur-md mb-8">
-            <ShieldCheck className="w-32 h-32 text-white" />
-          </div>
-          <h1 className="text-7xl font-bold text-white tracking-widest uppercase animate-in zoom-in-95 duration-500">
-            {scanFeedback.message}
-          </h1>
-          <p className="text-sm font-bold text-green-100 uppercase tracking-[0.5em] mt-6 border-t border-white/20 pt-6">
-            {scanFeedback.subtext}
-          </p>
-        </div>
-      )}
+    <div className="flex h-screen w-screen overflow-hidden bg-background font-sans select-none">
+      <div className="flex-1 flex flex-col min-w-0">
+        <UnifiedHeader 
+          profile={profile} 
+          onLogout={onLogout} 
+          currentTime={currentTime} 
+          onBack={onBack}
+          activeWorkspace={activeWorkspace}
+          setActiveWorkspace={setActiveWorkspace}
+        />
 
-      {/* HEADER: OPERATIONAL DASHBOARD */}
-      <header className="bg-white px-8 h-20 flex items-center justify-between border-b border-slate-200 shrink-0 shadow-sm z-30">
-        <div className="flex items-center gap-6">
-           <div className="bg-slate-900 px-5 py-2 rounded-lg">
-              <span className="text-white font-bold text-lg tracking-tight uppercase">JOE CAFE</span>
-           </div>
-           
-           {/* Workspace Switcher */}
-           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <button 
-                onClick={() => setActiveWorkspace('COOK')}
-                className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-                  activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                Cook Station
-              </button>
-              <button 
-                onClick={() => setActiveWorkspace('SERVER')}
-                className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-                  activeWorkspace === 'SERVER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                Server Desk
-              </button>
-           </div>
-        </div>
+        <main className="flex-1 overflow-hidden relative">
+          {activeWorkspace === 'COOK' ? (
+             <CookConsoleWorkspace batches={batches} />
+          ) : (
+             <ServerConsoleWorkspace 
+                activeOrders={activeOrders}
+                scanQueue={scanQueue}
+                isCameraOpen={isCameraOpen}
+                setIsCameraOpen={setIsCameraOpen}
+                handleQRScan={handleQRScan}
+                handleServeItem={handleServeItem}
+                handleServeAll={handleServeFullOrder}
+                handleForceReady={handleForceReady}
+                handleAbandonItem={handleAbandonItem}
+                isProcessing={isProcessing}
+             />
+          )}
 
-        <div className="flex items-center gap-8">
-           <div className="text-right flex flex-col items-end">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Live Ops Time</span>
-              <span className="text-2xl font-black text-slate-900 font-mono tracking-tighter leading-none">
-                 {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-           </div>
-           
-           <div className="h-10 w-[1px] bg-slate-200" />
+          {/* ⚡ [SONIC] FEEDBACK OVERLAY (Principal UX lanes) */}
+          {sonicMode.status !== 'IDLE' && (
+            <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-150 ${
+                sonicMode.status === 'SUCCESS' ? 'bg-emerald-600' : 'bg-rose-600'
+            }`}>
+               <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
+                  {sonicMode.icon === 'CHECK' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
+               </div>
+               <h1 className="text-6xl font-black text-white uppercase tracking-tighter italic mb-4 drop-shadow-2xl">{sonicMode.title}</h1>
+               <p className="text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono">{sonicMode.sub}</p>
+            </div>
+          )}
 
-           <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold shadow-lg">
-                 {profile.name?.charAt(0) || 'S'}
-              </div>
-              <button onClick={onLogout} className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all">
-                <LogOut className="w-5 h-5" />
-              </button>
-           </div>
-        </div>
-      </header>
-
-      {/* MAIN WORKSPACE AREA */}
-      <main className="flex-1 relative overflow-hidden bg-slate-50">
-        {activeWorkspace === 'SERVER' ? (
-           <ServerConsoleWorkspace 
-              activeOrders={activeOrders}
-              scanQueue={scanQueue}
-              setScanQueue={(fn) => {
-                 // Convert old functional setter usage to promoteOrder call
-                 // This is a minimal shim to keep ServerConsoleWorkspace working
-                 if (typeof fn === 'function') {
-                    const nextId = fn([])[0];
-                    if (nextId) promoteOrder(nextId);
-                 }
-              }}
-              isCameraOpen={isCameraOpen}
-              setIsCameraOpen={setIsCameraOpen}
-              handleQRScan={handleQRScan}
-              handleServeItem={handleServeItem}
-              handleServeAll={handleServeAll}
-              handleForceReady={handleForceReady}
-              scanFeedback={scanFeedback}
-              isProcessing={isProcessing}
-           />
-        ) : (
-           <CookConsoleWorkspace batches={batches} />
-        )}
+          {/* 📷 [SERVER] CAMERA SCANNER MODAL */}
+          {activeWorkspace === 'SERVER' && isCameraOpen && (
+            <QRScanner 
+               onScan={(data, resume) => {
+                 // Do not immediately close modal; modal closes only on X tap.
+                 // handleQRScan takes the token, runs processing, triggers flash overlay, 
+                 // and eventually calls resume to release the camera for next customer!
+                 handleQRScan(data, resume);
+               }}
+               onClose={() => setIsCameraOpen(false)}
+            />
+          )}
+        </main>
 
         {/* ERROR OVERLAY */}
         {error && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-[110] animate-in slide-in-from-top duration-300">
-            <AlertCircle className="w-6 h-6" />
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-red-600/90 backdrop-blur-md text-white px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4">
+            <AlertTriangle className="w-6 h-6" />
             <span className="font-black uppercase tracking-widest text-sm">{error}</span>
             <button onClick={() => setError(null)} className="ml-4 bg-white/20 p-1 rounded-lg">
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
-
-        {/* HEADLESS SCANNER INPUT */}
-        <input 
-          id="headless-scanner-input"
-          type="text" 
-          className="absolute opacity-0 pointer-events-none"
-          autoFocus
-        />
-        
-        {/* CAMERA MODAL */}
-        {isCameraOpen && (
-          <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-            <button 
-              onClick={() => setIsCameraOpen(false)}
-              className="absolute top-8 right-8 w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-white z-10"
-            >
-              <X className="w-8 h-8" />
-            </button>
-            <QRScanner
-              onScan={(data) => {
-                handleQRScan(data);
-                setIsCameraOpen(false);
-              }}
-              onClose={() => setIsCameraOpen(false)}
-            />
-          </div>
-        )}
-      </main>
+      </div>
     </div>
   );
 };

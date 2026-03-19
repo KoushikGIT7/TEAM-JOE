@@ -3,7 +3,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, AlertTriangle, RefreshCw, Zap } from 'lucide-react';
 
 interface QRScannerProps {
-  onScan: (data: string) => void;
+  onScan: (data: string, resumeScanner: () => void) => void;
   onClose: () => void;
   isScanning?: boolean;
 }
@@ -13,8 +13,10 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
   const [isInitializing, setIsInitializing] = useState(true);
   const [detected, setDetected]       = useState(false);
   const qrRef                         = useRef<Html5Qrcode | null>(null);
-  const firedRef                      = useRef(false); // prevent double-fire
+  const scanHistoryRef                = useRef<Record<string, number>>({}); // prevent duplicate spam
+  const inFlightRef                   = useRef<string | null>(null); // SYNCHRONOUS gate to prevent identical frame processing
   const regionId                      = 'qr-reader-region';
+
 
   const stopCamera = useCallback(async () => {
     try {
@@ -46,40 +48,39 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
         await scanner.start(
           { facingMode: 'environment' },
           {
-            fps: 30,
-            qrbox: (w: number, h: number) => {
-              const size = Math.floor(Math.min(w, h) * 0.80);
-              return { width: size, height: size };
-            },
-            aspectRatio: 1.0,
-            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-            videoConstraints: {
-              facingMode: { ideal: 'environment' },
-              width:  { min: 640, ideal: 1920, max: 3840 },
-              height: { min: 480, ideal: 1080, max: 2160 },
-              focusMode: 'continuous',
-              exposureMode: 'continuous',
-              whiteBalanceMode: 'continuous',
-            },
+            fps: 10,
+            qrbox: { width: 300, height: 300 },
             disableFlip: false,
-          } as any,
+          },
 
           async (decodedText) => {
-            // Prevent double-callback on same frame
-            if (firedRef.current) return;
-            firedRef.current = true;
+            // 🛡️ [HARDWARE-LOCK] Synchronous gate to stop frame duplications
+            if (inFlightRef.current !== null || isScanning || detected) return;
+
+            const now = Date.now();
+            const lastScan = scanHistoryRef.current[decodedText] || 0;
+            
+            // 🛡️ [STABLE-SHIELD] 2000ms Normalised Cooldown for same token
+            if (now - lastScan < 2000) return;
+            scanHistoryRef.current[decodedText] = now;
+
+            // 🛑 LOCK IMMEDIATELY
+            inFlightRef.current = decodedText;
 
             // Instant haptic
-            if ('vibrate' in navigator) navigator.vibrate(60);
-            // Flash detected state
+            if ('vibrate' in navigator) navigator.vibrate(80);
+            
+            // ✅ SUCCESS FEEDBACK (Wait for parent to release)
             setDetected(true);
 
-            // Stop camera before calling onScan so parent renders instantly
-            await stopCamera();
-            onScan(decodedText);
+            // Emit data to parent & provide resume callback
+            onScan(decodedText, () => {
+               inFlightRef.current = null;
+               setDetected(false);
+            });
           },
           () => {
-            // Per-frame decode failure is expected noise — ignore
+            // Noise - ignore
           }
         );
 
@@ -125,25 +126,25 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
         </button>
       </div>
 
-      {/* ── Scanner Area ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-6">
-        <div className="w-full max-w-xs aspect-square relative">
+      {/* ── Scanner Area (Sonic Center) ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-8">
+        <div className="w-full max-w-sm aspect-square relative shadow-2xl rounded-3xl overflow-hidden">
 
-          {/* Corner brackets */}
+          {/* Global Strike Zone (Principal Principal) */}
           {(['tl','tr','bl','br'] as const).map(pos => (
             <div
               key={pos}
-              className="absolute w-10 h-10 pointer-events-none"
+              className="absolute w-12 h-12 pointer-events-none z-10"
               style={{
-                top:    pos.startsWith('t') ? 0 : undefined,
-                bottom: pos.startsWith('b') ? 0 : undefined,
-                left:   pos.endsWith('l')   ? 0 : undefined,
-                right:  pos.endsWith('r')   ? 0 : undefined,
-                borderTop:    pos.startsWith('t') ? '3px solid #f97316' : undefined,
-                borderBottom: pos.startsWith('b') ? '3px solid #f97316' : undefined,
-                borderLeft:   pos.endsWith('l')   ? '3px solid #f97316' : undefined,
-                borderRight:  pos.endsWith('r')   ? '3px solid #f97316' : undefined,
-                borderRadius: pos === 'tl' ? '12px 0 0 0' : pos === 'tr' ? '0 12px 0 0' : pos === 'bl' ? '0 0 0 12px' : '0 0 12px 0',
+                top:    pos.startsWith('t') ? 24 : undefined,
+                bottom: pos.startsWith('b') ? 24 : undefined,
+                left:   pos.endsWith('l')   ? 24 : undefined,
+                right:  pos.endsWith('r')   ? 24 : undefined,
+                borderTop:    pos.startsWith('t') ? '2.5px solid #f97316' : undefined,
+                borderBottom: pos.startsWith('b') ? '2.5px solid #f97316' : undefined,
+                borderLeft:   pos.endsWith('l')   ? '2.5px solid #f97316' : undefined,
+                borderRight:  pos.endsWith('r')   ? '2.5px solid #f97316' : undefined,
+                borderRadius: pos === 'tl' ? '8px 0 0 0' : pos === 'tr' ? '0 8px 0 0' : pos === 'bl' ? '0 0 0 8px' : '0 0 8px 0',
               }}
             />
           ))}

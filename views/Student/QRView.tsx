@@ -34,6 +34,13 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [orderCount, setOrderCount] = useState(1);
   const prevFlow = useRef<string>('');
+  const [, setTick] = useState(0);
+
+  // 🛡️ Top-level ticker: ensures isTimeExpired recalcs even if Firestore is quiet
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ── Order listener ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -72,6 +79,21 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     return () => clearInterval(iv);
   }, [order?.serveFlowStatus, order?.pickupWindow?.endTime]);
 
+  // ── Auto-navigation after scan ───────────────────────────────────────────
+  useEffect(() => {
+    if (!order) return;
+    const isDestroyed = order.qrStatus === 'DESTROYED' || order.qrStatus === 'USED';
+    const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
+    
+    if (isDestroyed || isServed) {
+      const timer = setTimeout(() => {
+        if (onViewOrders) onViewOrders();
+        else onBack();
+      }, 2500); 
+      return () => clearTimeout(timer);
+    }
+  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus]);
+
   // ── Haptic on READY ──────────────────────────────────────────────────────
   useEffect(() => {
     const flow = order?.serveFlowStatus || '';
@@ -108,8 +130,11 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
   const uiState = getOrderUIState(order);
   const flow = order.serveFlowStatus || 'NEW';
-  const isMissed = uiState === 'MISSED' || order.orderStatus === 'MISSED';
-  const isServed = order.orderStatus === 'SERVED';
+  
+  // ⏱️ Industry-grade Immediate Lockdown (Client-side)
+  const isTimeExpired = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
+  const isMissed = uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired;
+  const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
   
   // Resolve strict status
   let statusKey = 'SCHEDULED';
@@ -120,7 +145,8 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   else if (order.paymentStatus === 'SUCCESS') statusKey = 'SCHEDULED';
 
   const s = STATUS[statusKey] || STATUS.DEFAULT;
-  const isReady = statusKey === 'READY';
+  const isReady = statusKey === 'READY' && !isTimeExpired;
+  const qrVisible = shouldShowQR(order);
 
   return (
     <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans overflow-x-hidden">
@@ -206,18 +232,20 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         <div className="w-full max-w-[320px] aspect-square bg-white border-[12px] border-gray-50 rounded-[3rem] shadow-2xl shadow-black/5 flex items-center justify-center relative overflow-hidden">
           {qrString ? (
             <div className="p-4 relative bg-white w-full h-full flex items-center justify-center">
-              {/* Blur/Hide logic */}
-              <div className={`transition-all duration-700 ${isReady || isServed || order.items.some(i => i.orderType === 'FAST_ITEM') ? 'opacity-100 blur-0' : 'opacity-10 blur-xl scale-90 pointer-events-none'}`}>
+              {/* Blur/Hide logic (Deterministic Lockdown) */}
+              <div className={`transition-all duration-700 ${qrVisible ? 'opacity-100 blur-0' : 'opacity-10 blur-xl scale-90 pointer-events-none'}`}>
                  <QRCodeSVG value={qrString} size={220} level="M" />
               </div>
               
-              {!(isReady || isServed || order.items.some(i => i.orderType === 'FAST_ITEM')) && (
+              {!qrVisible && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-10 animate-in fade-in zoom-in duration-500">
-                   <div className="w-20 h-20 bg-gray-900 rounded-[2rem] flex items-center justify-center shadow-2xl mb-4 text-white">
-                      <Clock className="w-10 h-10" />
+                   <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-2xl mb-4 text-white ${isMissed ? 'bg-amber-600' : 'bg-gray-900'}`}>
+                      {isMissed ? <Clock className="w-10 h-10" /> : <Clock className="w-10 h-10" />}
                    </div>
-                   <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Locked</h3>
-                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 text-center max-w-[200px]">QR Code reveals when food is ready</p>
+                   <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">{isMissed ? 'Expired' : 'Locked'}</h3>
+                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 text-center max-w-[200px]">
+                     {isMissed ? 'Window missed - Order re-queued' : 'QR reveals when food is ready'}
+                   </p>
                 </div>
               )}
 

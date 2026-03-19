@@ -41,7 +41,8 @@ async function createTestOrder(): Promise<{ order: Order; qrCode: string }> {
         active: true,
         quantity: 1,
         servedQty: 0,
-        remainingQty: 1
+        remainingQty: 1,
+        status: 'PENDING'
       }
     ],
     totalAmount: 100,

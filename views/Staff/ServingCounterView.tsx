@@ -334,7 +334,7 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
     setTimeout(refocusScanner, 0);
 
     try {
-      const order = await validateQRForServing(trimmed);
+      const { order } = await validateQRForServing(trimmed, profile.uid);
       setScanRawData(trimmed);
       setScannedOrder(order);
     } catch (err: any) {
@@ -529,7 +529,11 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
       {/* ── Camera Scanner Overlay ── */}
       {isCameraOpen && (
         <QRScanner
-          onScan={(data) => { setIsCameraOpen(false); processQRScan(data); }}
+          onScan={(data, resume) => { 
+             setIsCameraOpen(false); 
+             processQRScan(data);
+             resume();
+          }}
           onClose={() => setIsCameraOpen(false)}
           isScanning={isScanning}
         />

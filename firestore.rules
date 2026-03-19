@@ -2,52 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================================================================
-    // HELPER FUNCTIONS
-    // COST WARNING: getRole() calls get() — one read per rule evaluation.
-    // Only call it for STAFF-ONLY collections (Tier 4+).
-    // Never call it for public or customer collections (Tier 1–3).
-    // =========================================================================
-
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Use ONLY for staff-gated collections (Tier 4+).
-    function getRole() {
+    function getRawRole() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
     function isStaff() {
-      return isAuthenticated() && getRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK'];
+      return isAuthenticated() && (
+        getRawRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK', 'admin', 'server', 'cashier', 'cook']
+      );
     }
-
 
     function isAdmin() {
-      return isAuthenticated() && getRole() == 'ADMIN';
+      return isAuthenticated() && (getRawRole() == 'ADMIN' || getRawRole() == 'admin');
     }
 
-    function isAdminOrServer() {
-      return isAuthenticated() && getRole() in ['ADMIN', 'SERVER'];
+    function isCashier() {
+      return isAuthenticated() && (getRawRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier']);
     }
 
-    function isAdminOrCashier() {
-      return isAuthenticated() && getRole() in ['ADMIN', 'CASHIER'];
+    function isServer() {
+      return isAuthenticated() && (getRawRole() in ['ADMIN', 'SERVER', 'admin', 'server']);
     }
-
-    // Guest check: userId starts with "guest_" (no auth required).
-    function isGuestOrder(data) {
-      return data.userId is string && data.userId.matches('guest_.*');
-    }
-
-    // Owns this order: authenticated user matching userId field.
-    function ownsOrder(data) {
-      return isAuthenticated() && request.auth.uid == data.userId;
-    }
-
-    // =========================================================================
-    // TIER 1: PUBLIC READS — No auth, no role lookup.
-    // =========================================================================
 
     match /menu/{itemId} {
       allow read: if true;
@@ -59,103 +38,72 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Students/guests check live stock status before ordering.
-    // Staff manage actual counts — no customers write this collection.
     match /inventory_meta/{itemId} {
       allow read: if true;
-      allow write: if isAdminOrServer();
+      allow write: if isStaff();
     }
 
-    // =========================================================================
-    // TIER 2: ORDERS — Customer-safe. No role lookup on create.
-    // =========================================================================
-
     match /orders/{orderId} {
-      // Public read: customers poll by orderId to check their own status.
-      // No PII risk because orderId is a random token unknown to others.
       allow read: if true;
-
-      // Create: authenticated user creating their own order,
-      //         OR a guest order with guest_ userId prefix (unauthenticated).
-      // No role lookup — safe even under heavy traffic.
       allow create: if (
           isAuthenticated() && request.resource.data.userId == request.auth.uid
         ) || (
-          isGuestOrder(request.resource.data)
+          request.resource.data.userId is string && request.resource.data.userId.matches('guest_.*')
         );
 
-      // Simply allow Staff to do whatever they need without diff limits.
-      // Allow customers to update their own documents.
-      allow update: if isStaff() || (isAuthenticated() && request.auth.uid == resource.data.userId) || isGuestOrder(resource.data);
+      allow update: if (isStaff() && (
+        // CASE A: CASHIER CONFIRMATION
+        (isCashier() && 
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['paymentStatus', 'qrStatus', 'qr', 'confirmedBy', 'confirmedAt', 'updatedAt']) &&
+         resource.data.paymentStatus != 'SUCCESS' &&
+         request.resource.data.paymentStatus == 'SUCCESS' &&
+         request.resource.data.confirmedBy == request.auth.uid &&
+         request.resource.data.items == resource.data.items &&
+         request.resource.data.totalAmount == resource.data.totalAmount &&
+         request.resource.data.updatedAt == request.time &&
+         request.resource.data.confirmedAt == request.time &&
+         request.resource.data.qr.createdAt == request.time 
+        ) ||
+        // CASE B: KITCHEN WORKFLOW & MAINTENANCE
+        (isStaff() && 
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny([
+             'kitchenStatus', 'serveFlowStatus', 'items', 'pickupWindow', 
+             'estimatedReadyTime', 'updatedAt', 'arrivalTimeSlot', 
+             'batchIds', 'missedCount', 'orderStatus', 'qrStatus', 'qrState',
+             'scannedAt', 'qrStatus'
+           ]) &&
+         request.resource.data.updatedAt == request.time
+        )
+      )) || (isAuthenticated() && request.auth.uid == resource.data.userId);
 
       allow delete: if isAdmin();
       
-      // RULES FOR SUBCOLLECTION items
       match /items/{itemId} {
         allow read: if true;
-        allow create: if true; // During initial order batch
+        allow create: if true;
         allow update: if isStaff();
       }
     }
 
-    // =========================================================================
-    // TIER 3: CUSTOMER TRANSACTION COLLECTIONS
-    // Written atomically with the order document.
-    // These collections are safe for customer-initiated writes because:
-    //   a) prepBatches and slot_stats are kitchen orchestration data
-    //      that the customer only contributes to, not controls.
-    //   b) idempotency_keys are keyed by a token the customer generates
-    //      and are immutable after creation (update: false).
-    //   c) inventory_shards are EXCLUDED from the customer transaction
-    //      (see firestore-db.ts). Only staff/admin write them.
-    // =========================================================================
-
-    // Kitchen batching: customers create/join batches at order time.
-    // Staff read batches in the kitchen console.
     match /prepBatches/{batchId} {
-      // Staff read for kitchen console.
-      // Customers read to compute wave notification delay.
-      // Public read is acceptable: batch IDs are opaque random tokens.
       allow read: if true;
-
-      // Customers create/join a batch during their order transaction.
-      // Any authenticated user or guest can write (create/update).
-      allow create: if true;
-      allow update: if true;
+      allow create, update: if isStaff() || true;
       allow delete: if isAdmin();
     }
 
-    // Slot-level capacity counter — customers write during order creation
-    // to reserve capacity in their chosen arrival slot.
     match /slot_stats/{slotId} {
-      // Customers read to check slot capacity before ordering.
-      // Staff read for dashboard capacity views.
       allow read: if true;
-      // Write: customer transaction writes during order creation.
       allow write: if true;
     }
 
-    // Idempotency keys — immutable after creation, keyed by client-generated token.
-    // Anyone with the key token can read it (security is obscurity of the token).
     match /idempotency_keys/{keyId} {
       allow read: if true;
       allow create: if true;
-      // IMMUTABLE: never update; prevents key reuse attacks.
       allow update: if false;
       allow delete: if isAdmin();
     }
-
-    // Inventory shards — distributed counter for inventory aggregation.
-    // INTERNAL ONLY: NOT part of the customer transaction.
-    // Written exclusively via Cloud Function or admin/server console.
-    match /inventory_shards/{itemId}/shards/{shardId} {
-      allow read: if isAdminOrServer();
-      allow write: if isAdminOrServer();
-    }
-
-    // =========================================================================
-    // TIER 4: USER PROFILES
-    // =========================================================================
 
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
@@ -164,71 +112,27 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /users/{userId}/fcmTokens/{tokenId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
-    }
-
-    // Cart drafts — private per-user draft persistence.
-    match /carts/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
-    }
-
-    // =========================================================================
-    // TIER 5: STAFF-OPERATIONAL COLLECTIONS
-    // Role lookup is acceptable here — these are low-frequency staff actions.
-    // =========================================================================
-
-    // Staff-managed inventory (openingStock, consumed totals).
-    // Students read inventory_meta (Tier 1) — NOT this collection.
     match /inventory/{itemId} {
-      allow read: if isAdminOrServer() || isAdminOrCashier();
-      allow write: if isAdminOrServer();
+      allow read, write: if isStaff();
     }
 
     match /scanLogs/{logId} {
-      allow read, create: if isAdminOrServer();
+      allow read, create: if isStaff();
       allow update, delete: if isAdmin();
     }
 
     match /serveLogs/{logId} {
-      allow read, create: if isAdminOrServer();
+      allow read, create: if isStaff();
       allow update, delete: if isAdmin();
     }
 
-    match /dailyReports/{reportId} {
-      allow read: if isAdminOrCashier();
-      allow write: if isAdmin();
-    }
-
-    match /preparationStations/{stationId} {
-      allow read: if isAdminOrServer();
-      allow write: if isAdmin();
-    }
-
-    // =========================================================================
-    // TIER 6: ADMIN / SYSTEM-ONLY
-    // =========================================================================
-
-    // System operational docs (maintenance locks, heartbeats, etc.)
-    // Staff need read/write for leader election; no customer access.
     match /system/{docId} {
       allow read, write: if isStaff();
     }
 
-
-    match /flags/{flagId} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-
-    match /fraudLogs/{logId} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-
-    match /notificationLogs/{logId} {
-      allow read: if isAdmin();
-      allow create, update, delete: if false;
+    match /dailyReports/{reportId} {
+      allow read: if isCashier();
+      allow write: if isAdmin();
     }
   }
 }

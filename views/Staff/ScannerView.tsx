@@ -38,14 +38,19 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setErrorMsg('');
 
     try {
-      const order = await validateQRForServing(rawData.trim());
+      const { order, result } = await validateQRForServing(rawData.trim(), profile.uid);
       setScannedOrder(order);
-      setTerminalState('REVIEW');
+      
+      if (result === 'CONSUMED') {
+         setTerminalState('SUCCESS');
+      } else {
+         setTerminalState('REVIEW');
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Verification Error');
       setTerminalState('ERROR');
     }
-  }, [terminalState]);
+  }, [terminalState, profile.uid]);
 
   const handleServeAll = async () => {
     if (!scannedOrder || busy) return;
@@ -116,7 +121,11 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       {isCameraOpen && (
         <div className="fixed inset-0 z-[200]">
            <QRScanner
-             onScan={(data) => { setIsCameraOpen(false); handleScan(data); }}
+             onScan={(data, resume) => { 
+                setIsCameraOpen(false); 
+                handleScan(data);
+                resume();
+             }}
              onClose={() => setIsCameraOpen(false)}
              isScanning={terminalState === 'SCANNING'}
            />

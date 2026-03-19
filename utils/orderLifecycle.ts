@@ -25,8 +25,9 @@ export const getOrderUIState = (order: Order): OrderUIState => {
       return 'ABANDONED';
   }
 
-  // Missed pickup window logic
-  if (order.pickupWindow?.status === 'MISSED' || order.orderStatus === 'MISSED' || order.serveFlowStatus === 'MISSED') {
+  // Missed pickup window logic (Industry-grade: checks Firestore flag OR local time)
+  const isTimeMissed = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
+  if (order.pickupWindow?.status === 'MISSED' || order.orderStatus === 'MISSED' || order.serveFlowStatus === 'MISSED' || isTimeMissed) {
     return 'MISSED';
   }
 
@@ -88,6 +89,11 @@ export const shouldShowQR = (order: Order): boolean => {
 
   if (order.qrState === 'USED' || order.qrState === 'SERVED') return false;
   
+  // ⏱️ Industry-grade Timeout Guard: Hide QR after window expires
+  if (order.pickupWindow?.endTime && Date.now() > order.pickupWindow.endTime) {
+    return false;
+  }
+
   return order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE';
 };
 

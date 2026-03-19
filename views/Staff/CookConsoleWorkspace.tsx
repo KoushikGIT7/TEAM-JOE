@@ -39,8 +39,12 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
   const activeBatchSlot = useMemo(() => {
     const preparing = batches.find(b => b.status === 'PREPARING' || b.status === 'ALMOST_READY');
     if (preparing) return preparing.arrivalTimeSlot;
-    const queued = batches.filter(b => b.status === 'QUEUED').sort((a, b) => a.arrivalTimeSlot - b.arrivalTimeSlot);
-    return queued[0]?.arrivalTimeSlot || null;
+    
+    // 🛡️ RE-QUEUE SENSITIVITY: Pick the earliest QUEUED slot, but if there's a RE-QUEUED item, 
+    // it MUST appear at the front of the queue even if it belongs to a past slot.
+    const queuedItems = batches.filter(b => b.status === 'QUEUED' && b.quantity > 0)
+                               .sort((a, b) => a.arrivalTimeSlot - b.arrivalTimeSlot);
+    return queuedItems[0]?.arrivalTimeSlot || null;
   }, [batches]);
 
   const activeBatchSlotBatches = useMemo(() => {
@@ -48,33 +52,44 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
     return batches.filter(b => b.arrivalTimeSlot === activeBatchSlot);
   }, [batches, activeBatchSlot]);
 
-  const activeBatchStatus = activeBatchSlotBatches[0]?.status || 'QUEUED';
+  const activeBatchBatch = useMemo(() => {
+    // If any batch in this slot is QUEUED, the whole slot status for the button should be QUEUED/Start
+    const hasQueued = activeBatchSlotBatches.some(b => b.status === 'QUEUED');
+    return hasQueued ? 'QUEUED' : (activeBatchSlotBatches[0]?.status || 'QUEUED');
+  }, [activeBatchSlotBatches]);
+  
+  const activeBatchStatus = activeBatchBatch;
 
   const activeBatchItems = useMemo(() => {
     const agg: Record<string, { itemName: string; quantity: number }> = {};
     activeBatchSlotBatches.forEach(b => {
+      if (b.quantity <= 0) return; // Hide emptied re-queues
       if (!agg[b.itemId]) agg[b.itemId] = { itemName: b.itemName, quantity: 0 };
       agg[b.itemId].quantity += b.quantity;
     });
     return Object.values(agg);
   }, [activeBatchSlotBatches]);
 
-  const upcomingSlots = useMemo(() => {
-    const queued = batches.filter(b => b.status === 'QUEUED');
-    const upcoming = activeBatchSlot ? queued.filter(b => b.arrivalTimeSlot > activeBatchSlot) : queued;
+  // 🚀 UNIFIED FEED: Show all valid production slots in the pipeline
+  const productionFeed = useMemo(() => {
+    const validBatches = batches.filter(b => 
+      ['QUEUED', 'PREPARING', 'ALMOST_READY', 'READY'].includes(b.status) &&
+      (b.quantity > 0)
+    );
+    const groups: Record<number, PrepBatch[]> = {};
     
-    const slots: Record<number, { itemName: string; quantity: number }[]> = {};
-    upcoming.forEach(b => {
-      if (!slots[b.arrivalTimeSlot]) slots[b.arrivalTimeSlot] = [];
-      const item = slots[b.arrivalTimeSlot].find(i => i.itemName === b.itemName);
-      if (item) item.quantity += b.quantity;
-      else slots[b.arrivalTimeSlot].push({ itemName: b.itemName, quantity: b.quantity });
+    validBatches.forEach(b => {
+      const slot = b.arrivalTimeSlot;
+      if (!groups[slot]) groups[slot] = [];
+      groups[slot].push(b);
     });
-    return Object.entries(slots).sort(([a], [b]) => Number(a) - Number(b));
-  }, [batches, activeBatchSlot]);
+
+    return Object.entries(groups).sort(([a], [b]) => Number(a) - Number(b));
+  }, [batches]);
+
 
   const readyBatchesMapping = useMemo(() => {
-    const ready = batches.filter(b => b.status === 'READY');
+    const ready = batches.filter(b => b.status === 'READY' && b.quantity > 0);
     const slots: Record<number, { itemName: string; quantity: number }[]> = {};
     ready.forEach(b => {
       if (!slots[b.arrivalTimeSlot]) slots[b.arrivalTimeSlot] = [];
@@ -161,28 +176,52 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
 
              {/* UPCOMING COLUMN */}
              <div className="flex-1 flex flex-col gap-4 w-full lg:w-80 shrink-0">
-               {upcomingSlots.length > 0 ? (
-                 upcomingSlots.slice(0, 3).map(([slot, items]) => (
-                   <div key={slot} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col">
-                      <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-50">
-                        <div className="flex items-center gap-2">
-                           <Clock className="w-3 h-3 text-slate-400" />
-                           <h4 className="text-lg font-bold text-slate-800 font-mono">{formatSlot(Number(slot))}</h4>
+               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Production Feed</h4>
+               {productionFeed.length > 0 ? (
+                 productionFeed.map(([slot, batchesInSlot]) => {
+                   const isActive = Number(slot) === activeBatchSlot;
+                   const isPreparing = batchesInSlot.some(b => b.status === 'PREPARING' || b.status === 'ALMOST_READY');
+                   const isRequeued = batchesInSlot.some(b => b.isRequeued === true);
+                   
+                   // Aggregate items for display within this slot
+                   const aggregatedItems: Record<string, { itemName: string; quantity: number }> = {};
+                   batchesInSlot.forEach(b => {
+                     if (b.quantity <= 0) return;
+                     if (!aggregatedItems[b.itemId]) aggregatedItems[b.itemId] = { itemName: b.itemName, quantity: 0 };
+                     aggregatedItems[b.itemId].quantity += b.quantity;
+                   });
+                   const itemsToDisplay = Object.values(aggregatedItems);
+
+                   if (itemsToDisplay.length === 0) return null;
+
+                   return (
+                     <div key={slot} className={`bg-white rounded-2xl p-5 shadow-sm border ${isActive ? 'border-amber-500 bg-amber-50/10' : 'border-slate-200'} flex flex-col group hover:border-slate-400 transition-all`}>
+                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-50">
+                          <div className="flex items-center gap-2">
+                             <Clock className={`w-3 h-3 ${isActive ? 'text-amber-500' : 'text-slate-400'}`} />
+                             <h4 className={`text-lg font-bold ${isActive ? 'text-amber-600' : 'text-slate-800'} font-mono tracking-tighter`}>{formatSlot(Number(slot))}</h4>
+                          </div>
+                          {isActive ? (
+                             <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-1.5 py-0.5 rounded tracking-tighter uppercase ring-1 ring-amber-200">ACTIVE {isPreparing ? '• PREPARING' : ''}</span>
+                          ) : isRequeued ? (
+                             <span className="bg-red-100 text-red-700 text-[8px] font-black px-1.5 py-0.5 rounded tracking-tighter uppercase ring-1 ring-red-200">URGENT RE-FILL</span>
+                          ) : (
+                             <span className={`text-[9px] font-bold uppercase tracking-widest ${
+                               getUrgencyText(String(slot).padStart(4, '0')) === 'Delayed' ? 'text-red-500' : 'text-slate-400'
+                             }`}>{getUrgencyText(String(slot).padStart(4, '0'))}</span>
+                          )}
                         </div>
-                        <span className={`text-[9px] font-bold uppercase tracking-widest ${
-                          getUrgencyText(String(slot).padStart(4, '0')) === 'Delayed' ? 'text-red-500' : 'text-slate-400'
-                        }`}>{getUrgencyText(String(slot).padStart(4, '0'))}</span>
-                      </div>
-                      <div className="space-y-1.5">
-                         {items.map((it, idx) => (
-                           <div key={idx} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg">
-                             <span className="text-[10px] font-bold text-slate-500 uppercase">{it.itemName}</span>
-                             <span className="text-sm font-bold text-slate-900">×{it.quantity}</span>
-                           </div>
-                         ))}
-                      </div>
-                   </div>
-                 ))
+                        <div className="space-y-1.5">
+                           {itemsToDisplay.map((it, idx) => (
+                             <div key={idx} className={`flex justify-between items-center ${isActive ? 'bg-amber-50' : 'bg-slate-50'} px-3 py-2 rounded-lg group-hover:bg-slate-100 transition-colors`}>
+                               <span className="text-[10px] font-bold text-slate-500 uppercase">{it.itemName}</span>
+                               <span className="text-sm font-bold text-slate-900 font-mono">×{it.quantity}</span>
+                             </div>
+                           ))}
+                        </div>
+                     </div>
+                   );
+                 })
                ) : (
                   <div className="flex-1 border border-slate-200 border-dashed rounded-2xl flex flex-col items-center justify-center text-slate-300 bg-white/50">
                      <Timer className="w-8 h-8 mb-2 opacity-20" />

@@ -141,7 +141,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       if (!newCart[item.id]) {
         if (delta > 0) {
           const orderType = item.orderType || (FAST_ITEM_CATEGORIES.includes(item.category) ? 'FAST_ITEM' : 'PREPARATION_ITEM');
-          newCart[item.id] = { ...item, quantity: 1, orderType };
+          newCart[item.id] = { ...item, quantity: 1, orderType, status: 'PENDING' };
         }
       } else {
         let newQty = newCart[item.id].quantity + delta;
@@ -358,10 +358,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
               <div className="space-y-3 relative z-10">
                 <div className="flex justify-between items-end">
-                    <p className="text-[10px] font-bold text-textSecondary flex items-center gap-1.5">
+                    <div className="text-[10px] font-bold text-textSecondary flex items-center gap-1.5">
                         <div className={`w-2 h-2 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-primary'}`} />
                         {activeOrderFlow === 'READY' ? 'Collect from counter' : 'Optimal arrival in ~8m'}
-                    </p>
+                    </div>
                     <ChevronRight className="w-4 h-4 text-textSecondary opacity-30 group-hover:translate-x-1 transition-transform" />
                 </div>
                 <div className="h-2 bg-black/5 rounded-full overflow-hidden">

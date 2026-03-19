@@ -7,7 +7,7 @@ import { PrepBatch, Order, CartItem, PrepBatchStatus } from '../types';
  * Extracts items from an order and groups them into batches.
  */
 export const createBatchFromOrder = async (orderId: string, item: CartItem, slot: number): Promise<void> => {
-    const batchId = `batch_${slot}_${item.id}_${Math.floor(Math.random() * 20)}`;
+    const batchId = `batch_${slot}_${item.id}`;
     const batchRef = doc(db, "prepBatches", batchId);
     const snap = await getDoc(batchRef);
 
@@ -111,8 +111,8 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
             items: updatedItems,
             pickupWindow: {
                startTime: now,
-               endTime: now + 420000,
-               durationMs: 420000,
+               endTime: now + 60000,
+               durationMs: 60000,
                status: 'COLLECTING'
             },
             updatedAt: serverTimestamp()
@@ -183,4 +183,51 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): P
     });
 
     await Promise.all(batchPromises);
+};
+
+/**
+ * 6. requeueMissedOrder
+ * When an order is missed, we reset it to PENDING and move it to the next slot
+ * so it reappears in the Cook Console.
+ */
+export const requeueMissedOrder = async (orderId: string): Promise<void> => {
+    const orderRef = doc(db, "orders", orderId);
+    const orderSnap = await getDoc(orderRef);
+    if (!orderSnap.exists()) return;
+
+    const data = orderSnap.data() as Order;
+    
+    // Calculate Next Slot (Current time rounded UP to next 15-min interval)
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const nextSlotMins = Math.ceil((currentMins + 5) / 15) * 15; // 5 min buffer
+    const slotH = Math.floor(nextSlotMins / 60);
+    const slotM = nextSlotMins % 60;
+    const nextSlot = Number(`${slotH.toString().padStart(2, '0')}${slotM.toString().padStart(2, '0')}`);
+
+    const updatedItems: CartItem[] = (data.items || []).map(it => {
+        // If it was READY but missed, it needs to be made again (or re-staged)
+        if (it.status === 'READY' || it.status === 'MISSED') {
+            return { ...it, status: 'PENDING' } as CartItem;
+        }
+        return it as CartItem;
+    });
+
+    // 5. Update the Order manifest
+    await updateDoc(orderRef, {
+        orderStatus: 'ACTIVE',
+        serveFlowStatus: 'PENDING',
+        qrStatus: 'ACTIVE', // Reactivate the QR
+        arrivalTimeSlot: nextSlot,
+        items: updatedItems,
+        'pickupWindow.status': 'MISSED_PREVIOUS', // Audit trail
+        updatedAt: serverTimestamp()
+    });
+    
+    // 6. Integrate with Kitchen Batches (The "Re-Batching" step)
+    // Create or Update PrepBatches for the NEW slot so they show up in KitchenView
+    const batchPromises = updatedItems.map(it => createBatchFromOrder(orderId, it, nextSlot));
+    await Promise.all(batchPromises);
+
+    console.log(`🔄 Re-queued and Re-batched Order ${orderId} to Slot ${nextSlot}`);
 };

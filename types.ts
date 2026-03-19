@@ -1,5 +1,13 @@
+export const PICKUP_TIMEOUT_MS = 60000; // ⏱️ TEST MODE: 60 Seconds (was 7 mins)
+export const ROLES = {
+  ADMIN: 'ADMIN',
+  CASHIER: 'CASHIER',
+  SERVER: 'SERVER',
+  STUDENT: 'STUDENT',
+  GUEST: 'GUEST',
+} as const;
 
-export type UserRole = 'ADMIN' | 'CASHIER' | 'SERVER' | 'STUDENT' | 'GUEST';
+export type UserRole = keyof typeof ROLES;
 
 export interface UserProfile {
   uid: string;
@@ -28,20 +36,14 @@ export interface CartItem extends MenuItem {
   quantity: number;
   servedQty?: number;
   remainingQty?: number;
-  status?: 'PENDING' | 'PREPARING' | 'READY' | 'SERVED' | 'ABANDONED';
+  status: 'PENDING' | 'AWAITING_READY' | 'PREPARING' | 'READY' | 'COLLECTING' | 'MISSED' | 'MISSED_PREVIOUS' | 'SERVED' | 'READY_SERVED' | 'COMPLETED' | 'ABANDONED' | 'SERVED_PARTIAL';
 }
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'MISSED' | 'ABANDONED';
-export type QRStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED' | 'DESTROYED';
-
-/** Zero-wait: FAST_ITEM = instant serve at counter; PREPARATION_ITEM = kitchen flow + pickup window */
+export type QRStatus = 'ACTIVE' | 'SCANNED' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED' | 'DESTROYED' | 'MISSED' | 'ABANDONED';
+export type QRState = 'ACTIVE' | 'SCANNED' | 'USED' | 'SERVED' | 'DESTROYED' | 'REJECTED' | 'MISSED' | 'ABANDONED';
 export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
-
-/** Zero-wait serve flow: PAID | NEW → [QUEUED] → PREPARING → READY → SERVED. */
-export type ServeFlowStatus = 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'SERVED_PARTIAL' | 'READY_SERVED' | 'SERVED' | 'MISSED' | 'EXPIRED' | 'ABANDONED';
-
-/** QR lifecycle for fraud resistance: ACTIVE → SCANNED → SERVED */
-export type QRState = 'ACTIVE' | 'SCANNED' | 'USED' | 'SERVED' | 'DESTROYED' | 'REJECTED';
+export type ServeFlowStatus = 'PENDING' | 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'SERVED_PARTIAL' | 'READY_SERVED' | 'SERVED' | 'MISSED' | 'EXPIRED' | 'ABANDONED' | 'MISSED_PREVIOUS';
 
 /** Kitchen workflow: PLACED → COOKING → READY → SERVED */
 export type KitchenStatus = 'PLACED' | 'COOKING' | 'READY' | 'SERVED';
@@ -65,8 +67,8 @@ export interface Order {
   pickupWindow?: {
     startTime?: number; // ms, set when batch moves to READY
     endTime?: number;   // ms, startTime + 7 mins
-    durationMs: number; // default 420000 (7 mins)
-    status: 'AWAITING_READY' | 'COLLECTING' | 'MISSED' | 'COMPLETED' | 'ABANDONED';
+    durationMs: number; // default PICKUP_TIMEOUT_MS
+    status: 'AWAITING_READY' | 'COLLECTING' | 'MISSED' | 'COMPLETED' | 'ABANDONED' | 'MISSED_PREVIOUS';
   };
 
   /** Selected slot (dynamic items): e.g. 1230 for 12:30 PM. Stored as integer. */
@@ -113,6 +115,7 @@ export interface Order {
   overrides?: OverrideLog[];
   /** When the student was successfully alerted (deduplication) */
   notifiedAt?: number;
+  updatedAt?: number;
 }
 
 export interface QRData {
@@ -233,6 +236,7 @@ export interface PrepBatch {
   /** Slot representation: e.g. 1100, 1115, 1130... */
   arrivalTimeSlot: number;
   status: PrepBatchStatus;
+  isRequeued?: boolean;
   readyAt?: number;
   createdAt: number;
   updatedAt: number;

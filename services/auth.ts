@@ -31,15 +31,26 @@ const safeToMillis = (timestamp: any): number | undefined => {
   return undefined;
 };
 
+import { ROLES } from "../types";
+
 /**
- * Infer role from email address (fallback for incorrect Firestore data)
+ * Infer role from email address (Core Truth)
+ * HARDENED: Supports @joe.com and @joecafe.com
  */
-const inferRoleFromEmail = (email: string): UserRole | null => {
+export const inferRoleFromEmail = (email: string): UserRole | null => {
   if (!email) return null;
   const emailLower = email.toLowerCase();
-  if (emailLower.includes('admin@joecafe.com') || emailLower === 'admin@joecafe.com') return 'ADMIN';
-  if (emailLower.includes('cashier@joecafe.com') || emailLower === 'cashier@joecafe.com') return 'CASHIER';
-  if (emailLower.includes('server@joecafe.com') || emailLower === 'server@joecafe.com') return 'SERVER';
+  
+  // STAFF Patterns: Allow any domain for these specific prefix-based staff accounts
+  // or specifically @joecafe.com and @joe.com
+  const isStaffDomain = emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
+  
+  if (isStaffDomain) {
+    if (emailLower.startsWith('admin@'))   return ROLES.ADMIN;
+    if (emailLower.startsWith('cashier@')) return ROLES.CASHIER;
+    if (emailLower.startsWith('server@'))  return ROLES.SERVER;
+  }
+  
   return null;
 };
 
@@ -150,11 +161,32 @@ export const signIn = async (email: string, password: string): Promise<{ user: F
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
     
-    const userProfile = await getUserProfile(user.uid);
+    let userProfile = await getUserProfile(user.uid);
     
+    // AUTO-PROVISIONING: If profile missing but we can infer a role (Staff), create it on the fly.
     if (!userProfile) {
-      await firebaseSignOut(auth);
-      throw new Error('ACCESS_DENIED');
+      const inferredRole = inferRoleFromEmail(email);
+      if (inferredRole) {
+        console.log('👷 Auto-provisioning staff profile for', email);
+        const now = Date.now();
+        userProfile = {
+          uid: user.uid,
+          name: email.split('@')[0],
+          email: email,
+          role: inferredRole,
+          active: true,
+          createdAt: now,
+        };
+        await setDoc(doc(db, "users", user.uid), {
+          ...userProfile,
+          lastActive: serverTimestamp(),
+          createdAt: serverTimestamp()
+        }, { merge: true });
+      } else {
+        // Still missing and not a known staff email pattern
+        await firebaseSignOut(auth);
+        throw new Error('ACCESS_DENIED');
+      }
     }
     
     if (!userProfile.active) {
@@ -205,61 +237,105 @@ export const signOut = async (): Promise<void> => {
   }
 };
 
+import { onSnapshot as firestoreOnSnapshot, Unsubscribe } from "firebase/firestore";
+
 /**
- * Listen to authentication state changes
- * STRICT RBAC: If role invalid or profile missing, logs out immediately
+ * Real-time Authentication and Profile Listener
+ * CORE ARCHITECTURE: Uses onSnapshot for the profile to ensure 
+ * that role changes are reflected INSTANTLY in the UI.
  */
 export const onAuthStateChange = (
   callback: (user: FirebaseUser | null, profile: UserProfile | null) => void
-): (() => void) => {
-  return onAuthStateChanged(auth, async (firebaseUser) => {
-    if (firebaseUser) {
-      try {
-        let profile = await getUserProfile(firebaseUser.uid);
+): Unsubscribe => {
+  let profileUnsub: Unsubscribe | null = null;
 
-        if (!profile) {
-          // ⚡ HIGH-SPEED AUTO-CREATION FOR STUDENTS
-          // If we have a user but no profile, they are likely a new Google sign-in.
-          // We create a student profile on the fly to avoid blocking the UI.
+  const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    // Clear previous profile listener
+    if (profileUnsub) { 
+      profileUnsub();
+      profileUnsub = null;
+    }
+
+    if (!firebaseUser) {
+      callback(null, null);
+      return;
+    }
+
+    // Initialize real-time profile listener
+    profileUnsub = firestoreOnSnapshot(
+      doc(db, "users", firebaseUser.uid),
+      async (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          const email = data.email || firebaseUser.email || '';
+          const currentRole = (data.role || '').toUpperCase() as UserRole;
+          
+          // Role Integrity Auto-Correction
+          const inferredRole = inferRoleFromEmail(email);
+          if (inferredRole && inferredRole !== currentRole) {
+            console.log(`🛡️ Industry-grade Auto-Correction: ${email} -> ${inferredRole}`);
+            await setDoc(doc(db, "users", firebaseUser.uid), { 
+              role: inferredRole, 
+              lastActive: serverTimestamp() 
+            }, { merge: true });
+            // The snapshot listener will fire again with new data, so we don't return early
+            return;
+          }
+
+          if (!data.active) {
+            console.warn("🛑 Account deactivated:", email);
+            await firebaseSignOut(auth);
+            callback(null, null);
+            return;
+          }
+
+          const profile: UserProfile = {
+            uid: data.uid || firebaseUser.uid,
+            name: data.name || firebaseUser.displayName || 'Staff Member',
+            email: email,
+            role: currentRole,
+            active: data.active ?? true,
+            createdAt: safeToMillis(data.createdAt) ?? Date.now(),
+            lastActive: safeToMillis(data.lastActive)
+          };
+          callback(firebaseUser, profile);
+        } else {
+          // PROFILE MISSING: Auto-provision based on email pattern
+          const email = firebaseUser.email || '';
           const now = Date.now();
-          const studentProfile: UserProfile = {
+          const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT;
+          
+          const newProfile: UserProfile = {
             uid: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Student',
-            email: firebaseUser.email || '',
-            role: 'STUDENT',
+            name: firebaseUser.displayName || email.split('@')[0] || 'User',
+            email: email,
+            role: inferredRole,
             active: true,
             createdAt: now,
           };
 
-          // Background fire-and-forget sync to Firestore
-          setDoc(doc(db, "users", firebaseUser.uid), {
-            ...studentProfile,
+          console.log(`📦 Auto-provisioning profile for ${email} as ${inferredRole}`);
+          await setDoc(doc(db, "users", firebaseUser.uid), {
+            ...newProfile,
             lastActive: serverTimestamp(),
             createdAt: serverTimestamp()
-          }, { merge: true }).catch(err => console.error("Auto-profile sync failed:", err));
-
-          callback(firebaseUser, studentProfile);
-          return;
+          }, { merge: true });
+          
+          // No need to call callback yet, once setDoc finishes, the onSnapshot will fire again
         }
-
-        const allowedRoles: UserRole[] = ['ADMIN', 'CASHIER', 'SERVER', 'STUDENT'];
-        if (!allowedRoles.includes(profile.role)) {
-          console.error("🛑 INVALID ROLE detected for", firebaseUser.email);
-          await firebaseSignOut(auth);
-          callback(null, null);
-          return;
-        }
-
-        callback(firebaseUser, profile);
-      } catch (error) {
-        console.error("❌ onAuthStateChange: Error during RBAC check", error);
-        await firebaseSignOut(auth);
-        callback(null, null);
+      },
+      (error) => {
+        console.error("❌ Profile Sync Error:", error);
+        callback(firebaseUser, null);
       }
-    } else {
-      callback(null, null);
-    }
+    );
   });
+
+  // Return a cleanup function that unsubscribes from both
+  return () => {
+    authUnsub();
+    if (profileUnsub) profileUnsub();
+  };
 };
 
 /**
