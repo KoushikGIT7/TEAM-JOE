@@ -87,10 +87,14 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
     
     if (isDestroyed || isServed) {
+      // FAST_ITEM (Static) should return home faster
+      const isFast = order.orderType === 'FAST_ITEM';
+      const delay = isFast ? 1500 : 2500;
+      
       const timer = setTimeout(() => {
         if (onViewOrders) onViewOrders();
         else onBack();
-      }, 2500); 
+      }, delay); 
       return () => clearTimeout(timer);
     }
   }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus]);
@@ -322,6 +326,17 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
           View Order History
         </button>
       </div>
+
+      {/* ── Order Completion Animation (Overlay) ── */}
+      {isServed && (
+        <div className="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-10 animate-in fade-in duration-700">
+           <div className="w-32 h-32 bg-green-50 rounded-[3rem] flex items-center justify-center mb-10 animate-in zoom-in duration-1000 delay-300">
+              <CheckCircle2 className="w-16 h-16 text-green-600" />
+           </div>
+           <h2 className="text-4xl font-black text-gray-900 mb-4 tracking-tighter text-center">Meal Received!</h2>
+           <p className="text-gray-400 font-bold text-lg text-center leading-relaxed">Hope you enjoy every bite. Returning to the menu shortly.</p>
+        </div>
+      )}
     </div>
   );
 };
