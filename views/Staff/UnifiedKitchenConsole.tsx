@@ -101,7 +101,6 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // --- CORE DATA STATE ---
   const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
-
   // Operational sync is handled by the global maintenance loop in the next useEffect.
 
   
@@ -109,6 +108,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER'>('SERVER');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [optimisticOrders, setOptimisticOrders] = useState<Record<string, Order>>({});
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [localScanBuffer, setLocalScanBuffer] = useState<string[]>([]);
@@ -199,6 +199,9 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         orderId = orderId.split('.')[1]; 
     }
 
+    // Auto-close camera immediately on a good scan to show items
+    setIsCameraOpen(false);
+
     // 🔒 [SONIC-LOCK] Belt and suspenders application-level lock
     if (inFlightTokenRef.current === orderId) {
         resumeScanner();
@@ -237,6 +240,9 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     try {
       // Background / delayed decisive verification
       const { order, result } = await validateQRForServing(rawData.trim(), profile.uid);
+      
+      // 🧬 Rapid Render Sync: merge validated order into local cache to bypass Firestore push latency
+      setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
 
       if (!optimisticFired) {
          if (result === 'CONSUMED') {
@@ -338,10 +344,20 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
              <CookConsoleWorkspace batches={batches} />
           ) : (
              <ServerConsoleWorkspace 
-                activeOrders={activeOrders}
-                scanQueue={scanQueue}
-                isCameraOpen={isCameraOpen}
-                setIsCameraOpen={setIsCameraOpen}
+            activeOrders={useMemo(() => {
+              // Merge optimistic (recently scanned) orders with active orders for sub-millisecond rendering
+              const merged = [...activeOrders];
+              Object.values(optimisticOrders).forEach(oo => {
+                if (!merged.find(m => m.id === oo.id)) {
+                  merged.push(oo);
+                }
+              });
+              return merged;
+            }, [activeOrders, optimisticOrders])}
+            scanQueue={localScanBuffer}
+            setScanQueue={setLocalScanBuffer}
+            isCameraOpen={isCameraOpen}
+            setIsCameraOpen={setIsCameraOpen}
                 handleQRScan={handleQRScan}
                 handleServeItem={handleServeItem}
                 handleServeAll={handleServeFullOrder}
