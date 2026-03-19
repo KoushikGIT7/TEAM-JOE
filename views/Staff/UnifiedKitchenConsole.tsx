@@ -178,7 +178,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   // --- HEADLESS SCANNER INPUT FOCUS ---
   useEffect(() => {
-    if (activeWorkspace !== 'SERVER') return;
+    if (activeWorkspace !== 'SERVER' || !isCameraOpen) return;
 
     const focusT = setInterval(() => {
       const el = document.getElementById('headless-scanner-input');
@@ -187,8 +187,11 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
     const scanner = initializeScanner({ suffixKey: 'Enter', autoFocus: true });
     scanner.onScan((data) => {
-      if (activeWorkspace === 'SERVER') {
-        handleQRScan(data);
+      // 🛡️ [Principal Architect] Double-gate: only scan if camera is open AND we aren't already processing
+      if (activeWorkspace === 'SERVER' && isCameraOpen && !inFlightTokenRef.current) {
+         // Lock immediately to prevent race conditions from millisecond frames
+         inFlightTokenRef.current = 'PENDING'; 
+         handleQRScan(data);
       }
     });
 
@@ -196,7 +199,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       clearInterval(focusT);
       scanner.destroy();
     };
-  }, [activeWorkspace]);
+  }, [activeWorkspace, isCameraOpen]);
 
   // --- OPERATIONAL HANDLERS ---
   const handleQRScan = async (rawData: string, resumeScanner: () => void = () => {}) => {
