@@ -65,10 +65,10 @@ const SmoothImage: React.FC<SmoothImageProps> = ({
           src={optimizedSrc}
           alt={alt}
           loading="eager"
-          decoding="async"
+          decoding="sync"
           className={`
-            transition-all duration-700 ease-out
-            ${isLoaded ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-105 blur-lg'}
+            transition-opacity duration-200 ease-out
+            ${isLoaded ? 'opacity-100' : 'opacity-0'}
             ${className}
           `}
           onLoad={() => setIsLoaded(true)}
