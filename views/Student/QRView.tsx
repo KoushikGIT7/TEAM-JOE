@@ -134,7 +134,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   // ⏱️ Industry-grade Immediate Lockdown (Client-side)
   const isTimeExpired = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
   const isMissed = uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired;
-  const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
+  const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED' || order.qrStatus === 'DESTROYED';
   
   // Resolve strict status
   let statusKey = 'SCHEDULED';
