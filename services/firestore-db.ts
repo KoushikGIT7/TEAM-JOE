@@ -1555,17 +1555,6 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                }
                return it;
             });
-            
-            // Re-check: If by serving FAST_ITEMs everything is served (rare but possible), close the order.
-            const allServedNow = updateData.items.every((it: any) => it.status === 'SERVED' || it.status === 'ABANDONED');
-            if (allServedNow) {
-               updateData.qrStatus = 'DESTROYED';
-               updateData.qrState = 'SERVED';
-               updateData.orderStatus = 'COMPLETED';
-               updateData.serveFlowStatus = 'SERVED';
-               updateData.servedAt = now;
-               updateData["pickupWindow.status"] = 'COMPLETED';
-            }
          }
 
          tx.update(orderRef, updateData);
