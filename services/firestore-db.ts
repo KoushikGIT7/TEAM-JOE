@@ -1501,13 +1501,14 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
              throw new Error("ALREADY_SCANNED");
           }
 
-          // 2. Define if this is a Pure Lunch (Plate Meal) order
-          const isStatic = order.items.every(it => it.category === 'Lunch' && it.orderType === 'FAST_ITEM');
+          // 2. Define if this is a Pure Static (Instant Serve) order
+          // A Static order is one where EVERY item is a FAST_ITEM (Lunch, Snacks, Beverages)
+          const isStatic = order.items.every(it => it.orderType === 'FAST_ITEM');
           const pStatus = order.pickupWindow?.status;
 
-          // Only orders consisting EXCLUSIVELY of Lunch Fast-Items (Plate Meals) are served automatically.
+          // Only orders consisting EXCLUSIVELY of Fast-Items are served automatically.
           const canIntake = 
-             isStatic || // Static orders are always intakeable if not consumed (checked above)
+             isStatic || // Static orders are always intakeable if not consumed
              pStatus === 'COLLECTING' ||
              fStatus === 'READY' || fStatus === 'ALMOST_READY' ||
              fStatus === 'MISSED' || fStatus === 'MISSED_PREVIOUS' ||
@@ -1532,6 +1533,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
          };
 
          if (isStatic) {
+            // ⚡ [SONIC-ATOMIC] Pure Static Completion
             updateData.qrStatus = 'DESTROYED';
             updateData.qrState = 'SERVED';
             updateData.orderStatus = 'COMPLETED';

@@ -217,78 +217,70 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     };
   }, [activeWorkspace, isCameraOpen]);
 
+  // --- SONIC SCAN LOCKS (Hard synchronous gates) ---
+  const scanLockRef = useRef(false);
+  const scanHistoryRef = useRef<Record<string, number>>({});
+
   // --- OPERATIONAL HANDLERS ---
   const handleQRScan = async (rawData: string, resumeScanner: () => void = () => {}) => {
-    if (!rawData?.trim()) {
-      resumeScanner();
-      return;
-    }
+    if (!rawData?.trim()) return;
     
-    // Auto-close camera immediately on a good scan to show items
+    // 🛡️ [PRINCIPAL-LOCK] Hard synchronous gate to block redundant frames instantly
+    if (scanLockRef.current) return;
+    scanLockRef.current = true;
+
+    // 🛡️ [COOLDOWN-SHIELD] 3-second mandatory ignore window for the same token
+    const now = Date.now();
+    const lastScan = scanHistoryRef.current[rawData] || 0;
+    if (now - lastScan < 3000) {
+       // Silent ignore for 3 seconds per business rule
+       setTimeout(() => { scanLockRef.current = false; }, 500); // Quick release for different items
+       return;
+    }
+    scanHistoryRef.current[rawData] = now;
+
+    // 🛑 STOP CAMERA IMMEDIATELY (Reduces CPU and stops library from firing again)
     setIsCameraOpen(false);
 
-    // Extract raw ID for local locking
-    const targetId = rawData.trim().startsWith('v1.') 
-        ? rawData.trim().split('.')[1] 
-        : rawData.trim().replace('order_', '');
-
-    // 🔒 [SONIC-LOCK] Belt and suspenders application-level lock
-    if (inFlightTokenRef.current === targetId) {
-        return;
-    }
-    inFlightTokenRef.current = targetId;
-
-    const resetAndResume = (delayMs = 2500) => {
-      setTimeout(() => {
-        inFlightTokenRef.current = null;
-        if (isCameraOpen) resumeScanner();
-      }, delayMs);
+    // [SONIC-SYNC] Pulse Reset Timeout
+    const releaseLock = (delay = 3000) => {
+        setTimeout(() => {
+            scanLockRef.current = false;
+        }, delay);
     };
 
     try {
         // ⚡ [SONIC-ATOMIC] Hand off entirely to the single backend transaction
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
 
-        // [SONIC-SYNC] Immediately update optimistic state for sub-millisecond display
+        // [SONIC-SYNC] Immediately update optimistic state 
         setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
         
         if (result === 'CONSUMED') {
-           console.log("🟢 [SONIC] Atomic Static serving for:", order.id);
-           lastSuccessRef.current = { id: order.id, time: Date.now() };
            triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`);
+           setLocalScanBuffer(prev => prev.filter(id => id !== order.id)); // Instantly remove from queue
         } else if (result === 'MANIFESTED') {
-           console.log("🟠 [SONIC] Dynamic Intake for:", order.id);
            setLocalScanBuffer(prev => prev.includes(order.id) ? prev : [order.id, ...prev]);
-           triggerSonicPulse('SUCCESS', 'MEAL VERIFIED', `#${order.id.slice(-4).toUpperCase()} – Manifested.`);
+           triggerSonicPulse('SUCCESS', 'MEAL VERIFIED', `#${order.id.slice(-4).toUpperCase()} – Added.`);
         } else if (result === 'ALREADY_MANIFESTED') {
-           triggerSonicPulse('SUCCESS', 'ALREADY SCANNED', `#${order.id.slice(-4).toUpperCase()} – In queue.`);
+           triggerSonicPulse('SUCCESS', 'IN QUEUE', 'Items already on manifest.');
         }
         
-        resetAndResume(1200);
+        releaseLock(3000); // 3s cooldown as per strict requirement
     } catch (err: any) {
         const msg = err?.message || String(err);
         
-        // 🛡️ [Principal Architect] Hardware Bounce Guard:
-        // If the hardware decoder fires again while the student is walking away, 
-        // silently ignore the 'Already Consumed' error if it happened within 5s of success.
-        if (msg.includes('ALREADY_CONSUMED') && lastSuccessRef.current?.id === targetId && (Date.now() - lastSuccessRef.current.time) < 5000) {
-            resetAndResume(1500);
-            return;
-        }
-
-        console.log('❌ SCAN FAILED:', msg);
-        
         if (msg.includes('ALREADY_CONSUMED')) {
             triggerSonicPulse('ERROR', 'ALREADY SERVED', 'Ticket was consumed.');
+        } else if (msg.includes('ALREADY_SCANNED')) {
+            triggerSonicPulse('ERROR', 'ALREADY SCANNED', 'In manifests.');
         } else if (msg.includes('SECURITY_BREACH')) {
-            triggerSonicPulse('ERROR', 'INVALID TOKEN', 'Security verification failed.');
-        } else if (msg.includes('SERVE_BLOCKED')) {
-            triggerSonicPulse('ERROR', 'NOT READY', msg.replace('SERVE_BLOCKED - ', ''));
+            triggerSonicPulse('ERROR', 'INVALID TOKEN', 'Verification failed.');
         } else {
             triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
         }
         
-        resetAndResume(1500);
+        releaseLock(3000); // Red error also gets 3s cooldown
     }
   };
 
