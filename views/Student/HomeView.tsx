@@ -7,7 +7,7 @@ import {
 import SmartImage from '../../components/Common/SmartImage';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
 import { CATEGORIES, FAST_ITEM_CATEGORIES } from '../../constants';
-import { listenToMenu, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
+import { getMenuOnce, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import { useMotivationalHeadline } from '../../hooks/useMotivationalHeadline';
 import MotivationalHeadline from '../../components/MotivationalHeadline';
@@ -36,11 +36,17 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const { stockByItemId, isOutOfStock, canAddToCart } = useInventory();
 
   useEffect(() => {
-    const unsubscribe = listenToMenu((items) => {
-      setMenu(items);
-      setLoading(false);
-    });
-    return unsubscribe;
+    const loadMenu = async () => {
+      try {
+        const items = await getMenuOnce();
+        setMenu(items);
+        setLoading(false);
+      } catch (e) {
+        console.error("Menu fetch failed:", e);
+        setLoading(false);
+      }
+    };
+    loadMenu();
   }, []);
 
   useEffect(() => {

@@ -378,21 +378,28 @@ export const deleteMenuItem = async (id: string): Promise<void> => {
   }
 };
 
-export const listenToMenu = (callback: (items: MenuItem[]) => void): (() => void) => {
-  // Auto-initialize if collection is empty
-  initializeMenu();
+export const getMenuOnce = async (): Promise<MenuItem[]> => {
+  try {
+    const snapshot = await getDocs(query(collection(db, "menu")));
+    return snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as MenuItem))
+      .filter(item => item.active !== false)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    console.error("Error fetching menu:", error);
+    return [];
+  }
+};
 
+export const listenToMenu = (callback: (items: MenuItem[]) => void): (() => void) => {
+  // Staff still needs real-time, but students should use getMenuOnce
   return onSnapshot(
     query(collection(db, "menu")),
     (snapshot) => {
       const items = snapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        } as MenuItem))
-        .filter(item => item.active !== false) // Filter active items in-memory
-        .sort((a, b) => a.name.localeCompare(b.name)); // Sort by name in-memory
-      
+        .map(doc => ({ id: doc.id, ...doc.data() } as MenuItem))
+        .filter(item => item.active !== false)
+        .sort((a, b) => a.name.localeCompare(b.name));
       callback(items);
     },
     (error) => {
@@ -568,7 +575,40 @@ export const listenToInventory = (callback: (items: InventoryItem[]) => void): (
 // INVENTORY META (real-time stock for students: totalStock, consumed, lowStockThreshold)
 // ============================================================================
 
-/** Real-time inventory_meta listener. Use includeMetadataChanges: false to reduce bandwidth. */
+/** [PERFORMANCE ARCHITECT] - Cached inventory data to prevent Spark Tier exhaust. */
+let cachedInventoryMeta: InventoryMetaItem[] = [];
+let lastMetaFetch = 0;
+const META_TTL = 30000; // 30s cache
+
+export const getInventoryMetaOnce = async (force: boolean = false): Promise<InventoryMetaItem[]> => {
+  if (!force && Date.now() - lastMetaFetch < META_TTL && cachedInventoryMeta.length > 0) {
+    return cachedInventoryMeta;
+  }
+  try {
+    const snapshot = await getDocs(collection(db, "inventory_meta"));
+    const items = snapshot.docs.map((d: any) => {
+      const data = d.data();
+      return {
+        itemId: d.id,
+        totalStock: data.totalStock ?? 0,
+        consumed: data.consumed ?? 0,
+        lowStockThreshold: data.lowStockThreshold ?? 20,
+        available: data.available ?? Math.max(0, (data.totalStock ?? 0) - (data.consumed ?? 0)),
+        stockStatus: data.stockStatus,
+        itemName: data.itemName,
+        category: data.category,
+      };
+    });
+    cachedInventoryMeta = items;
+    lastMetaFetch = Date.now();
+    return items;
+  } catch (error) {
+    console.error("Error fetching inventory_meta once:", error);
+    return cachedInventoryMeta;
+  }
+};
+
+/** Real-time inventory_meta listener. STAFF ONLY. Students should use getInventoryMetaOnce. */
 export const listenToInventoryMeta = (
   callback: (items: InventoryMetaItem[]) => void,
   options?: { includeMetadataChanges?: boolean }
@@ -578,19 +618,13 @@ export const listenToInventoryMeta = (
   const onNext = (snapshot: any) => {
     const items: InventoryMetaItem[] = snapshot.docs.map((d: any) => {
       const data = d.data();
-      const totalStock = data.totalStock ?? 0;
-      const consumed = data.consumed ?? 0;
-      const lowStockThreshold = data.lowStockThreshold ?? 20;
       return {
         itemId: d.id,
-        totalStock,
-        consumed,
-        lowStockThreshold,
-        available:
-          data.available != null
-            ? data.available
-            : Math.max(0, totalStock - consumed),
-        stockStatus: data.stockStatus ?? undefined,
+        totalStock: data.totalStock ?? 0,
+        consumed: data.consumed ?? 0,
+        lowStockThreshold: data.lowStockThreshold ?? 20,
+        available: data.available ?? Math.max(0, (data.totalStock ?? 0) - (data.consumed ?? 0)),
+        stockStatus: data.stockStatus,
         itemName: data.itemName,
         category: data.category,
       };
@@ -602,15 +636,6 @@ export const listenToInventoryMeta = (
     console.error("Error listening to inventory_meta:", error);
     callback([]);
   };
-
-  if (options?.includeMetadataChanges) {
-    return onSnapshot(
-      colRef,
-      { includeMetadataChanges: true },
-      onNext,
-      onError
-    );
-  }
 
   return onSnapshot(colRef, onNext, onError);
 };
@@ -1404,8 +1429,6 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
 
 /**
  * ⚡ [SONIC-ATOMIC] SUPERSONIC INTAKE ENGINE
- * Single transaction for: Validate -> Consume/Manifest -> Result.
- * This is the ROOT FIX for duplications and infinite loops.
  */
 export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
    let orderId = qrPayload;
@@ -1616,92 +1639,64 @@ export const getNextLogicalSlot = (slot: number): number => {
     return h * 100 + nextM;
 };
 
-// Batch serve multiple quantities of an item
-export const serveItemBatch = async (orderId: string, itemId: string, quantity: number, servedBy: string): Promise<void> => {
+// Atomic multi-item serve for a single order (Prevents 429 and write amplification)
+export const serveOrderItemsAtomic = async (orderId: string, itemIds: string[], servedBy: string): Promise<void> => {
   try {
     const orderRef = doc(db, "orders", orderId);
-    const serveLogsRef = collection(db, "serveLogs");
-
     await runTransaction(db, async (tx) => {
-      const orderSnap = await tx.get(orderRef);
-      if (!orderSnap.exists()) throw new Error("Order not found");
-
-      const orderData = orderSnap.data();
-      const order = firestoreToOrder(orderSnap.id, orderData);
-
-      // 🔍 READ ALL BATCHES FIRST (CRITICAL: READS BEFORE WRITES)
-      const batchIds = order.batchIds || [];
-      const batchSnaps = await Promise.all(batchIds.map(bId => tx.get(doc(db, "prepBatches", bId))));
-
-      if (order.orderStatus === 'SERVED') throw new Error("Order already served");
-      if (order.paymentStatus !== 'SUCCESS') throw new Error("Payment not verified");
-
-      // Allow serving if COLLECTING, READY, or manually overridden
-      const isAllowedToServe =
-        order.pickupWindow?.status === 'COLLECTING' ||
-        order.serveFlowStatus === 'READY' ||
-        order.qrRedeemable === true;
-      if (!isAllowedToServe) {
-        throw new Error(`SERVE_BLOCKED - Order is ${order.serveFlowStatus || order.pickupWindow?.status || 'NOT_READY'}. Only READY orders can be served.`);
-      }
-
-
-      const itemIndex = order.items.findIndex(i => i.id === itemId);
-      if (itemIndex === -1) throw new Error("Item not found in order");
-      const item = order.items[itemIndex];
-      if (item.remainingQty < quantity) throw new Error("Not enough remaining quantity");
-
-      // Update item quantities and status
-      const updatedItems = [...order.items];
-      const newServedQty = (item.servedQty || 0) + quantity;
-      const newRemainingQty = Math.max(0, item.remainingQty - quantity);
+      const snap = await tx.get(orderRef);
+      if (!snap.exists()) throw new Error("Order not found");
+      const orderData = snap.data();
+      const now = Date.now();
       
-      updatedItems[itemIndex] = {
-        ...item,
-        servedQty: newServedQty,
-        remainingQty: newRemainingQty,
-        status: newRemainingQty <= 0 ? 'SERVED' : item.status
-      };
-
-      // [DERIVED-STATE] Check if all items are completed
-      const allServed = updatedItems.every(i => i.status === 'SERVED' || i.status === 'ABANDONED' || (i.remainingQty === 0 && i.quantity > 0));
-      const hasAnyServed = updatedItems.some(i => i.status === 'SERVED');
-      
-      const newOrderStatus = allServed ? 'COMPLETED' : (hasAnyServed ? 'SERVED' : order.orderStatus);
-      const newServeFlowStatus = allServed ? 'SERVED' : (hasAnyServed ? 'SERVED_PARTIAL' : order.serveFlowStatus);
-
-      // Update order
-      tx.update(orderRef, {
-        items: updatedItems,
-        orderStatus: newOrderStatus,
-        serveFlowStatus: newServeFlowStatus,
-        servedAt: allServed ? Date.now() : (order.servedAt || null),
-        updatedAt: serverTimestamp(),
-        qrStatus: allServed ? 'DESTROYED' : order.qrStatus,
-        qrState: allServed ? 'SERVED' : 'SCANNED',
+      const updatedItems = (orderData.items || []).map((it: any) => {
+        if (itemIds.includes(it.id)) {
+          const qty = it.remainingQty !== undefined ? it.remainingQty : it.quantity;
+          if (qty > 0) {
+            return {
+              ...it,
+              status: 'SERVED',
+              remainingQty: 0,
+              servedQty: (it.servedQty || 0) + qty,
+              servedAt: now,
+              servedBy
+            };
+          }
+        }
+        return it;
       });
 
-      // ✍️ SYNC PREP BATCHES: Decrement quantities in the production pipeline
-      for (const bSnap of batchSnaps) {
-         if (!bSnap.exists()) continue;
-         const bData = bSnap.data() as PrepBatch;
+      const allServed = updatedItems.every((it: any) => it.status === 'SERVED' || it.status === 'ABANDONED');
+      
+      const updateData: any = {
+        items: updatedItems,
+        updatedAt: serverTimestamp(),
+        lastServedBy: servedBy,
+        lastServedAt: now
+      };
 
-         // If this batch belongs to the item we just served, decrement its quantity
-         if (bData.itemId === itemId && bData.status !== 'COMPLETED') {
-            const newQty = Math.max(0, bData.quantity - quantity);
-            const newStatus = newQty <= 0 ? 'COMPLETED' : bData.status;
-            tx.update(bSnap.ref, { 
-               quantity: newQty, 
-               status: newStatus,
-               updatedAt: serverTimestamp() 
-            });
-         }
+      if (allServed) {
+        updateData.qrStatus = 'DESTROYED';
+        updateData.qrState = 'SERVED';
+        updateData.orderStatus = 'COMPLETED';
+        updateData.serveFlowStatus = 'SERVED';
+        updateData.servedAt = now;
+      } else {
+        updateData.qrStatus = 'ACTIVE'; // Keep active for remaining items
+        updateData.serveFlowStatus = 'SERVED_PARTIAL';
       }
+
+      tx.update(orderRef, updateData);
     });
-  } catch (err: any) {
-    console.error("Error serving item batch:", err);
-    throw err;
+  } catch (error) {
+    console.error("Error in serveOrderItemsAtomic:", error);
+    throw error;
   }
+};
+
+// Legacy wrapper for single item batch serve (uses the optimized atomic engine)
+export const serveItemBatch = async (orderId: string, itemId: string, quantity: number, servedBy: string): Promise<void> => {
+   return serveOrderItemsAtomic(orderId, [itemId], servedBy);
 };
 
 /**

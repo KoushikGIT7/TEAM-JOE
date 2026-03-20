@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { listenToInventoryMeta, getStockStatus } from '../services/firestore-db';
+import { getInventoryMetaOnce, getStockStatus } from '../services/firestore-db';
 import type { InventoryMetaItem, StockStatus } from '../types';
 
 export interface StockInfo {
@@ -24,11 +24,19 @@ export function useInventory(): {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = listenToInventoryMeta((items) => {
-      setMetaList(items);
-      setLoading(false);
-    });
-    return unsubscribe;
+    const fetch = async () => {
+      try {
+        const items = await getInventoryMetaOnce();
+        setMetaList(items);
+        setLoading(false);
+      } catch (e) {
+        console.error("Inventory fetch failed:", e);
+      }
+    };
+    fetch();
+    // Refresh stock every 30 seconds instead of real-time listener (Quota protection)
+    const t = setInterval(fetch, 30000);
+    return () => clearInterval(t);
   }, []);
 
   const stockByItemId = useMemo(() => {

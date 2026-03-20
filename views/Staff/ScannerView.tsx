@@ -4,7 +4,14 @@ import {
   Smartphone, User, Clock, XCircle, ShoppingBag, Zap
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
-import { validateQRForServing, rejectOrderFromCounter, serveItemBatch, forceReadyOrder } from '../../services/firestore-db';
+import { 
+  rejectOrderFromCounter, 
+  forceReadyOrder, 
+  listenToActiveOrders, 
+  serveOrderItemsAtomic,
+  validateQRForServing
+} from '../../services/firestore-db';
+import { parseQRPayload } from '../../services/qr';
 import Logo from '../../components/Logo';
 import QRScanner from '../../components/QRScanner';
 
@@ -25,32 +32,72 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
 
   const busy = serving || rejecting;
 
+  const [activePool, setActivePool]       = useState<Order[]>([]);
+  const lastScannedIdRef                  = React.useRef<string | null>(null);
+  const scanLockRef                       = React.useRef<boolean>(false);
+
+  // 🛡️ [Principal Architect] - Real-time sync of all active orders in the station.
+  // This is the CORE CACHE that prevents Quota Exceeded errors.
+  React.useEffect(() => {
+    const unsub = listenToActiveOrders((data) => {
+      setActivePool(data);
+    });
+    return () => unsub();
+  }, []);
+
   const reset = () => {
     setTerminalState('IDLE');
     setScannedOrder(null);
     setErrorMsg('');
+    lastScannedIdRef.current = null;
+    scanLockRef.current = false;
   };
 
   const handleScan = useCallback(async (rawData: string) => {
-    if (terminalState === 'SCANNING') return;
+    // 🛡️ [STABLE-SHIELD] Synchronous gate to prevent scan-storm
+    if (scanLockRef.current || terminalState !== 'IDLE') return;
+    scanLockRef.current = true;
+
     setTerminalState('SCANNING');
-    setScannedOrder(null);
     setErrorMsg('');
 
     try {
-      const { order, result } = await validateQRForServing(rawData.trim(), profile.uid);
-      setScannedOrder(order);
+      const data = rawData.trim();
       
-      if (result === 'CONSUMED') {
-         setTerminalState('SUCCESS');
-      } else {
-         setTerminalState('REVIEW');
+      // 1. Parsing payload locally first (0ms cost)
+      let targetId = data;
+      const parsed = await parseQRPayload(data);
+      if (parsed) targetId = parsed.orderId;
+
+      // Dedupe: Skip if we just scanned this 
+      if (lastScannedIdRef.current === targetId) {
+        scanLockRef.current = false;
+        setTerminalState('IDLE');
+        return;
       }
+      lastScannedIdRef.current = targetId;
+
+      // 2. [ROOT FIX] Look-up from local activeOrders cache (Zero Quota Usage!)
+      const localMatched = activePool.find(o => o.id === targetId || o.id.slice(-8) === targetId.slice(-8));
+
+      if (localMatched) {
+        setScannedOrder(localMatched);
+        setTerminalState('REVIEW');
+        scanLockRef.current = false;
+        return;
+      }
+
+      // 3. Fallback: Direct DB validation only if item is NOT in active cache (unlikely)
+      const { order, result } = await validateQRForServing(data, profile.uid);
+      setScannedOrder(order);
+      setTerminalState(result === 'CONSUMED' ? 'SUCCESS' : 'REVIEW');
     } catch (err: any) {
       setErrorMsg(err.message || 'Verification Error');
       setTerminalState('ERROR');
+    } finally {
+      scanLockRef.current = false;
     }
-  }, [terminalState, profile.uid]);
+  }, [terminalState, profile.uid, activePool]);
 
   const handleServeAll = async () => {
     if (!scannedOrder || busy) return;
@@ -65,12 +112,15 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
          throw new Error("Active prep remaining. Use override if physically ready.");
       }
 
-      for (const item of scannedOrder.items) {
-        const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
-        if (remaining > 0) {
-          await serveItemBatch(scannedOrder.id, item.id, remaining, profile.uid);
-        }
+      // [ROOT FIX] Serve EVERYTHING in one atomic transaction (Prevents multiple network hits)
+      const targetItemIds = scannedOrder.items
+        .filter(it => (it.remainingQty || 0) > 0)
+        .map(it => it.id);
+
+      if (targetItemIds.length > 0) {
+        await serveOrderItemsAtomic(scannedOrder.id, targetItemIds, profile.uid);
       }
+      
       setTerminalState('SUCCESS');
       setScannedOrder(null);
     } catch (err: any) {
