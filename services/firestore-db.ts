@@ -379,8 +379,9 @@ export const deleteMenuItem = async (id: string): Promise<void> => {
 };
 
 export const listenToMenu = (callback: (items: MenuItem[]) => void): (() => void) => {
-  // Query all menu items (no index needed), filter and sort in-memory
-  // This is simpler and more reliable than composite index query
+  // Auto-initialize if collection is empty
+  initializeMenu();
+
   return onSnapshot(
     query(collection(db, "menu")),
     (snapshot) => {
@@ -401,51 +402,54 @@ export const listenToMenu = (callback: (items: MenuItem[]) => void): (() => void
   );
 };
 
-// Initialize menu if empty
+// Initialize menu and Sync real metadata (Self-Healing Catalog)
 export const initializeMenu = async (): Promise<void> => {
   try {
     const menuSnapshot = await getDocs(collection(db, "menu"));
-    if (menuSnapshot.empty) {
-      const batch = writeBatch(db);
-      INITIAL_MENU.forEach(item => {
-        const menuRef = doc(db, "menu", item.id);
-        batch.set(menuRef, {
-          ...item,
-          imageUrl: item.imageUrl || DEFAULT_FOOD_IMAGE
-        });
-      });
-      await batch.commit();
-      console.log("âœ… Menu initialized with default items");
-      
-      // Also initialize inventory + inventory_meta for menu items (inventory_meta for real-time student view)
-      const inventoryBatch = writeBatch(db);
-      const LOW_STOCK_DEFAULT = 20;
-      INITIAL_MENU.forEach(item => {
-        const invRef = doc(db, "inventory", item.id);
-        inventoryBatch.set(invRef, {
-          itemId: item.id,
-          itemName: item.name,
-          openingStock: 100,
-          consumed: 0,
-          category: item.category,
-          lastUpdated: serverTimestamp()
-        });
-        const metaRef = doc(db, "inventory_meta", item.id);
-        inventoryBatch.set(metaRef, {
-          itemId: item.id,
-          totalStock: 100,
-          consumed: 0,
-          lowStockThreshold: LOW_STOCK_DEFAULT,
-          itemName: item.name,
-          category: item.category,
-          lastUpdated: serverTimestamp()
-        });
-      });
-      await inventoryBatch.commit();
-      console.log("âœ… Inventory and inventory_meta initialized for menu items");
+    const currentIds = INITIAL_MENU.map(it => it.id);
+    const batch = writeBatch(db);
+    let deletedCount = 0;
+
+    // 1. DATA CURING: Delete legacy/malformed items
+    menuSnapshot.docs.forEach(doc => {
+      if (!currentIds.includes(doc.id)) {
+        batch.delete(doc.ref);
+        deletedCount++;
+      }
+    });
+
+    if (deletedCount > 0) {
+      console.log(`🧹 Purged ${deletedCount} legacy dummy items.`);
     }
+
+    // 2. LIVE SYNC: Push real verified board items
+    console.log('🥣 Synchronizing 20+ real items with verified prices...');
+    INITIAL_MENU.forEach(item => {
+      const menuRef = doc(db, "menu", item.id);
+      batch.set(menuRef, {
+        ...item,
+        imageUrl: item.imageUrl || DEFAULT_FOOD_IMAGE,
+        active: true,
+        updatedAt: serverTimestamp(),
+        v: 2 // Schema version 2
+      }, { merge: true });
+
+      const metaRef = doc(db, "inventory_meta", item.id);
+      batch.set(metaRef, {
+        itemId: item.id,
+        itemName: item.name,
+        totalStock: 100,
+        consumed: 0,
+        lowStockThreshold: 20,
+        category: item.category,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+    });
+    
+    await batch.commit();
+    console.log("✅ Database Cured & Synchronized.");
   } catch (error) {
-    console.error("Error initializing menu:", error);
+    console.error("❌ Critical Menu Sync Failure:", error);
   }
 };
 

@@ -32,7 +32,7 @@ const SmartImage: React.FC<SmartImageProps> = ({
   priority = 'auto',
   className = '',
   containerClassName = '',
-  fallbackSrc = 'https://via.placeholder.com/400?text=No+Image',
+  fallbackSrc = 'https://placehold.co/400?text=No+Image',
   placeholderColor = '#f1f5f9',
   variant = 'card',
   ...props
@@ -124,7 +124,7 @@ const SmartImage: React.FC<SmartImageProps> = ({
           ${status === 'loaded' ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-105 blur-lg'}
           ${className}
         `}
-        style={priority === 'high' ? { zIndex: 1 } : {}}
+        style={{ objectPosition: 'center', ...(priority === 'high' ? { zIndex: 1 } : {}) }}
         {...props}
       />
 

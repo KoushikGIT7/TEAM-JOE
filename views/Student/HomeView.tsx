@@ -4,7 +4,7 @@ import {
   Menu, X as CloseIcon, User, Clock, ShieldCheck, 
   ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
 } from 'lucide-react';
-import SmoothImage from '../../components/SmoothImage';
+import SmartImage from '../../components/Common/SmartImage';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
 import { CATEGORIES, FAST_ITEM_CATEGORIES } from '../../constants';
 import { listenToMenu, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
@@ -112,21 +112,41 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   useEffect(() => {
     const savedCart = localStorage.getItem('joe_cart');
-    if (savedCart) {
+    if (savedCart && menu.length > 0) {
       try {
         const parsed = JSON.parse(savedCart) as CartItem[];
+        // LEGACY CLEANUP: If items have old numeric IDs ('1', '2'...), clear them entirely
+        const hasLegacy = parsed.some(it => !isNaN(Number(it.id)));
+        
+        if (hasLegacy) {
+          localStorage.removeItem('joe_cart');
+          setCart({});
+          return;
+        }
+
         const cartMap: Record<string, CartItem> = {};
-        parsed.forEach(item => { cartMap[item.id] = item; });
+        let changed = false;
+        
+        parsed.forEach(item => { 
+          if (menu.find(m => m.id === item.id)) {
+            cartMap[item.id] = item; 
+          } else {
+            changed = true;
+          }
+        });
+        
         setCart(cartMap);
+        if (changed) {
+          localStorage.setItem('joe_cart', JSON.stringify(Object.values(cartMap)));
+        }
       } catch (e) {
         console.error("Cart restore error", e);
       }
     }
-  }, []);
+  }, [menu]);
 
   const cartItemsCount = Object.keys(cart).reduce((acc: number, key: string) => {
-    const item = cart[key];
-    return acc + (item ? item.quantity : 0);
+    return acc + (cart[key]?.quantity || 0);
   }, 0);
 
   const cartTotal = Object.keys(cart).reduce((acc: number, key: string) => {
@@ -135,10 +155,12 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   }, 0);
 
   const filteredMenu = useMemo(() => {
-    return menu.filter(item => 
+    const filtered = menu.filter(item => 
       item.category === selectedCategory && 
       item.name.toLowerCase().includes(search.toLowerCase())
     );
+    // Sort Breakfast items to keep common things like Idli/Dosa at top
+    return filtered.sort((a, b) => a.id.localeCompare(b.id));
   }, [selectedCategory, search, menu]);
 
   const updateCart = React.useCallback((item: MenuItem, delta: number) => {
@@ -402,66 +424,92 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         </div>
       ) : (
         <div className="p-4 grid grid-cols-2 gap-4 animate-in fade-in duration-500">
-          {filteredMenu.map(item => {
+          {filteredMenu.map((item, idx) => {
             const stock = stockByItemId[item.id];
             const available = stock?.available ?? 999;
             const status = stock?.status ?? 'AVAILABLE';
             const outOfStock = available <= 0;
             const lowStock = status === 'LOW_STOCK';
             const canAdd = !outOfStock && canAddToCart(item.id, cart[item.id]?.quantity ?? 0);
+
             return (
-              <div key={item.id} className={`bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-black/5 group hover:border-primary/20 transition-all flex flex-col active:scale-[0.98] ${outOfStock ? 'opacity-80' : ''}`}>
-                <div className="h-32 bg-gray-100 overflow-hidden relative">
-                <SmoothImage 
-                    src={item.imageUrl} 
-                    alt={item.name} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                    containerClassName="h-32"
-                />
-                  <div className="absolute top-4 right-4 bg-white/95 backdrop-blur px-3 py-1.5 rounded-xl text-xs font-black text-textMain shadow-lg border border-black/5">
-                    ₹{item.price}
+              <div key={item.id} className={`bg-white rounded-[2rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col h-full group transition-all duration-300 ${outOfStock ? 'grayscale-[0.5] opacity-80' : 'hover:shadow-md'}`}>
+                {/* 📸 IMAGE HERO SLIGHTLY LARGER */}
+                <div className="relative h-44 w-full bg-slate-50 overflow-hidden">
+                  <SmartImage 
+                      src={item.imageUrl} 
+                      alt={item.name} 
+                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                      priority={idx < 4 ? 'high' : 'auto'}
+                  />
+                  {/* VEG INDICATOR FLOATING TOP LEFT */}
+                  <div className="absolute top-3 left-3 bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-black/5">
+                     <div className="w-2.5 h-2.5 border-2 border-green-600 flex items-center justify-center rounded-sm">
+                        <div className="w-1 h-1 bg-green-600 rounded-full" />
+                     </div>
                   </div>
-                  {stock && (
-                    <div className={`absolute bottom-2 left-2 right-2 text-center text-[10px] font-bold py-1 rounded-lg ${
-                      outOfStock ? 'bg-error/90 text-white' : lowStock ? 'bg-amber-500/90 text-white' : 'bg-success/90 text-white'
-                    }`}>
-                      {outOfStock ? 'Out of Stock' : lowStock ? `Low Stock (${available} left)` : `Available (${available} left)`}
+                  
+                  {/* STATUS FLOATING BOTTOM CENTER */}
+                  {outOfStock && (
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center">
+                       <span className="bg-white/95 text-slate-900 px-4 py-2 rounded-full text-[10px] font-black tracking-widest uppercase">Sold Out</span>
+                    </div>
+                  )}
+                  
+                  {lowStock && !outOfStock && (
+                    <div className="absolute bottom-3 left-3 bg-amber-500/90 text-white px-2.5 py-1 rounded-full text-[9px] font-black tracking-tight border border-white/20">
+                       Only {available} Left
                     </div>
                   )}
                 </div>
-                <div className="p-5 flex-1 flex flex-col justify-between">
-                  <h3 className="font-black text-textMain text-xs leading-relaxed mb-4">{item.name}</h3>
-                  <div className="flex items-center justify-between">
-                    {cart[item.id] ? (
-                      <div className="flex items-center gap-2 bg-gray-50 rounded-2xl p-1 w-full justify-between border border-black/5">
+
+                {/* 📝 CONTENT COMPACT & SIMPLE */}
+                <div className="p-4 flex-1 flex flex-col">
+                  <div className="mb-4">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.category}</p>
+                    <h3 className="text-sm font-black text-slate-800 leading-tight tracking-tight line-clamp-2 min-h-[40px]">{item.name}</h3>
+                  </div>
+
+                  {/* 💰 PRICE & ACTION - CLEAN SPACED */}
+                  <div className="mt-auto flex items-center justify-between pt-1">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-slate-400 font-bold tracking-tight">Price</span>
+                      <span className="text-base font-black text-slate-900 tracking-tighter">₹{item.price}</span>
+                    </div>
+
+                    <div>
+                      {cart[item.id] ? (
+                        <div className="flex items-center bg-slate-100 rounded-full p-0.5 border border-slate-200">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); updateCart(item, -1); }}
+                            className="w-8 h-8 flex items-center justify-center bg-white text-slate-900 rounded-full shadow-sm active:scale-95 transition-all"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="px-3 text-xs font-black text-slate-900">{cart[item.id].quantity}</span>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); canAdd && updateCart(item, 1); }}
+                            className={`w-8 h-8 flex items-center justify-center bg-primary text-white rounded-full shadow-lg active:scale-95 transition-all ${!canAdd ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
                         <button 
-                          onClick={() => updateCart(item, -1)}
-                          className="w-9 h-9 flex items-center justify-center bg-white text-textMain rounded-xl shadow-sm active:scale-75 transition-all border border-black/5"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="font-black text-xs text-textMain">{cart[item.id].quantity}</span>
-                        <button 
-                          onClick={() => canAdd && updateCart(item, 1)}
+                          onClick={(e) => { e.stopPropagation(); canAdd && updateCart(item, 1); }}
                           disabled={!canAdd}
-                          className={`w-9 h-9 flex items-center justify-center rounded-xl shadow-lg active:scale-75 transition-all ${canAdd ? 'bg-primary text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                          className={`
+                            px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all active:scale-95
+                            ${!canAdd 
+                              ? 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed' 
+                              : 'bg-primary text-white shadow-xl shadow-primary/20 hover:shadow-primary/40'
+                            }
+                          `}
                         >
-                          <Plus className="w-3.5 h-3.5" />
+                          Add
                         </button>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => canAdd && updateCart(item, 1)}
-                        disabled={!canAdd}
-                        className={`w-full py-3.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest rounded-2xl border transition-all active:scale-95 ${
-                          outOfStock
-                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                            : 'bg-primary/5 text-primary border-primary/20 hover:bg-primary hover:text-white'
-                        }`}
-                      >
-                        <Plus className="w-3 h-3" /> {outOfStock ? 'Out of Stock' : 'Add Item'}
-                      </button>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
