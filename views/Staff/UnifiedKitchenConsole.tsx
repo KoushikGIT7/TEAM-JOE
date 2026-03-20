@@ -15,7 +15,7 @@ import {
   serveOrderItemsAtomic,
   processAtomicIntake
 } from '../../services/firestore-db';
-import { parseQRPayload } from '../../services/qr';
+import { parseQRPayload, parseServingQR } from '../../services/qr';
 import { initializeScanner } from '../../services/scanner';
 import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
@@ -168,7 +168,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       if (status === 'SUCCESS') navigator.vibrate(100);
       else navigator.vibrate([200, 100, 200]);
     }
-    setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 1000 : 2500);
+    setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 700 : 2500);
   };
 
   // --- REFS ---
@@ -237,13 +237,21 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
        setTimeout(() => { scanLockRef.current = false; }, 500); // Quick release for different items
        return;
     }
-    scanHistoryRef.current[rawData] = now;
+    // 🔊 [SONIC-BOOST] Instant Haptic Feedback
+    if ('vibrate' in navigator) navigator.vibrate(80);
 
-    // 🛑 STOP CAMERA IMMEDIATELY (Reduces CPU and stops library from firing again)
+    const intake = parseServingQR(rawData.trim());
+    
+    // [SONIC-PULSE] PRELIMINARY OPTIMISTIC FEEDBACK
+    if (intake.orderId) {
+       triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
+    }
+
+    // 🛑 STOP CAMERA IMMEDIATELY
     setIsCameraOpen(false);
 
-    // [SONIC-SYNC] Pulse Reset Timeout
-    const releaseLock = (delay = 3000) => {
+    // [SONIC-SYNC] Reset Timeout (REDUCED: 1.2s for rapid-fire)
+    const releaseLock = (delay = 1200) => {
         setTimeout(() => {
             scanLockRef.current = false;
         }, delay);
@@ -269,7 +277,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
            triggerSonicPulse('SUCCESS', 'IN QUEUE', 'Items already on manifest.');
         }
         
-        releaseLock(3000); // 3s cooldown as per strict requirement
+        releaseLock(1200); // 1.2s rapid recovery
     } catch (err: any) {
         const msg = err?.message || String(err);
         
@@ -283,7 +291,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
             triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
         }
         
-        releaseLock(3000); // Red error also gets 3s cooldown
+        releaseLock(1200); // 1.2s rapid recovery
     }
   };
 
@@ -387,7 +395,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
           {/* ⚡ [SONIC] FEEDBACK OVERLAY (Principal UX lanes) */}
           {sonicMode.status !== 'IDLE' && (
-            <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-150 ${
+            <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
                 sonicMode.status === 'SUCCESS' ? 'bg-emerald-600' : 'bg-rose-600'
             }`}>
                <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
