@@ -50,7 +50,7 @@ import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SER
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
-export const PICKUP_WINDOW_DURATION_MS = 60 * 1000; // ⏱️ TEST MODE: 1 Minute Pickup Window
+export const PICKUP_WINDOW_DURATION_MS = 180 * 1000; // ⏱️ TEST MODE: 3 Minutes Pickup Window
 import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
   useCallables,

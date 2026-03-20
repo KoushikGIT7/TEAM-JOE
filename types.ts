@@ -1,4 +1,4 @@
-export const PICKUP_TIMEOUT_MS = 60000; // ⏱️ TEST MODE: 60 Seconds (was 7 mins)
+export const PICKUP_TIMEOUT_MS = 180000; // ⏱️ TEST MODE: 3 Minutes (was 60s)
 export const ROLES = {
   ADMIN: 'ADMIN',
   CASHIER: 'CASHIER',
