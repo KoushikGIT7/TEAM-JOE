@@ -69,7 +69,7 @@ service cloud.firestore {
              'kitchenStatus', 'serveFlowStatus', 'items', 'pickupWindow', 
              'estimatedReadyTime', 'updatedAt', 'arrivalTimeSlot', 
              'batchIds', 'missedCount', 'orderStatus', 'qrStatus', 'qrState',
-             'scannedAt', 'qrStatus'
+             'scannedAt', 'qrStatus', 'paymentStatus', 'rejectedAt', 'rejectedBy'
            ]) &&
          request.resource.data.updatedAt == request.time
         )
