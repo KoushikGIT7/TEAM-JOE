@@ -1486,29 +1486,34 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
          }
 
          // 💼 BUSINESS RULES
-         // Only orders consisting EXCLUSIVELY of Lunch Fast-Items (Plate Meals) are served automatically.
-         const isStatic = order.items.every(it => it.category === 'Lunch' && it.orderType === 'FAST_ITEM');
-         const pStatus = order.pickupWindow?.status;
-         const fStatus = order.serveFlowStatus;
+          // 1. Guard against double-intake (infinite scanning loop)
+          const fStatus = order.serveFlowStatus; // Moved up for use in isConsumed
+          const isConsumed = (order.qrStatus as any) === 'DESTROYED' || fStatus === 'SERVED' || order.orderStatus === 'COMPLETED';
+          if (isConsumed) {
+             throw new Error("ALREADY_CONSUMED");
+          }
 
-         // Static (Lunch) orders are siempre intakeable.
-         // Mixed/Dynamic orders follow specific lifecycle checks.
-         const canIntake = 
-            isStatic ||
-            pStatus === 'COLLECTING' ||
-            fStatus === 'READY' || fStatus === 'ALMOST_READY' ||
-            fStatus === 'MISSED' || fStatus === 'MISSED_PREVIOUS' ||
-            fStatus === 'SERVED_PARTIAL' ||
-            pStatus === 'MISSED_PREVIOUS' ||
-            pStatus === 'ABANDONED' || fStatus === 'ABANDONED' ||
-            (!isStatic && (
-               fStatus === 'PENDING' || fStatus === 'NEW' ||
-               fStatus === 'QUEUED' || fStatus === 'PREPARING'
-            ));
+          // 2. Define if this is a Pure Lunch (Plate Meal) order
+          const isStatic = order.items.every(it => it.category === 'Lunch' && it.orderType === 'FAST_ITEM');
+          const pStatus = order.pickupWindow?.status;
 
-         if (!canIntake) {
-            throw new Error(`SERVE_BLOCKED - Status: ${pStatus || fStatus || 'PENDING'}.`);
-         }
+          // Only orders consisting EXCLUSIVELY of Lunch Fast-Items (Plate Meals) are served automatically.
+          const canIntake = 
+             isStatic || // Static orders are always intakeable if not consumed (checked above)
+             pStatus === 'COLLECTING' ||
+             fStatus === 'READY' || fStatus === 'ALMOST_READY' ||
+             fStatus === 'MISSED' || fStatus === 'MISSED_PREVIOUS' ||
+             fStatus === 'SERVED_PARTIAL' ||
+             pStatus === 'MISSED_PREVIOUS' ||
+             pStatus === 'ABANDONED' || fStatus === 'ABANDONED' ||
+             (!isStatic && (
+                fStatus === 'PENDING' || fStatus === 'NEW' ||
+                fStatus === 'QUEUED' || fStatus === 'PREPARING'
+             ));
+
+          if (!canIntake) {
+             throw new Error(`SERVE_BLOCKED - Status: ${pStatus || fStatus || 'PENDING'}.`);
+          }
 
          // 📸 INTAKE ACTION
          const now = Date.now();
