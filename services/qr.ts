@@ -245,6 +245,83 @@ export const generateQRPayloadSync = (order: Order): string => {
 };
 
 /**
+ * 🏷️ structured result for QR resolution
+ */
+export interface ParsedIntakeQR {
+  raw: string;
+  orderId: string;
+  paymentMode: 'CASH' | 'UPI' | 'UNKNOWN';
+  timestamp?: number;
+  qrKind: 'SECURE_V1' | 'LEGACY_CASH' | 'PLAINTEXT' | 'MALFORMED';
+}
+
+/**
+ * 🧩 [SONIC-PARSER] Central Authority for ID Resolution (Principal Architect)
+ * Extracts a valid Firestore orderId from ANY raw scan payload.
+ * Strictly decoupled from Firestore to ensure multi-platform speed.
+ * 
+ * DESIGN LOGIC:
+ * 1. Online/Modern: v1.ORDER_ID.SIGNATURE.EXPIRY (Dot-separated)
+ * 2. Cash/Legacy: QR_CASH_ORDER_ID_TIMESTAMP (Underscore-prefixed)
+ * 3. Fallback: order_XXXX (Plaintext)
+ */
+export const parseServingQR = (rawData: string): ParsedIntakeQR => {
+  if (!rawData) return { raw: '', orderId: '', paymentMode: 'UNKNOWN', qrKind: 'MALFORMED' };
+  const data = rawData.trim();
+  
+  // 🔬 Diagnostic Capture
+  const result: ParsedIntakeQR = {
+    raw: data,
+    orderId: '',
+    paymentMode: 'UNKNOWN',
+    qrKind: 'MALFORMED'
+  };
+
+  // --- PATH 1: Modern Secure Payload (v1.order_xxxx.hash.exp) ---
+  if (data.startsWith('v1.')) {
+     const parts = data.split('.');
+     if (parts.length >= 3) {
+        result.orderId = parts[1];
+        result.qrKind = 'SECURE_V1';
+        result.paymentMode = 'UPI'; // Default for secure flow
+        result.timestamp = parseInt(parts[3] || '0', 10);
+        return result;
+     }
+  }
+
+  // --- PATH 2: Legacy Cash Confirmation (QR_CASH_order_xxxx_time) ---
+  if (data.startsWith('QR_CASH_')) {
+     const parts = data.split('_');
+     result.paymentMode = 'CASH';
+     result.qrKind = 'LEGACY_CASH';
+     result.timestamp = parseInt(parts[parts.length - 1], 10);
+
+     // Strategy: Sift for the 'order_' token
+     const orderIdx = parts.findIndex(p => p.startsWith('order_'));
+     if (orderIdx !== -1) {
+        result.orderId = parts[orderIdx];
+     } else if (parts[2] === 'order' && parts[3]) {
+        // Fallback for parts: ['QR', 'CASH', 'order', 'xxxx', 't']
+        result.orderId = `order_${parts[3]}`;
+     }
+     
+     if (result.orderId) return result;
+  }
+
+  // --- PATH 3: Plaintext / Naked ID Recovery ---
+  if (data.startsWith('order_')) {
+     result.orderId = data;
+     result.qrKind = 'PLAINTEXT';
+  } else if (data.length >= 4 && !data.includes('.')) {
+     // Auto-normalize naked IDs (e.g. keyboard entry or shortcut scan)
+     result.orderId = `order_${data}`;
+     result.qrKind = 'PLAINTEXT';
+  }
+
+  return result;
+};
+
+/**
  * Parse and validate QR payload (REDESIGNED for speed)
  */
 export const parseQRPayload = async (qrString: string): Promise<{ 
@@ -257,10 +334,20 @@ export const parseQRPayload = async (qrString: string): Promise<{
   const trimmedData = qrString.trim();
 
   try {
+    // 🛡️ RE-ROUTE: If it's a CASH token, handle it as a manual-override intake
+    if (trimmedData.startsWith('QR_CASH_')) {
+       return { 
+          version: 'cash', 
+          orderId: parseServingQR(trimmedData).orderId, 
+          secureHash: 'MANUAL_OVERRIDE',
+          expiresAt: 0 
+       };
+    }
+
     // 1. Check if it matches new dot-separated format (Compact)
     if (trimmedData.startsWith('v1.')) {
       const parts = trimmedData.split('.');
-      if (parts.length === 4) {
+      if (parts.length >= 4) {
         return {
           version: parts[0],
           orderId: parts[1],

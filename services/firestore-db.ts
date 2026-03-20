@@ -51,7 +51,7 @@ import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SER
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
 export const PICKUP_WINDOW_DURATION_MS = 180 * 1000; // ⏱️ TEST MODE: 3 Minutes Pickup Window
-import { parseQRPayload, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
+import { parseQRPayload, parseServingQR, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
   useCallables,
   createOrderCallable,
@@ -1442,30 +1442,18 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
  * ⚡ [SONIC-ATOMIC] SUPERSONIC INTAKE ENGINE
  */
 export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
-   let orderId = qrPayload;
-   let secureHash = 'MANUAL_OVERRIDE';
-   let payloadExpiresAt: number | undefined;
+   const intake = parseServingQR(qrPayload);
+   const parsedPayload = await parseQRPayload(qrPayload);
 
-   let parsedPayload = await parseQRPayload(qrPayload);
-   
-   if (!parsedPayload) {
-      // Manual overrides or raw IDs will skip the deep security check.
-      // E.g. manual typing of "order_123" by cashier.
-      orderId = qrPayload;
-      secureHash = 'MANUAL_OVERRIDE';
-   } else {
-      orderId = parsedPayload.orderId;
-      secureHash = parsedPayload.secureHash;
-      payloadExpiresAt = parsedPayload.expiresAt;
-   }
+   console.log(`[ATOMIC-INTAKE] Input: ${intake.raw} | Resolved ID: ${intake.orderId} | Kind: ${intake.qrKind}`);
 
-   // Normalization
-   let resolvedId = orderId;
-   if (resolvedId && !resolvedId.startsWith('order_')) {
-      resolvedId = 'order_' + resolvedId;
-   }
+   let orderId = intake.orderId;
+   let secureHash = parsedPayload?.secureHash || 'MANUAL_OVERRIDE';
+   let payloadExpiresAt = parsedPayload?.expiresAt;
+
    // Attempt to probe for the order if it's missing (helps with manual entry/short IDs)
-   let orderRef = doc(db, "orders", resolvedId);
+   // CRITICAL: We ONLY search by the resolved ID, never the raw payload.
+   let orderRef = doc(db, "orders", orderId);
    let initialSnap = await getDoc(orderRef);
 
    if (!initialSnap.exists() && orderId.length >= 4) {
@@ -1478,8 +1466,8 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
       const snaps = await getDocs(q);
       const found = snaps.docs.find(d => d.id.endsWith(orderId) || d.id.toLowerCase().endsWith(orderId.toLowerCase()));
       if (found) {
-         resolvedId = found.id;
-         orderRef = doc(db, "orders", resolvedId);
+         orderId = found.id;
+         orderRef = doc(db, "orders", orderId);
       }
    }
 
