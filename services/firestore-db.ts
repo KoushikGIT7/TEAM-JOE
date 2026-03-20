@@ -2586,25 +2586,28 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
           "items": (data.items || []).map((it: any) => ({ ...it, status: 'ABANDONED' }))
         });
       } else {
+        const isDynamic = (data.items || []).some((it: any) => it.orderType === 'PREPARATION_ITEM');
+        
         const reQueuedItems = (data.items || []).map((it: any) => {
-           // ONLY RE-QUEUE if the item was READY or MISSED. 
-           // If it was already SERVED (partial order), or its remainingQty is 0, don't re-cook it!
            const remQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
            if (remQty > 0 && (it.status === 'READY' || it.status === 'COLLECTING' || it.status === 'MISSED' || it.status === 'READY_SERVED')) {
-             return { ...it, status: 'PENDING', remainingQty: remQty };
+             // 🛡️ [PRINCIPAL-FIX] Only revert items to PENDING if they actually need cooking!
+             // Static items (Lunch/Fast) should stay in their READY state or move to MISSED.
+             const canRequeue = it.orderType === 'PREPARATION_ITEM';
+             return { ...it, status: canRequeue ? 'PENDING' : it.status, remainingQty: remQty };
            }
            return it;
         });
 
         // 1. Update the Order doc
         masterBatch.update(d.ref, {
-          "pickupWindow.status": 'MISSED_PREVIOUS', 
-          "serveFlowStatus": 'PENDING',
+          "pickupWindow.status": 'COLLECTING', // Keep active
+          "serveFlowStatus": isDynamic ? 'PENDING' : 'READY', // Never show 'Preparing' for static!
           "orderStatus": 'ACTIVE',
           "qrStatus": 'ACTIVE',
           "qrState": 'ACTIVE',
           "missedCount": currentMissedCount,
-          "arrivalTimeSlot": nextSlot,
+          "arrivalTimeSlot": nextSlot, // Audit trail
           "items": reQueuedItems,
           "updatedAt": serverTimestamp()
         });

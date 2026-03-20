@@ -111,8 +111,8 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
             items: updatedItems,
             pickupWindow: {
                startTime: now,
-               endTime: now + 60000,
-               durationMs: 60000,
+               endTime: now + 600000,
+               durationMs: 600000,
                status: 'COLLECTING'
             },
             updatedAt: serverTimestamp()
