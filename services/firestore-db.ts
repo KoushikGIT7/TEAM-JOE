@@ -2280,14 +2280,17 @@ const internalCreateBatchFromOrder = async (orderId: string, item: CartItem, slo
 };
 
 export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
+  // 🚀 [Principal Fix] Index-Free Resilience
+  // We fetch by creation time and filter status in JS to avoid breaking on missing 
+  // composite Firestore index in test/prod environments.
   return onSnapshot(
     query(
       collection(db, "prepBatches"), 
-      where("status", "in", ["QUEUED", "PREPARING", "ALMOST_READY", "READY"]),
+      orderBy("createdAt", "desc"),
       limit(100)
     ),
     (snapshot) => {
-      const batches = snapshot.docs.map(doc => {
+      const allBatches = snapshot.docs.map(doc => {
         const data = doc.data();
         return { 
           ...data,
@@ -2296,7 +2299,14 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
           updatedAt: data.updatedAt?.toMillis?.() || Date.now()
         } as PrepBatch;
       });
-      const sorted = batches.sort((a, b) => (a.arrivalTimeSlot || 0) - (b.arrivalTimeSlot || 0));
+
+      // Filter in JS: Only keep active production batches
+      const activeBatches = allBatches.filter(b => 
+        ["QUEUED", "PREPARING", "ALMOST_READY", "READY"].includes(b.status)
+      );
+
+      // Sort by slot time for the display logic
+      const sorted = activeBatches.sort((a, b) => (a.arrivalTimeSlot || 0) - (b.arrivalTimeSlot || 0));
       callback(sorted);
     },
     (error) => {

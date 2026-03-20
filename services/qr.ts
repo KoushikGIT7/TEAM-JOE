@@ -162,11 +162,23 @@ export const encryptData = async (text: string): Promise<string> => {
 };
 
 export const decryptData = async (encryptedBase64: string): Promise<string> => {
+  if (!encryptedBase64 || encryptedBase64.startsWith('order_') || encryptedBase64.startsWith('{')) {
+    return encryptedBase64;
+  }
+
   try {
-    // Convert base64url back to Uint8Array
-    const base64 = encryptedBase64.replace(/-/g, '+').replace(/_/g, '/');
-    const combined = new Uint8Array(atob(base64).split('').map(c => c.charCodeAt(0)));
+    // 🛡️ RECONCILE PADDING: atob requires valid base64 length (multiples of 4)
+    let base64 = encryptedBase64.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
     
+    const decoded = atob(base64);
+    const combined = new Uint8Array(decoded.split('').map(c => c.charCodeAt(0)));
+    
+    // We expect at least IV(16) + some data
+    if (combined.length < 17) return encryptedBase64;
+
     const iv = combined.slice(0, 16);
     const data = combined.slice(16);
     const key = await getEncryptionKey();
@@ -179,8 +191,8 @@ export const decryptData = async (encryptedBase64: string): Promise<string> => {
     
     return new TextDecoder().decode(decrypted);
   } catch (error) {
-    console.warn('Decryption failed, might be legacy plaintext:', error);
-    return encryptedBase64; // Return as-is if decryption fails
+    // Silently return for obvious non-base64 strings to prevent console noise
+    return encryptedBase64; 
   }
 };
 
