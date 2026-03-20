@@ -55,7 +55,7 @@ export interface Order {
   items: CartItem[];
   totalAmount: number;
   paymentType: 'UPI' | 'CARD' | 'CASH' | 'NET';
-  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED';
+  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED' | 'INITIATED';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
   /** Zero-wait: FAST_ITEM (instant serve) vs PREPARATION_ITEM (kitchen + pickup window) */
@@ -154,7 +154,7 @@ export interface TransactionRecord {
   orderId: string;
   amount: number;
   type: 'UPI' | 'CARD' | 'CASH' | 'NET';
-  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'INITIATED' | 'AUTHORIZED';
   createdAt: number;
 }
 

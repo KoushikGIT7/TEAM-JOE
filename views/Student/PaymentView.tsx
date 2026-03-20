@@ -99,7 +99,12 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     setState('PROCESSING');
 
     try {
-      // 🛡️ BUSINESS RULE: Max 1 Plate Meal per order
+      // 🛡️ [SONIC-PAY] UI Logic
+      const isUPI = selectedMethod === 'UPI';
+      const isCash = selectedMethod === 'CASH';
+      const idempotencyKey = activeAttemptKey;
+
+      // 🛑 Restriction: Max 1 Plate Meal per order
       const plateMealQty = cart
         .filter(it => it.category === 'Lunch')
         .reduce((sum, it) => sum + it.quantity, 0);
@@ -108,24 +113,21 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         throw new Error("Restriction: Only 1 Plate Meal (Lunch) is allowed per person.");
       }
 
-      const isCash = selectedMethod === 'CASH';
-      // Stable guest/user ID for logging but NOT for idempotency uniqueness (handled by activeAttemptKey)
+      // 👤 Identify Guest/User
       let guestId = profile?.uid;
       if (!guestId) {
         const stored = sessionStorage.getItem('joe_guest_id');
-        if (stored) {
-          guestId = stored;
-        } else {
-          guestId = `guest_${Math.random().toString(36).substr(2, 12)}`;
-          sessionStorage.setItem('joe_guest_id', guestId);
-        }
+        guestId = stored || `guest_${Math.random().toString(36).substr(2, 12)}`;
+        if (!stored) sessionStorage.setItem('joe_guest_id', guestId);
       }
       const guestName = profile?.name || 'Guest';
 
-      // ⚡ [ROOT-FIX] Use the locked activeAttemptKey. 
-      // This is unique to the MILLISECOND this checkout component was mounted.
-      // It is impossible for this to collide with a past served order.
-      const idempotencyKey = activeAttemptKey;
+      // ⚡ [SONIC-PAY] UPI Intent Link
+      const generateUPILink = (id: string, amt: number) => {
+        const pa = 'fcgtub@oksbi';
+        const pn = 'JOE Cafeteria';
+        return `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&tr=${id}&tn=${encodeURIComponent(`Order ${id.slice(-4)}`)}&am=${amt}&cu=INR`;
+      };
 
       const newOrderId = await createOrder({
         userId: guestId,
@@ -133,10 +135,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         items: cart,
         totalAmount: total,
         paymentType: selectedMethod as any,
-        paymentStatus: isCash ? 'PENDING' : 'SUCCESS',
+        paymentStatus: isCash ? 'PENDING' : 'INITIATED' as any,
         arrivalTime: isDynamic ? (arrivalTime ?? undefined) : undefined,
         orderStatus: 'PENDING',
-        qrStatus: isCash ? 'PENDING_PAYMENT' : 'ACTIVE',
+        qrStatus: 'PENDING_PAYMENT',
         cafeteriaId: 'MAIN_CAFE',
         idempotencyKey
       });
@@ -144,9 +146,16 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       setOrderId(newOrderId);
       localStorage.removeItem('joe_cart');
       
-      // Navigate to QR View / Manifest immediately so user sees token
-      onSuccess(newOrderId);
+      if (isUPI) {
+        window.location.href = generateUPILink(newOrderId, total);
+        setState('CASH_WAITING');
+      } else if (isCash) {
+        setState('CASH_WAITING');
+      } else {
+        onSuccess(newOrderId);
+      }
     } catch (err: any) {
+      console.error("Payment Flow Failed:", err);
       setState('IDLE');
       alert(err?.message || 'Payment failed. Please try again.');
     }
@@ -212,29 +221,56 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   }
 
   if (state === 'CASH_WAITING') {
+      const isUPI = selectedMethod === 'UPI';
       return (
           <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-6 text-center animate-in fade-in duration-500">
               <div className="flex-1 flex flex-col items-center justify-center">
-                  <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mb-6 animate-pulse">
-                      <Clock className="w-10 h-10 text-amber-600" />
+                  <div className={`w-20 h-20 ${isUPI ? 'bg-primary/10' : 'bg-amber-100'} rounded-full flex items-center justify-center mb-6 ${orderStatus === 'PENDING' || !orderStatus ? 'animate-pulse' : ''}`}>
+                      {isUPI ? <Smartphone className="w-10 h-10 text-primary" /> : <Clock className="w-10 h-10 text-amber-600" />}
                   </div>
-                  <h2 className="text-2xl font-black text-textMain mb-2">Awaiting Cash Payment</h2>
-                  <p className="text-textSecondary mb-8">Please pay <span className="text-primary font-black">₹{total}</span> at the counter to activate your order.</p>
+                  <h2 className="text-2xl font-black text-textMain mb-2">
+                    {isUPI ? 'Verifying UPI Payment' : 'Awaiting Cash Payment'}
+                  </h2>
+                  <p className="text-textSecondary mb-8">
+                    {isUPI 
+                      ? 'Please complete the transaction in your UPI app. Do not close this window.'
+                      : `Please pay ₹${total} at the counter to activate your order.`
+                    }
+                  </p>
                   
-                  <div className="w-full bg-gray-50 rounded-2xl p-4 border border-black/5 text-left">
-                      <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest mb-1">Status</p>
-                      <div className="flex items-center gap-2">
-                          <Loader2 className="w-4 h-4 text-primary animate-spin" />
-                          <p className="text-sm font-bold text-textMain">{orderStatus === 'PENDING' ? 'Waiting for Cashier...' : 'Order Placed'}</p>
+                  <div className="w-full bg-gray-50 rounded-2xl p-6 border border-black/5 text-left mb-6">
+                      <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Real-time Status</p>
+                      <div className="flex items-center gap-3">
+                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                          <p className="text-base font-bold text-textMain">
+                            {orderStatus === 'APPROVED' ? 'Payment Verified!' : 'Waiting for confirmation...'}
+                          </p>
                       </div>
                   </div>
+
+                  {isUPI && (
+                    <button 
+                      onClick={() => orderId && (window.location.href = `upi://pay?pa=fcgtub@oksbi&tr=${orderId}&am=${total}&cu=INR`)}
+                      className="text-primary font-black text-xs uppercase tracking-widest bg-primary/5 px-6 py-3 rounded-xl border border-primary/20"
+                    >
+                      Re-open UPI App
+                    </button>
+                  )}
               </div>
-              <button 
-                onClick={handleCancelOrder}
-                className="w-full py-4 text-textSecondary font-bold"
-              >
-                  Cancel Order
-              </button>
+              <div className="p-4 space-y-3">
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="w-full py-4 text-textMain font-black text-xs uppercase tracking-widest bg-gray-50 rounded-2xl border border-black/5"
+                >
+                    I have paid (Re-check)
+                </button>
+                <button 
+                  onClick={handleCancelOrder}
+                  className="w-full py-2 text-textSecondary font-bold text-xs"
+                >
+                    Cancel Order
+                </button>
+              </div>
           </div>
       );
   }
