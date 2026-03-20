@@ -224,7 +224,13 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     inFlightTokenRef.current = orderId;
 
     const resetAndResume = (delayMs = 0) => {
+      // 🛡️ [Principal Architect] If the camera is already closed, NEVER resume the background listener.
+      // This is the primary kill-switch for the 'Infinite ALREADY_CONSUMED Loop'.
       setTimeout(() => {
+        if (!isCameraOpen) {
+           inFlightTokenRef.current = null;
+           return;
+        }
         inFlightTokenRef.current = null;
         resumeScanner();
       }, delayMs);

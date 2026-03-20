@@ -1520,15 +1520,33 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity 
             }));
          } else {
-            // [ROOT-FIX] Dynamic QR remains ACTIVE until its items are served
+            // [ROOT-FIX] DYNAMIC/MIXEDorders: All FAST_ITEMs within the order are served instantly on scan.
+            // Items needing preparation (PREPARATION_ITEM) remain in the manifest for kitchen pickup.
             updateData.qrStatus = 'ACTIVE';
             updateData.qrState = 'SCANNED';
+            updateData.serveFlowStatus = 'SERVED_PARTIAL';
+            updateData.items = order.items.map(it => {
+               if (it.orderType === 'FAST_ITEM') {
+                  return { ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity };
+               }
+               return it;
+            });
+            
+            // Re-check: If by serving FAST_ITEMs everything is served (rare but possible), close the order.
+            const allServedNow = updateData.items.every((it: any) => it.status === 'SERVED' || it.status === 'ABANDONED');
+            if (allServedNow) {
+               updateData.qrStatus = 'DESTROYED';
+               updateData.qrState = 'SERVED';
+               updateData.orderStatus = 'COMPLETED';
+               updateData.serveFlowStatus = 'SERVED';
+               updateData.servedAt = now;
+            }
          }
 
          tx.update(orderRef, updateData);
          return { 
             order: { ...order, ...updateData, scannedAt: now }, 
-            result: isStatic ? ('CONSUMED' as const) : ('MANIFESTED' as const)
+            result: (updateData.qrStatus === 'DESTROYED') ? ('CONSUMED' as const) : ('MANIFESTED' as const)
          };
       });
    } catch (error: any) {
