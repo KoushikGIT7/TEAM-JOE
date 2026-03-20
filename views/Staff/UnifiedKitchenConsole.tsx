@@ -406,6 +406,15 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           )}
         </main>
 
+        {/* 🧩 [HEADLESS] HIDDEN INPUT FOR HARDWARE SCANNERS */}
+        <input 
+          id="headless-scanner-input"
+          type="text"
+          className="fixed -top-10 opacity-0 pointer-events-none"
+          autoComplete="off"
+          readOnly
+        />
+
         {/* ERROR OVERLAY */}
         {error && (
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-red-600/90 backdrop-blur-md text-white px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4">

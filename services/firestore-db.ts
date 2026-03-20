@@ -1459,12 +1459,34 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
       payloadExpiresAt = parsedPayload.expiresAt;
    }
 
-   const orderRef = doc(db, "orders", orderId);
+   // Normalization
+   let resolvedId = orderId;
+   if (resolvedId && !resolvedId.startsWith('order_')) {
+      resolvedId = 'order_' + resolvedId;
+   }
+   // Attempt to probe for the order if it's missing (helps with manual entry/short IDs)
+   let orderRef = doc(db, "orders", resolvedId);
+   let initialSnap = await getDoc(orderRef);
+
+   if (!initialSnap.exists() && orderId.length >= 4) {
+      // Manual entry or suffix scanner support
+      const q = query(
+        collection(db, "orders"), 
+        where("orderStatus", "==", "PENDING"),
+        limit(50)
+      );
+      const snaps = await getDocs(q);
+      const found = snaps.docs.find(d => d.id.endsWith(orderId) || d.id.toLowerCase().endsWith(orderId.toLowerCase()));
+      if (found) {
+         resolvedId = found.id;
+         orderRef = doc(db, "orders", resolvedId);
+      }
+   }
 
    try {
       return await runTransaction(db, async (tx) => {
          const snap = await tx.get(orderRef);
-         if (!snap.exists()) throw new Error("Order not found");
+         if (!snap.exists()) throw new Error(`Order not found: ${orderId}`);
          const data = snap.data();
          const order = firestoreToOrder(snap.id, data);
 
