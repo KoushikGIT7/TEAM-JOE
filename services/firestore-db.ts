@@ -81,6 +81,16 @@ export const saveCartDraft = async (userId: string, items: any[]): Promise<void>
 // TYPE CONVERSIONS
 // ============================================================================
 
+/** 🛡️ [Principal Architect] Item Classification Helper */
+export const isStaticItem = (item: any): boolean => {
+  if (!item) return false;
+  // Primary: Strict OrderType check
+  if (item.orderType === 'FAST_ITEM') return true;
+  // Secondary: Category Fallback (High-certainty categories)
+  if (['Lunch', 'Beverages', 'Snacks'].includes(item.category)) return true;
+  return false;
+};
+
 const orderToFirestore = (order: Order) => ({
   orderId: order.id,
   userId: order.userId,
@@ -95,7 +105,8 @@ const orderToFirestore = (order: Order) => ({
     quantity: item.quantity,
     servedQty: item.servedQty || 0,
     remainingQty: item.remainingQty !== undefined ? item.remainingQty : item.quantity,
-    status: item.status || 'PENDING'
+    status: item.status || 'PENDING',
+    orderType: item.orderType || (isStaticItem(item) ? 'FAST_ITEM' : 'PREPARATION_ITEM') // 🚀 [FIX] Persist Metadata
   })),
   totalAmount: order.totalAmount,
   paymentType: order.paymentType,
@@ -1502,8 +1513,8 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
           }
 
           // 2. Define if this is a Pure Static (Instant Serve) order
-          // A Static order is one where EVERY item is a FAST_ITEM (Lunch, Snacks, Beverages)
-          const isStatic = order.items.every(it => it.orderType === 'FAST_ITEM');
+          // A Static order is one where EVERY item is a FAST_ITEM
+          const isStatic = order.items.every(it => isStaticItem(it));
           const pStatus = order.pickupWindow?.status;
 
           // Only orders consisting EXCLUSIVELY of Fast-Items are served automatically.
@@ -1550,7 +1561,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             updateData.qrState = 'SCANNED';
             updateData.serveFlowStatus = 'SERVED_PARTIAL';
             updateData.items = order.items.map(it => {
-               if (it.category === 'Lunch' && it.orderType === 'FAST_ITEM') {
+               if (isStaticItem(it)) {
                   return { ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity };
                }
                return it;
@@ -2592,8 +2603,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
            const remQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
            if (remQty > 0 && (it.status === 'READY' || it.status === 'COLLECTING' || it.status === 'MISSED' || it.status === 'READY_SERVED')) {
              // 🛡️ [PRINCIPAL-FIX] Only revert items to PENDING if they actually need cooking!
-             // Static items (Lunch/Fast) should stay in their READY state or move to MISSED.
-             const canRequeue = it.orderType === 'PREPARATION_ITEM';
+             const canRequeue = !isStaticItem(it);
              return { ...it, status: canRequeue ? 'PENDING' : it.status, remainingQty: remQty };
            }
            return it;
