@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { 
   Camera, Check, CheckCircle, X, ChevronRight, Search, 
-  CookingPot, PackageCheck, Zap, ShieldCheck, RefreshCcw 
+  CookingPot, PackageCheck, Zap, ShieldCheck, RefreshCcw, ShieldAlert 
 } from 'lucide-react';
 import { Order, CartItem } from '../../types';
 import SmoothImage from '../../components/SmoothImage';
@@ -208,16 +208,26 @@ const IntakeItemCard: React.FC<{
           </p>
        </div>
 
-       {/* 3. SONIC ACTIONS */}
-       <div className="flex items-center gap-4 ml-6">
-          {meta.flavor === 'WAITING' && (
-             <button 
-               onClick={onOverride}
-               className="w-11 h-11 rounded-2xl bg-amber-50 border-2 border-amber-200 text-amber-600 flex items-center justify-center hover:bg-amber-100 transition-all active:scale-90"
-             >
-                <Zap className="w-5 h-5" />
-             </button>
-          )}
+        {/* 3. SONIC ACTIONS */}
+        <div className="flex items-center gap-4 ml-6">
+           {meta.flavor === 'WAITING' && (
+              <div className="flex items-center gap-2">
+                 <button 
+                   onClick={onOverride}
+                   title="Force READY"
+                   className="w-11 h-11 rounded-2xl bg-amber-50 border-2 border-amber-200 text-amber-600 flex items-center justify-center hover:bg-amber-100 transition-all active:scale-90"
+                 >
+                    <Zap className="w-5 h-5" />
+                 </button>
+                 <button 
+                   onClick={onServe}
+                   title="FORCE SERVE"
+                   className="w-11 h-11 rounded-2xl bg-red-50 border-2 border-red-200 text-red-600 flex items-center justify-center hover:bg-red-100 transition-all active:scale-90"
+                 >
+                    <ShieldAlert className="w-5 h-5" />
+                 </button>
+              </div>
+           )}
 
           {meta.flavor !== 'SERVED' ? (
              <div className="flex items-center gap-3">

@@ -294,12 +294,23 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
     if (isProcessing) return;
+    
+    // ⚡ [SONIC-SYNC] Optimistic local update for sub-millisecond removal from manifest
+    setOptimisticOrders(prev => {
+      const order = prev[orderId] || activeOrders.find(o => o.id === orderId);
+      if (!order) return prev;
+      const updatedItems = order.items.map(it => 
+        it.id === itemId ? { ...it, status: 'SERVED' as any, remainingQty: 0, servedQty: it.quantity } : it
+      );
+      return { ...prev, [orderId]: { ...order, items: updatedItems } };
+    });
+
     setIsProcessing(true);
     try {
-      // [ROOT-FIX] Consolidate back to firestore-db serveItemBatch for atomic item-level consistency
       await serveItemBatch(orderId, itemId, qty, profile.uid);
+      triggerSonicPulse('SUCCESS', 'ITEM SERVED', 'Manual Confirmation.');
     } catch (err: any) {
-      setError(err.message || "Serving failed");
+      console.error("Manual serve failed:", err);
     } finally {
       setIsProcessing(false);
     }
@@ -307,12 +318,22 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   const handleServeFullOrder = async (orderId: string) => {
     if (isProcessing) return;
+
+    // ⚡ [SONIC-SYNC] Optimistic local update
+    setOptimisticOrders(prev => {
+       const order = prev[orderId] || activeOrders.find(o => o.id === orderId);
+       if (!order) return prev;
+       const updatedItems = order.items.map(it => ({ ...it, status: 'SERVED' as any, remainingQty: 0, servedQty: it.quantity }));
+       return { ...prev, [orderId]: { ...order, items: updatedItems, orderStatus: 'COMPLETED' as any, qrStatus: 'DESTROYED' as any } };
+    });
+
     setIsProcessing(true);
     try {
       await serveFullOrder(orderId, profile.uid);
-      setLocalScanBuffer(prev => prev.filter(id => id !== orderId));
+      setLocalScanBuffer(prev => prev.filter(id => id !== orderId)); 
+      triggerSonicPulse('SUCCESS', 'ORDER COMPLETED', 'All items fulfilled.');
     } catch (err: any) {
-      setError(err.message || "Completing order failed");
+      console.error("Serve all failed:", err);
     } finally {
       setIsProcessing(false);
     }
