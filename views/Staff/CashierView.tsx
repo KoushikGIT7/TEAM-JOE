@@ -45,27 +45,17 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
         setAllOrders(data);
         offlineDetector.recordPing();
       }),
-      // Proactive Catalog Accelerator: Warm up every item image in the cafeteria menu
-      listenToMenu((items) => {
-        items.forEach(it => {
-          if (it.imageUrl) preloadImage(it.imageUrl);
-        });
-      })
+      // Monitoring and reporting sync only.
+      // All order data is now strictly limited to 100 recent entries to prevent quota-exceeded errors.
     ];
     return () => unsubs.forEach(fn => fn());
   }, []);
 
-  // Real-time Queue Accelerator: Ensure incoming orders have hot image data
+  // PERFORMANCE FIX [Laziness Strategy]: Only sync report data when the user is actually 
+  // looking at the Insight or Summary tabs. This stops massive background reads during peak hours.
   useEffect(() => {
-    [...pendingOrders, ...allOrders].forEach(o => {
-      o.items.forEach(it => {
-        if (it.imageUrl) preloadImage(it.imageUrl);
-      });
-    });
-  }, [pendingOrders, allOrders]);
+    if (activeTab !== 'INSIGHT' && activeTab !== 'SUMMARY') return;
 
-  // Background sync for Audit data (to ensure button works instantly)
-  useEffect(() => {
     const loadReportData = async () => {
       try {
         const today = new Date();
@@ -78,7 +68,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       }
     };
     loadReportData();
-  }, [allOrders]);
+  }, [allOrders, activeTab]);
 
   // --- ⚙️ HANDLERS ---
   const handleConfirm = async (orderId: string) => {
@@ -253,9 +243,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                </div>
                <div className="flex flex-wrap gap-2 mb-8">
                   {order.items.map((it, idx) => (
-                    <div key={idx} className="bg-slate-50 border border-slate-100 flex items-center gap-2 pr-3 pl-1.5 py-1 rounded-xl">
-                      <SmartImage src={it.imageUrl} alt={it.name} containerClassName="w-8 h-8 rounded-lg" />
-                      <span className="text-xs font-black text-slate-600">
+                    <div key={idx} className="bg-slate-50 border border-slate-100 flex items-center px-3 py-1.5 rounded-xl">
+                      <span className="text-xs font-black text-slate-700 tracking-tight">
                         {it.quantity}x {it.name}
                       </span>
                     </div>
@@ -411,10 +400,9 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                    </div>
                    <p className="text-2xl font-black text-emerald-600 italic">₹{order.totalAmount}</p>
                 </div>
-                <div className="flex gap-2 mb-5">
-                   {order.items.slice(0, 4).map((it, idx) => (
-                     <div key={idx} className="bg-slate-50 text-slate-500 pr-3 pl-1 py-1 rounded-xl text-[10px] font-black uppercase border border-slate-100 flex items-center gap-2 shrink-0">
-                        <SmartImage src={it.imageUrl} alt={it.name} containerClassName="w-6 h-6 rounded-lg" />
+                <div className="flex flex-wrap gap-2 mb-4">
+                   {order.items.map((it, idx) => (
+                     <div key={idx} className="bg-slate-50 text-slate-700 px-3 py-2 rounded-xl text-[10px] font-black uppercase border border-slate-100 flex items-center shrink-0">
                         <span>{it.quantity}x {it.name}</span>
                      </div>
                    ))}

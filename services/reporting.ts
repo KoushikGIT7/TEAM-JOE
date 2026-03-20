@@ -28,7 +28,7 @@ interface ReportData {
   raw: any[];
 }
 
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 30 * 60 * 1000;
 const cache = new Map<string, { ts: number; data: ReportData }>();
 const cacheKey = (role: RoleScope, start: number, end: number) => `${role}-${start}-${end}`;
 

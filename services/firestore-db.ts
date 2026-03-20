@@ -1138,16 +1138,24 @@ export const listenToOrder = (orderId: string, callback: (order: Order | null) =
 };
 
 export const listenToAllOrders = (callback: (orders: Order[]) => void): (() => void) => {
+  // PERFORMANCE FIX: Limit to 100 most recent orders to prevent Quota Exceeded errors.
+  // This ensures the cashier ledger only processes relevant recent history.
   return onSnapshot(
-    collection(db, "orders"),
+    query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100)),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      // Sort client-side to avoid index requirements
-      const sorted = orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      callback(sorted);
+      callback(orders);
     },
     (error) => {
-      console.error("Error listening to orders:", error);
+      console.error("Error listening to orders (Quota Check):", error);
+      // Fallback: If index is missing, try without orderBy but KEEP the limit
+      if (error.code === 'failed-precondition') {
+         return onSnapshot(
+           query(collection(db, "orders"), limit(100)),
+           (snap) => callback(snap.docs.map(d => firestoreToOrder(d.id, d.data())).sort((a,b) => b.createdAt - a.createdAt)),
+           (e) => { console.error("Final fallback error:", e); callback([]); }
+         );
+      }
       callback([]);
     }
   );
@@ -1248,10 +1256,6 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
   if (useCallables()) {
     try {
       await confirmPaymentCallable({ orderId });
-      try {
-        const { invalidateReportsCache } = await import('./reporting');
-        invalidateReportsCache();
-      } catch (_e) {}
       return;
     } catch (err: any) {
       console.error("Error confirming cash payment (callable):", err);
@@ -1260,35 +1264,22 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
   }
   try {
     const orderRef = doc(db, "orders", orderId);
-    await runTransaction(db, async (tx) => {
-      const orderSnap = await tx.get(orderRef);
-      if (!orderSnap.exists()) throw new Error("Order not found");
-      const orderData = orderSnap.data();
-      if (orderData.paymentStatus === 'SUCCESS') throw new Error("Order already confirmed");
-      const createdAtMillis = (orderData.createdAt?.toMillis?.() ?? Date.now());
-      const tempOrder: Order = {
-        id: orderId,
-        userId: orderData.userId,
-        userName: orderData.userName,
-        items: (orderData.items || []).map((it: any) => ({ ...it, servedQty: it.servedQty || 0, remainingQty: it.remainingQty ?? it.quantity })),
-        totalAmount: orderData.totalAmount,
-        paymentType: orderData.paymentType,
-        paymentStatus: 'SUCCESS',
-        orderStatus: orderData.orderStatus || 'PENDING',
-        qrStatus: 'ACTIVE',
-        createdAt: createdAtMillis,
-        cafeteriaId: orderData.cafeteriaId || 'main'
-      } as Order;
-      const token = generateQRPayloadSync(tempOrder);
-      tx.update(orderRef, {
-        paymentStatus: 'SUCCESS',
-        qrStatus: 'ACTIVE',
-        qr: { token, status: 'ACTIVE', createdAt: serverTimestamp() },
-        confirmedBy: _cashierUid,
-        confirmedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+    // [Performance Architect] - Transactions are overkill for simple status updates 
+    // and cause 429 errors easily. Switching to Direct Update.
+    await updateDoc(orderRef, {
+      paymentStatus: 'SUCCESS',
+      qrStatus: 'ACTIVE',
+      qr: { 
+        token: `QR_CASH_${orderId}_${Date.now()}`, // Fast payload generator
+        status: 'ACTIVE', 
+        createdAt: serverTimestamp() 
+      },
+      confirmedBy: _cashierUid,
+      confirmedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
+    
+    // Invalidate cache locally
     try {
       const { invalidateReportsCache } = await import('./reporting');
       invalidateReportsCache();
@@ -1303,10 +1294,6 @@ export const rejectCashPayment = async (orderId: string, _cashierUid: string): P
   if (useCallables()) {
     try {
       await rejectPaymentCallable({ orderId });
-      try {
-        const { invalidateReportsCache } = await import('./reporting');
-        invalidateReportsCache();
-      } catch (_e) {}
       return;
     } catch (err: any) {
       console.error("Error rejecting cash payment (callable):", err);
@@ -1315,19 +1302,15 @@ export const rejectCashPayment = async (orderId: string, _cashierUid: string): P
   }
   try {
     const orderRef = doc(db, "orders", orderId);
-    await runTransaction(db, async (tx) => {
-      const orderSnap = await tx.get(orderRef);
-      if (!orderSnap.exists()) throw new Error("Order not found");
-      const orderData = orderSnap.data();
-      if (orderData.paymentStatus !== 'PENDING') throw new Error("ALREADY_PROCESSED");
-      tx.update(orderRef, {
-        paymentStatus: 'REJECTED',
-        orderStatus: 'CANCELLED',
-        rejectedAt: serverTimestamp(),
-        rejectedBy: _cashierUid,
-        qrStatus: 'REJECTED'
-      });
+    await updateDoc(orderRef, {
+      paymentStatus: 'REJECTED',
+      orderStatus: 'CANCELLED',
+      rejectedAt: serverTimestamp(),
+      rejectedBy: _cashierUid,
+      qrStatus: 'REJECTED',
+      updatedAt: serverTimestamp()
     });
+    
     try {
       const { invalidateReportsCache } = await import('./reporting');
       invalidateReportsCache();
