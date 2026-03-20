@@ -1186,6 +1186,7 @@ export const listenToAllOrders = (callback: (orders: Order[]) => void): (() => v
   );
 };
 
+
 /** Paginated recent orders (e.g. for kitchen dashboard). Limit 50. */
 export const listenToRecentOrders = (callback: (orders: Order[]) => void, limitCount: number = 50): (() => void) => {
   return onSnapshot(
@@ -1364,21 +1365,17 @@ export interface PendingItem {
 }
 
 export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() => void) => {
+  // Use a query that fetches the orders currently circulating at the counter
   return onSnapshot(
     query(
       collection(db, "orders"),
-      where("orderStatus", "in", ["PAID", "ACTIVE", "MISSED", "ABANDONED"]),
-      limit(100)
+      where("orderStatus", "in", ["PAID", "PROCESSING", "PENDING", "SERVED"]), // SERVED is needed for partials
+      limit(200)
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      // Filter for SCANNED or ACTIVE tokens client-side
-      const relevant = orders.filter(o => 
-        o.qrStatus === 'SCANNED' || o.qrStatus === 'ACTIVE' || 
-        o.qrState === 'SCANNED' || o.qrState === 'ACTIVE'
-      );
       // Sort client-side by createdAt to ensure stable FIFO ordering
-      const sorted = relevant.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      const sorted = orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       callback(sorted);
     },
     (error) => {
@@ -1463,7 +1460,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
          }
 
          // 🛡️ IDEMPOTENT MANIFEST CHECK (Silent Mode)
-         if (order.qrStatus === 'SCANNED') {
+         if (order.qrStatus === 'SCANNED' || order.qrState === 'SCANNED') {
             return { order, result: 'ALREADY_MANIFESTED' as const };
          }
 
@@ -1489,12 +1486,13 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
          }
 
          // 💼 BUSINESS RULES
-         const isStatic = order.items.every(it => it.orderType === 'FAST_ITEM');
+         // Only orders consisting EXCLUSIVELY of Lunch Fast-Items (Plate Meals) are served automatically.
+         const isStatic = order.items.every(it => it.category === 'Lunch' && it.orderType === 'FAST_ITEM');
          const pStatus = order.pickupWindow?.status;
          const fStatus = order.serveFlowStatus;
 
-         // Static (FAST_ITEM) orders are always intakeable if not already destroyed.
-         // Dynamic (PREPARATION_ITEM) orders are intakeable in any active kitchen state.
+         // Static (Lunch) orders are siempre intakeable.
+         // Mixed/Dynamic orders follow specific lifecycle checks.
          const canIntake = 
             isStatic ||
             pStatus === 'COLLECTING' ||
@@ -1530,13 +1528,13 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity 
             }));
          } else {
-            // [ROOT-FIX] DYNAMIC/MIXEDorders: All FAST_ITEMs within the order are served instantly on scan.
-            // Items needing preparation (PREPARATION_ITEM) remain in the manifest for kitchen pickup.
+            // [ROOT-FIX] DYNAMIC/MIXED orders: ONLY 'Lunch' items within the order are served instantly on scan.
+            // All other items (Dosas, Drinks, Snacks) remain on the manifest for the server to confirm manually.
             updateData.qrStatus = 'ACTIVE';
             updateData.qrState = 'SCANNED';
             updateData.serveFlowStatus = 'SERVED_PARTIAL';
             updateData.items = order.items.map(it => {
-               if (it.orderType === 'FAST_ITEM') {
+               if (it.category === 'Lunch' && it.orderType === 'FAST_ITEM') {
                   return { ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity };
                }
                return it;

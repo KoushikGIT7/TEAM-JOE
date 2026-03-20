@@ -88,14 +88,28 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     return s;
   }, []);
 
+  // 🛡️ RE-ORDERING ROOT FIX:
+  // We use a state-locked attempt key. It stays the same during a single 'Processing' 
+  // attempt to block double-clicks, but it is guaranteed to be unique for every 
+  // fresh checkout session because it is initialized with the current millisecond.
+  const [activeAttemptKey] = useState(() => `idemp_${profile?.uid || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
+
   const handlePayment = async () => {
     if (state === 'PROCESSING') return;
     setState('PROCESSING');
 
     try {
+      // 🛡️ BUSINESS RULE: Max 1 Plate Meal per order
+      const plateMealQty = cart
+        .filter(it => it.category === 'Lunch')
+        .reduce((sum, it) => sum + it.quantity, 0);
+      
+      if (plateMealQty > 1) {
+        throw new Error("Restriction: Only 1 Plate Meal (Lunch) is allowed per person.");
+      }
+
       const isCash = selectedMethod === 'CASH';
-      // Use a stable guest ID for this session to avoid creating a new guest on
-      // every click. Persisted in sessionStorage so a refresh still deduplicates.
+      // Stable guest/user ID for logging but NOT for idempotency uniqueness (handled by activeAttemptKey)
       let guestId = profile?.uid;
       if (!guestId) {
         const stored = sessionStorage.getItem('joe_guest_id');
@@ -108,13 +122,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       }
       const guestName = profile?.name || 'Guest';
 
-      // Stable idempotency key: same user + same cart total + same payment method
-      // + same arrival slot won't create a duplicate order within the same session.
-      // Using a hash of stable fields prevents double-click AND page-refresh duplicates.
-      const cartFingerprint = cart.map(i => `${i.id}:${i.quantity}`).sort().join(',');
-      const idempotencyKey = `idemp_${guestId}_${total}_${selectedMethod}_${isDynamic ? arrivalTime : 0}_${cartFingerprint}`
-        .replace(/[^a-zA-Z0-9_.-]/g, '_')
-        .slice(0, 100); // Firestore doc IDs max 1500 bytes, we stay well under
+      // ⚡ [ROOT-FIX] Use the locked activeAttemptKey. 
+      // This is unique to the MILLISECOND this checkout component was mounted.
+      // It is impossible for this to collide with a past served order.
+      const idempotencyKey = activeAttemptKey;
 
       const newOrderId = await createOrder({
         userId: guestId,
@@ -133,7 +144,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       setOrderId(newOrderId);
       localStorage.removeItem('joe_cart');
       
-      // Navigate to QR View / Manifest immediately so user sees "Awaiting Cashier"
+      // Navigate to QR View / Manifest immediately so user sees token
       onSuccess(newOrderId);
     } catch (err: any) {
       setState('IDLE');

@@ -12,6 +12,7 @@ import {
   validateQRForServing
 } from '../../services/firestore-db';
 import { parseQRPayload } from '../../services/qr';
+import { FAST_ITEM_CATEGORIES } from '../../constants';
 import Logo from '../../components/Logo';
 import QRScanner from '../../components/QRScanner';
 
@@ -45,12 +46,16 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     return () => unsub();
   }, []);
 
-  const reset = () => {
+  const resumeScannerSafely = () => {
     setTerminalState('IDLE');
     setScannedOrder(null);
     setErrorMsg('');
-    lastScannedIdRef.current = null;
-    scanLockRef.current = false;
+    
+    // Clear lock with a small delay so human movement doesn't instantly re-trigger
+    setTimeout(() => {
+       lastScannedIdRef.current = null;
+       scanLockRef.current = false;
+    }, 1500);
   };
 
   const handleScan = useCallback(async (rawData: string) => {
@@ -104,22 +109,28 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setServing(true);
 
     try {
-      const anyWait = scannedOrder.items.some(it => 
-        it.status !== 'READY' && it.orderType === 'PREPARATION_ITEM' && (it.remainingQty || 0) > 0
-      );
-      
-      if (anyWait && !scannedOrder.qrRedeemable) {
-         throw new Error("Active prep remaining. Use override if physically ready.");
-      }
-
-      // [ROOT FIX] Serve EVERYTHING in one atomic transaction (Prevents multiple network hits)
+      // [DYNAMIC FLOW FIX] Isolate only items that are physically ready to be dispensed right now
       const targetItemIds = scannedOrder.items
-        .filter(it => (it.remainingQty || 0) > 0)
+        .filter(it => {
+           const remaining = it.remainingQty !== undefined ? it.remainingQty : it.quantity;
+           if (remaining <= 0) return false;
+           const isFast = it.orderType === 'FAST_ITEM' || FAST_ITEM_CATEGORIES.includes(it.category);
+           const isReady = it.status === 'READY' || isFast || scannedOrder.qrRedeemable;
+           return isReady;
+        })
         .map(it => it.id);
 
-      if (targetItemIds.length > 0) {
-        await serveOrderItemsAtomic(scannedOrder.id, targetItemIds, profile.uid);
+      if (targetItemIds.length === 0) {
+        const hasUnserved = scannedOrder.items.some(it => (it.remainingQty || 0) > 0);
+        if (hasUnserved) {
+           throw new Error("Target items are still preparing. Check Kitchen progress.");
+        } else {
+           throw new Error("All items in this ticket have already been dispensed.");
+        }
       }
+
+      // ATOMIC PARTIAL SERVE
+      await serveOrderItemsAtomic(scannedOrder.id, targetItemIds, profile.uid);
       
       setTerminalState('SUCCESS');
       setScannedOrder(null);
@@ -171,10 +182,11 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       {isCameraOpen && (
         <div className="fixed inset-0 z-[200]">
            <QRScanner
-             onScan={(data, resume) => { 
-                setIsCameraOpen(false); 
-                handleScan(data);
-                resume();
+             onScan={(data, _resume) => { 
+                setIsCameraOpen(false); // Unmount physical camera
+                handleScan(data); // Start zero-latency pipeline
+                // 🚫 DO NOT call resume() here. We explicitly unmount the camera.
+                // Re-enabling the lock happens safely after 1.5s in resumeScannerSafely().
              }}
              onClose={() => setIsCameraOpen(false)}
              isScanning={terminalState === 'SCANNING'}
@@ -254,7 +266,8 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
             <div className="flex-1 space-y-3">
               {scannedOrder.items.map((item) => {
                 const remaining = item.remainingQty !== undefined ? item.remainingQty : item.quantity;
-                const isReady = item.status === 'READY' || item.orderType === 'FAST_ITEM' || scannedOrder.qrRedeemable;
+                const isFast = item.orderType === 'FAST_ITEM' || FAST_ITEM_CATEGORIES.includes(item.category);
+                const isReady = item.status === 'READY' || isFast || scannedOrder.qrRedeemable;
                 
                 return (
                   <div key={item.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex items-center p-4 gap-5 shadow-sm">
@@ -334,7 +347,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
               <h2 className="text-4xl font-black tracking-tighter uppercase text-slate-900 italic">Verified</h2>
               <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Transaction log updated</p>
             </div>
-            <button onClick={reset} className="w-full mt-6 bg-slate-900 text-white py-6 rounded-2xl font-bold uppercase tracking-widest active:scale-95 transition-all shadow-xl">
+            <button onClick={resumeScannerSafely} className="w-full mt-6 bg-slate-900 text-white py-6 rounded-2xl font-bold uppercase tracking-widest active:scale-95 transition-all shadow-xl">
               Next Customer Scan
             </button>
           </div>
@@ -352,7 +365,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
                 {errorMsg}
               </p>
             </div>
-            <button onClick={reset} className="w-full mt-6 bg-white border border-slate-200 py-6 rounded-2xl font-bold uppercase tracking-widest text-slate-700 active:scale-95 transition-all shadow-sm">
+            <button onClick={resumeScannerSafely} className="w-full mt-6 bg-white border border-slate-200 py-6 rounded-2xl font-bold uppercase tracking-widest text-slate-700 active:scale-95 transition-all shadow-sm">
               Return to Scanning
             </button>
           </div>

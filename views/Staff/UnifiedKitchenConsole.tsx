@@ -11,8 +11,11 @@ import {
   validateQRForServing, 
   serveFullOrder,
   serveItemBatch,
-  abandonItem
+  abandonItem,
+  serveOrderItemsAtomic,
+  processAtomicIntake
 } from '../../services/firestore-db';
+import { parseQRPayload } from '../../services/qr';
 import { initializeScanner } from '../../services/scanner';
 import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
@@ -117,23 +120,35 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   // 🛡️ SCAN QUEUE SYNC: Derived from Firestore 'SCANNED' state
   // This ensures the queue survives page refresh, crashes, or multi-tablet environments.
   const scanQueue = useMemo(() => {
-    const firestoreQueue = (activeOrders || [])
-      .filter(o => 
-        (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && 
-        o.orderStatus !== 'SERVED' && 
-        o.orderStatus !== 'COMPLETED'
-      )
+    // [ROOT-FIX] Use mergedActiveOrders so scanning creates an optimistic queue entry
+    const merged = [...activeOrders];
+    Object.values(optimisticOrders).forEach(oo => {
+        if (!merged.find(m => m.id === oo.id)) merged.push(oo);
+    });
+
+    const firestoreQueue = merged
+      .filter(o => {
+        // Optimistic state might already be completed
+        const realStatus = optimisticOrders[o.id]?.orderStatus || o.orderStatus;
+        return (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && 
+        realStatus !== 'SERVED' && 
+        realStatus !== 'COMPLETED';
+      })
       .sort((a, b) => (a.scannedAt || a.createdAt || 0) - (b.scannedAt || b.createdAt || 0))
       .map(o => o.id);
+      
     return Array.from(new Set([...localScanBuffer, ...firestoreQueue]));
-  }, [activeOrders, localScanBuffer]);
+  }, [activeOrders, localScanBuffer, optimisticOrders]);
 
   const mergedActiveOrders = useMemo(() => {
     // Merge optimistic (recently scanned) orders with active orders for sub-millisecond rendering
     const merged = [...activeOrders];
     Object.values(optimisticOrders).forEach(oo => {
-      if (!merged.find(m => m.id === oo.id)) {
+      const idx = merged.findIndex(m => m.id === oo.id);
+      if (idx === -1) {
         merged.push(oo);
+      } else {
+        merged[idx] = oo; // Overlay optimistic over stale firestore
       }
     });
     return merged;
@@ -158,6 +173,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   // --- REFS ---
   const inFlightTokenRef = useRef<string | null>(null);
+  const lastSuccessRef = useRef<{ id: string; time: number } | null>(null);
 
   // --- ETIOLOGY: GLOBAL MAINTENANCE LOOP ---
   useEffect(() => {
@@ -208,96 +224,71 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       return;
     }
     
-    let orderId = rawData.trim();
-    if (orderId.startsWith('v1.')) {
-        orderId = orderId.split('.')[1]; 
-    }
-
     // Auto-close camera immediately on a good scan to show items
     setIsCameraOpen(false);
 
+    // Extract raw ID for local locking
+    const targetId = rawData.trim().startsWith('v1.') 
+        ? rawData.trim().split('.')[1] 
+        : rawData.trim().replace('order_', '');
+
     // 🔒 [SONIC-LOCK] Belt and suspenders application-level lock
-    if (inFlightTokenRef.current === orderId) {
-        resumeScanner();
+    if (inFlightTokenRef.current === targetId) {
         return;
     }
-    inFlightTokenRef.current = orderId;
+    inFlightTokenRef.current = targetId;
 
-    const resetAndResume = (delayMs = 0) => {
-      // 🛡️ [Principal Architect] If the camera is already closed, NEVER resume the background listener.
-      // This is the primary kill-switch for the 'Infinite ALREADY_CONSUMED Loop'.
+    const resetAndResume = (delayMs = 2500) => {
       setTimeout(() => {
-        if (!isCameraOpen) {
-           inFlightTokenRef.current = null;
-           return;
-        }
         inFlightTokenRef.current = null;
-        resumeScanner();
+        if (isCameraOpen) resumeScanner();
       }, delayMs);
     };
 
-    const cachedOrder = activeOrders?.find(o => o.id === orderId);
-    let optimisticFired = false;
-
-    // 🚀 MICROSECOND OPTIMISTIC UI
-    if (cachedOrder && cachedOrder.qrStatus !== 'USED' && cachedOrder.orderStatus !== 'SERVED') {
-       const isStatic = cachedOrder.items.every(it => it.orderType === 'FAST_ITEM');
-       if (isStatic) {
-          triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${orderId.slice(-4).toUpperCase()} – Served.`);
-       } else {
-          setLocalScanBuffer(prev => prev.includes(orderId) ? prev : [orderId, ...prev]);
-          if (!localScanBuffer.includes(orderId) && cachedOrder.qrStatus !== 'SCANNED') {
-             triggerSonicPulse('SUCCESS', 'QUEUED', `#${orderId.slice(-4).toUpperCase()} – In Stack.`);
-          } else {
-             triggerSonicPulse('SUCCESS', 'IN QUEUE', `#${orderId.slice(-4).toUpperCase()} – Manifested.`);
-          }
-       }
-       optimisticFired = true;
-       // Fast release since we already assured the UI
-       resetAndResume(800);
-    }
-
     try {
-      // Background / delayed decisive verification
-      const { order, result } = await validateQRForServing(rawData.trim(), profile.uid);
-      
-      // 🧬 Rapid Render Sync: merge validated order into local cache to bypass Firestore push latency
-      setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
+        // ⚡ [SONIC-ATOMIC] Hand off entirely to the single backend transaction
+        const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
 
-      if (!optimisticFired) {
-         if (result === 'CONSUMED') {
+        // [SONIC-SYNC] Immediately update optimistic state for sub-millisecond display
+        setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
+        
+        if (result === 'CONSUMED') {
+           console.log("🟢 [SONIC] Atomic Static serving for:", order.id);
+           lastSuccessRef.current = { id: order.id, time: Date.now() };
            triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`);
-           resetAndResume(1200); 
-         } else if (result === 'MANIFESTED') {
+        } else if (result === 'MANIFESTED') {
+           console.log("🟠 [SONIC] Dynamic Intake for:", order.id);
            setLocalScanBuffer(prev => prev.includes(order.id) ? prev : [order.id, ...prev]);
-           triggerSonicPulse('SUCCESS', 'QUEUED', `#${order.id.slice(-4).toUpperCase()} – In Stack.`);
-           resetAndResume(800);
-         } else if (result === 'ALREADY_MANIFESTED') {
-           triggerSonicPulse('SUCCESS', 'IN QUEUE', `#${order.id.slice(-4).toUpperCase()} – Manifested.`);
-           resetAndResume(600);
-         }
-      }
+           triggerSonicPulse('SUCCESS', 'MEAL VERIFIED', `#${order.id.slice(-4).toUpperCase()} – Manifested.`);
+        } else if (result === 'ALREADY_MANIFESTED') {
+           triggerSonicPulse('SUCCESS', 'ALREADY SCANNED', `#${order.id.slice(-4).toUpperCase()} – In queue.`);
+        }
+        
+        resetAndResume(1200);
     } catch (err: any) {
-      const msg = err?.message || String(err);
-      console.log('❌ SCAN FAILED:', msg);
-      
-      // Overwrite optimistic UI if it critically failed (e.g. signature forged, or exact millisecond race condition)
-      if (msg.includes('ALREADY_CONSUMED')) {
-        triggerSonicPulse('ERROR', 'ALREADY SERVED', 'Ticket was consumed.');
-        resetAndResume(1200);
-      } else if (msg.includes('SERVE_BLOCKED')) {
-        triggerSonicPulse('ERROR', 'NOT READY', 'Please wait for preparation.');
+        const msg = err?.message || String(err);
+        
+        // 🛡️ [Principal Architect] Hardware Bounce Guard:
+        // If the hardware decoder fires again while the student is walking away, 
+        // silently ignore the 'Already Consumed' error if it happened within 5s of success.
+        if (msg.includes('ALREADY_CONSUMED') && lastSuccessRef.current?.id === targetId && (Date.now() - lastSuccessRef.current.time) < 5000) {
+            resetAndResume(1500);
+            return;
+        }
+
+        console.log('❌ SCAN FAILED:', msg);
+        
+        if (msg.includes('ALREADY_CONSUMED')) {
+            triggerSonicPulse('ERROR', 'ALREADY SERVED', 'Ticket was consumed.');
+        } else if (msg.includes('SECURITY_BREACH')) {
+            triggerSonicPulse('ERROR', 'INVALID TOKEN', 'Security verification failed.');
+        } else if (msg.includes('SERVE_BLOCKED')) {
+            triggerSonicPulse('ERROR', 'NOT READY', msg.replace('SERVE_BLOCKED - ', ''));
+        } else {
+            triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
+        }
+        
         resetAndResume(1500);
-      } else if (msg.includes('SECURITY_BREACH')) {
-        triggerSonicPulse('ERROR', 'INVALID', 'Bad signature.');
-        resetAndResume(1500);
-      } else if (msg.includes('Order not found')) {
-        triggerSonicPulse('ERROR', 'UNKNOWN TICKET', 'Not in system.');
-        resetAndResume(1500);
-      } else {
-        triggerSonicPulse('ERROR', 'SCAN ERROR', msg);
-        resetAndResume(1200);
-      }
     }
   };
 
@@ -365,7 +356,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           ) : (
              <ServerConsoleWorkspace 
                 activeOrders={mergedActiveOrders}
-                scanQueue={localScanBuffer}
+                scanQueue={scanQueue}
                 setScanQueue={setLocalScanBuffer}
                 isCameraOpen={isCameraOpen}
                 setIsCameraOpen={setIsCameraOpen}
@@ -395,9 +386,6 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           {activeWorkspace === 'SERVER' && isCameraOpen && (
             <QRScanner 
                onScan={(data, resume) => {
-                 // Do not immediately close modal; modal closes only on X tap.
-                 // handleQRScan takes the token, runs processing, triggers flash overlay, 
-                 // and eventually calls resume to release the camera for next customer!
                  handleQRScan(data, resume);
                }}
                onClose={() => setIsCameraOpen(false)}
