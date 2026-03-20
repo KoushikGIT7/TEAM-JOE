@@ -155,6 +155,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   else if (isMissed) statusKey = 'MISSED';
   else if (order.paymentType === 'CASH' && order.paymentStatus === 'PENDING') statusKey = 'CASH_PENDING';
   else if (flow === 'READY') statusKey = 'READY';
+  else if (flow === 'SERVED_PARTIAL' || (order.qrState as string) === 'SCANNED') statusKey = 'PREPARING'; // Show preparing while partially served
   else if (flow === 'PREPARING' || flow === 'ALMOST_READY') statusKey = 'PREPARING';
   else if (order.paymentStatus === 'SUCCESS') statusKey = 'SCHEDULED';
 

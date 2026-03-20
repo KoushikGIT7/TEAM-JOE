@@ -1496,6 +1496,11 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
              throw new Error("ALREADY_CONSUMED");
           }
 
+          // 1.5 Guard against redundant manifestation for dynamic orders
+          if ((order.qrState as any) === 'SCANNED') {
+             throw new Error("ALREADY_SCANNED");
+          }
+
           // 2. Define if this is a Pure Lunch (Plate Meal) order
           const isStatic = order.items.every(it => it.category === 'Lunch' && it.orderType === 'FAST_ITEM');
           const pStatus = order.pickupWindow?.status;
