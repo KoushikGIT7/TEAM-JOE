@@ -1490,6 +1490,13 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
          const data = snap.data();
          const order = firestoreToOrder(snap.id, data);
 
+         // 🛑 PAYMENT VERIFICATION BRIDGE
+         if (order.paymentStatus !== 'SUCCESS') {
+            // [SONIC-SYNC] Allow the cashier to see the order in their manifest to collect cash
+            // but DO NOT fulfill/serve any items yet.
+            return { order, result: 'AWAITING_PAYMENT' as const };
+         }
+
          // 🛑 CONSUMPTION CHECK
          if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED' || order.orderStatus === 'SERVED') {
             throw new Error("ALREADY_CONSUMED - Ticket already scanned.");

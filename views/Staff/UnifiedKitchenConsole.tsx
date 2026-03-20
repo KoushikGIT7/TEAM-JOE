@@ -256,7 +256,10 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         // [SONIC-SYNC] Immediately update optimistic state 
         setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
         
-        if (result === 'CONSUMED') {
+        if (result === 'AWAITING_PAYMENT') {
+           setLocalScanBuffer(prev => prev.includes(order.id) ? prev : [order.id, ...prev]);
+           triggerSonicPulse('SUCCESS', 'AWAITING CASH', `#${order.id.slice(-4).toUpperCase()} – Unpaid.`);
+        } else if (result === 'CONSUMED') {
            triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`);
            setLocalScanBuffer(prev => prev.filter(id => id !== order.id)); // Instantly remove from queue
         } else if (result === 'MANIFESTED') {

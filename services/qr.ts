@@ -201,11 +201,15 @@ export const decryptData = async (encryptedBase64: string): Promise<string> => {
  * Format: v1.<orderId>.<signature>.<expiry>
  */
 export const generateQRPayload = async (order: Order): Promise<string> => {
-  if (order.paymentStatus !== 'SUCCESS') {
+  // 🛡️ RE-LOCK: UPI orders must be SUCCESS. Cash orders can show QR while PENDING.
+  const isCashWait = order.paymentType === 'CASH' && order.paymentStatus === 'PENDING';
+  
+  if (order.paymentStatus !== 'SUCCESS' && !isCashWait) {
     throw new Error('QR can only be generated after payment success');
   }
   
-  if (order.qrStatus !== 'ACTIVE') {
+  const isRedeemable = order.qrStatus === 'ACTIVE' || order.qrStatus === 'PENDING_PAYMENT';
+  if (!isRedeemable) {
     throw new Error('QR is not active');
   }
 
