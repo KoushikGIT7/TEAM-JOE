@@ -67,8 +67,19 @@ export const useOrderNotifications = (userId: string | null) => {
                     await markNotified(orderId, isGuest);
                 }
 
-                // 2. READY: Wave-based delivery
+                // 2. READY: Wave-based delivery for Kitchen items, Immediate for Fast items
                 if (currentFlow === 'READY' && !data.notifiedAt && !waveTimersRef.current[orderId]) {
+                    const isFastItem = data.orderType === 'FAST_ITEM';
+
+                    if (isFastItem) {
+                        triggerLocalNotification(
+                            '🍽️ Order Ready!',
+                            `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                        );
+                        await markNotified(orderId, isGuest);
+                        return;
+                    }
+
                     waveTimersRef.current[orderId] = true;
                     
                     let delay = 0;

@@ -46,7 +46,7 @@ import {
   PrepBatchStatus,
   SystemMaintenance
 } from "../types";
-import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT, FAST_ITEM_CATEGORIES } from "../constants";
+import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT, FAST_ITEM_CATEGORIES, STATION_ID_BY_ITEM_ID } from "../constants";
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
@@ -991,8 +991,11 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
 
       // Resolve item types and build batch assignments
       const itemsWithResolvedType = itemsWithQty.map(it => {
+        // [ROOT-FIX] Smart Item Routing: Check if item REQUIRES a station (e.g. Dosa, Wok for Egg Rice)
+        const hasStation = !!STATION_ID_BY_ITEM_ID[it.id];
         const resolvedOrderType = it.orderType ||
-          (FAST_ITEM_CATEGORIES.includes(it.category || '') ? 'FAST_ITEM' : 'PREPARATION_ITEM');
+          (hasStation ? 'PREPARATION_ITEM' : (FAST_ITEM_CATEGORIES.includes(it.category || '') ? 'FAST_ITEM' : 'PREPARATION_ITEM'));
+
         return {
           ...it,
           orderType: resolvedOrderType,
@@ -1529,6 +1532,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             updateData.orderStatus = 'COMPLETED';
             updateData.serveFlowStatus = 'SERVED';
             updateData.servedAt = now;
+            updateData["pickupWindow.status"] = 'COMPLETED';
             updateData.items = order.items.map(it => ({ 
                ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity 
             }));
@@ -1553,6 +1557,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                updateData.orderStatus = 'COMPLETED';
                updateData.serveFlowStatus = 'SERVED';
                updateData.servedAt = now;
+               updateData["pickupWindow.status"] = 'COMPLETED';
             }
          }
 

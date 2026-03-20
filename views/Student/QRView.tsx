@@ -89,7 +89,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     if (isDestroyed || isServed) {
       // FAST_ITEM (Static) should return home faster
       const isFast = order.orderType === 'FAST_ITEM';
-      const delay = isFast ? 1500 : 2500;
+      const delay = isFast ? 1200 : 2500;
       
       const timer = setTimeout(() => {
         if (onViewOrders) onViewOrders();
@@ -138,8 +138,16 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   
   // ⏱️ Industry-grade Immediate Lockdown (Client-side)
   const isTimeExpired = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
-  const isMissed = uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired;
-  const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED' || order.qrStatus === 'DESTROYED';
+  
+  // 🏁 TERMINAL STATE DETECTION (Sonic Speed)
+  const isServed = 
+    order.orderStatus === 'SERVED' || 
+    order.orderStatus === 'COMPLETED' || 
+    (order.serveFlowStatus as string) === 'SERVED' || 
+    (order.qrStatus as string) === 'DESTROYED' ||
+    order.qrStatus === 'USED';
+    
+  const isMissed = !isServed && (uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired);
   
   // Resolve strict status
   let statusKey = 'SCHEDULED';
