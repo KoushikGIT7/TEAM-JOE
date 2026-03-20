@@ -110,42 +110,34 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
 
   const ordersCol = collection(db, 'orders');
 
-  // Use single index-friendly query: createdAt range + paymentStatus == SUCCESS, ordered by createdAt
-  const successQuery = query(
+  // 🛡️ [Principal Architect] Shift to Index-Free Query:
+  // We fetch by createdAt range (standard index) and filter paymentStatus/paymentType client-side.
+  // This bypasses the 'Failed Precondition' error and requiring manual composite index setup.
+  const baseQuery = query(
     ordersCol,
     where('createdAt', '>=', startMs),
     where('createdAt', '<=', endMs),
-    where('paymentStatus', '==', 'SUCCESS'),
     orderBy('createdAt', 'desc')
   );
 
-  const successSnap = await getDocs(successQuery);
-  let successOrders: Order[] = successSnap.docs.map(doc => ({
+  const snap = await getDocs(baseQuery);
+  const allOrdersInRange = snap.docs.map(doc => ({
     ...(doc.data() as any),
-    id: doc.id,
-    createdAt: (doc.data() as any).createdAt
+    id: doc.id
   }));
 
-  // Cashier scope: cash-only (filter client-side to avoid composite index)
+  // Filtering for SUCCESS orders based on role
+  let successOrders = allOrdersInRange.filter(o => o.paymentStatus === 'SUCCESS');
   if (role === 'cashier') {
     successOrders = successOrders.filter(o => o.paymentType === 'CASH');
   }
 
+  // Filtering for REJECTED orders (only needed for cashier reports)
   let rejectedOrders: Order[] = [];
   if (role === 'cashier') {
-    const rejQuery = query(
-      ordersCol,
-      where('createdAt', '>=', startMs),
-      where('createdAt', '<=', endMs),
-      where('paymentStatus', '==', 'REJECTED'),
-      orderBy('createdAt', 'desc')
+    rejectedOrders = allOrdersInRange.filter(o => 
+      o.paymentStatus === 'REJECTED' && o.paymentType === 'CASH'
     );
-    const rejSnap = await getDocs(rejQuery);
-    rejectedOrders = rejSnap.docs.map(doc => ({
-      ...(doc.data() as any),
-      id: doc.id,
-      createdAt: (doc.data() as any).createdAt
-    })).filter(o => o.paymentType === 'CASH');
   }
 
   const spanMs = endMs - startMs;
@@ -194,25 +186,75 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
 
   if (opts.format === 'pdf') {
     const jsPDF = (await import('jspdf')).default;
-    await import('jspdf-autotable');
+    const { default: autoTable } = await import('jspdf-autotable');
+    
     const doc = new jsPDF();
-    doc.setFontSize(14);
-    doc.text(`JOE Report - ${opts.typeLabel}`, 14, 16);
-    doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
+    const pageWidth = doc.internal.pageSize.width;
 
-    (doc as any).autoTable({
-      head: [['Order ID', 'Amount', 'Payment', 'Status', 'Created']],
-      body: data.orders.slice(0, 50).map(o => [
-        o.id,
-        o.totalAmount,
+    // 🏨 [Grand Hotel Aesthetic] - Official Header
+    doc.setFillColor(20, 25, 35); // Deep Charcoal
+    doc.rect(0, 0, pageWidth, 45, 'F');
+    
+    doc.setTextColor(212, 175, 55); // Champagne Gold
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('JOE CAFETERIA', 15, 20);
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('OFFICIAL SHIFT RECONCILIATION & AUDIT LOG', 15, 28);
+    doc.text(`DATE: ${new Date().toLocaleDateString('en-IN')}`, 15, 33);
+    doc.text(`GENERATE BY: ${opts.typeLabel} ARCHIVE`, 15, 38);
+
+    // 📊 RECONCILIATION SUMMARY BOX
+    doc.setFillColor(245, 245, 245);
+    doc.roundedRect(14, 55, pageWidth - 28, 40, 5, 5, 'F');
+    
+    doc.setTextColor(50, 50, 50);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SHIFT SUMMARY', 20, 65);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Total Transactions: ${data.summary.totalOrders}`, 20, 75);
+    doc.text(`Total Net Revenue: INR ${data.summary.totalRevenue.toLocaleString()}`, 20, 82);
+    
+    doc.text(`Cash Collected: INR ${data.summary.cashTotal.toLocaleString()}`, 110, 75);
+    doc.text(`Online Transfers: INR ${data.summary.onlineTotal.toLocaleString()}`, 110, 82);
+
+    // 🧪 AUDIT LOG TABLE
+    doc.setTextColor(20, 25, 35);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TRANSACTION LOG', 14, 110);
+
+    autoTable(doc, {
+      head: [['ID', 'NAME', 'METHOD', 'AMOUNT', 'STATUS', 'TIMESTAMP']],
+      body: data.orders.map(o => [
+        `#${o.id.slice(-6).toUpperCase()}`,
+        o.userName.toUpperCase(),
         o.paymentType,
-        o.paymentStatus,
-        new Date(o.createdAt).toLocaleString()
+        `INR ${o.totalAmount}`,
+        o.paymentStatus === 'SUCCESS' ? 'PAID' : o.paymentStatus,
+        new Date(o.createdAt).toLocaleTimeString('en-US', { hour12: false })
       ]),
-      startY: 28,
-      styles: { fontSize: 8 }
+      startY: 115,
+      styles: { fontSize: 8, font: 'helvetica', cellPadding: 3 },
+      headStyles: { fillColor: [40, 45, 55], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      margin: { top: 120 }
     });
+
+    // ✍️ AUTHORIZATION FOOTER
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+    doc.setFontSize(10);
+    doc.text('__________________________', 15, finalY);
+    doc.text('CASHIER SIGNATURE', 15, finalY + 5);
+    
+    doc.text('__________________________', pageWidth - 70, finalY);
+    doc.text('ADMIN APPROVAL', pageWidth - 70, finalY + 5);
 
     doc.save(fileName);
     return;
