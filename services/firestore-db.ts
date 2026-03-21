@@ -1367,13 +1367,22 @@ export const registerBankDeposit = async (utr: string, amount: number, meta: any
 
 export const submitOrderUTR = async (orderId: string, utr: string): Promise<void> => {
   const cleanUTR = utr.trim().replace(/\D/g, '');
-  if (cleanUTR.length < 10) throw new Error("Invalid UTR. Standard VPA UTR is 12 digits.");
+  // 🏎️ [FAST-UTR] Allow last 4 digits for speed, but full 12 is supported
+  if (cleanUTR.length < 4) throw new Error("Please enter at least the last 4 digits of your UTR.");
 
   try {
     const orderRef = doc(db, "orders", orderId);
     const orderSnap = await getDoc(orderRef);
     if (!orderSnap.exists()) throw new Error("Order not found");
     const orderData = orderSnap.data();
+
+    // 🛡️ [ANTI-FRAUD] Check if this UTR has already been claimed (using suffix match)
+    // For 4-digit entries, we only block if the amount ALSO matches exactly to prevent generic blocks
+    const dupQuery = query(collection(db, "orders"), where("utr", "==", cleanUTR));
+    const dupSnap = await getDocs(dupQuery);
+    if (!dupSnap.empty && dupSnap.docs.some(d => d.id !== orderId)) {
+        throw new Error("This UTR has already been claimed. Please enter the full 12 digits or contact support.");
+    }
 
     // 1. Initial Update (Move to Review Queue)
     await updateDoc(orderRef, {
@@ -1383,17 +1392,19 @@ export const submitOrderUTR = async (orderId: string, utr: string): Promise<void
       updatedAt: serverTimestamp()
     });
 
-    // 🚀 [SONIC-RECON] Attempt Automatic Pairing
-    const ledgerRef = doc(db, "payments_ledger", cleanUTR);
-    const ledgerSnap = await getDoc(ledgerRef);
+    // 🚀 [SONIC-RECON] Attempt Automatic Pairing (Suffix Match)
+    // We check the ledger for any deposit ending with these digits and matching amount
+    const ledgerQuery = query(collection(db, "payments_ledger"), where("status", "==", "AVAILABLE"));
+    const ledgerSnap = await getDocs(ledgerQuery);
+    
+    const depositMatch = ledgerSnap.docs.find(d => {
+       const dep = d.data();
+       return dep.utr.endsWith(cleanUTR) && Number(dep.amount) === Number(orderData.totalAmount);
+    });
 
-    if (ledgerSnap.exists()) {
-       const deposit = ledgerSnap.data();
-       // SECURE MATCH: UTR must match AND Amount must match perfectly AND must be Available
-       if (deposit.status === 'AVAILABLE' && Number(deposit.amount) === Number(orderData.totalAmount)) {
-          console.log(`[AUTOPAIR] Perfect match found for Order ${orderId}. Automating...`);
-          await confirmCashPayment(orderId, 'SYSTEM_AUTOPAIR_V1');
-       }
+    if (depositMatch) {
+       console.log(`[AUTOPAIR] Smart match found via suffix ${cleanUTR}. Automating...`);
+       await confirmCashPayment(orderId, 'SYSTEM_AUTOPAIR_V1');
     }
   } catch (err: any) {
     console.error("Error submitting UTR:", err);

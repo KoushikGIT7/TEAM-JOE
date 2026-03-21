@@ -5,6 +5,7 @@ import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../
 import { db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { submitOrderUTR } from '../../services/firestore-db';
+import { QRCodeSVG } from 'qrcode.react';
 
 
 interface PaymentViewProps {
@@ -13,22 +14,22 @@ interface PaymentViewProps {
   onSuccess: (orderId: string) => void;
 }
 
-const UPI_PA = '7795351387@ybl';
+const UPI_PA = 'fcgtub@oksbi';
 const UPI_PN = 'JOE Cafeteria';
 
 const generateSecureUPILinks = (id: string, amt: number) => {
   const shortId = id.slice(-4).toUpperCase();
   const tn = encodeURIComponent(`ORD-${shortId}`);
   const pn = encodeURIComponent(UPI_PN);
-  // 🛡️ [CLEAN UPI INTENT] 
-  // We use standard parameters (pa, pn, tn, am, cu) which are supported across 
-  // all NPCI-compliant apps (Google Pay, PhonePe, Paytm, BHIM, etc.)
-  const query = `?pa=${UPI_PA}&pn=${pn}&tn=${tn}&am=${amt}&cu=INR`;
+  // 🛡️ [SECURE & CLEAN UPI INTENT] 
+  // We remove 'tn' (note) because many banks flag intent links with custom notes 
+  // as security risks for new merchant accounts.
+  const query = `?pa=${UPI_PA}&pn=${pn}&am=${amt}&cu=INR`;
   
   return {
     generic: `upi://pay${query}`,
     phonepe: `phonepe://pay${query}`,
-    gpay: `upi://pay${query}`, // Standard intent works best for GPay to avoid rejection
+    gpay: `upi://pay${query}`, 
     paytm: `paytmmp://pay${query}`
   };
 };
@@ -306,101 +307,92 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                         : (isUPI ? `Checking for your ₹${total} transaction. Time remaining: ${timer}s` : 'Show your phone screen to the cashier for manual activation.')
                       }
                     </p>
+                   {/* 🟢 BOTTOM LAYER: PERMANENT UTR SYNC */}
+                   {isUPI && orderStatus !== 'APPROVED' && (
+                     <div className="w-full space-y-6">
+                        <div className="flex flex-col items-center gap-6 w-full">
+                           {/* 🛡️ THE SCANNER: Only QR Code */}
+                           <div className="w-full bg-white p-8 rounded-[3rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center animate-in zoom-in duration-500">
+                              <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-8">Official QR Scanner</div>
+                              
+                              <div className="p-4 bg-white rounded-[2.5rem] border-4 border-slate-50 shadow-inner mb-8">
+                                 <QRCodeSVG 
+                                   value={generateSecureUPILinks(orderId || '', total).generic} 
+                                   size={200} 
+                                   level="H" 
+                                   className="bg-white p-2"
+                                 />
+                              </div>
+
+                              {/* 📱 SMART INSTRUCTIONS */}
+                              <div className="w-full bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-2 mb-2">
+                                 <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Smart Guide:</p>
+                                 <div className="flex flex-col gap-1.5">
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">1</div>
+                                       <p className="text-[11px] font-bold text-slate-600">Take a Screenshot of this QR</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">2</div>
+                                       <p className="text-[11px] font-bold text-slate-600">Open UPI App & Choose "Scan from Gallery"</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">3</div>
+                                       <p className="text-[11px] font-bold text-slate-600">Enter the Ref ID below to confirm</p>
+                                    </div>
+                                 </div>
+                              </div>
+                              <p className="text-[9px] font-black text-slate-200 uppercase tracking-widest mt-2">{UPI_PA}</p>
+                           </div>
+
+                           {/* 🏁 FINAL STEP: UTR SYNC */}
+                           <div className="w-full bg-slate-900 p-8 rounded-[3rem] shadow-2xl shadow-slate-900/40 relative overflow-hidden">
+                              <div className="relative z-10">
+                                 <p className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.4em] mb-6 text-center">Verify Transaction</p>
+                                 <div className="relative mb-6">
+                                    <input 
+                                      type="text"
+                                      maxLength={12}
+                                      placeholder="LAST 4 DIGITS"
+                                      className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-5 text-center text-3xl font-mono font-black tracking-[0.3em] outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all text-white placeholder:text-white/20"
+                                      value={utr}
+                                      onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
+                                    />
+                                    {utr.length >= 4 && (
+                                       <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 animate-in zoom-in"><ShieldCheck className="w-8 h-8" /></div>
+                                    )}
+                                 </div>
+                                 <button 
+                                   onClick={handleUTRSubmit}
+                                   disabled={utr.length < 4 || isSubmittingUtr}
+                                   className="w-full bg-emerald-500 text-white font-black py-6 rounded-2xl shadow-xl disabled:opacity-20 active:scale-95 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-[0.3em] italic"
+                                 >
+                                    {isSubmittingUtr ? <Loader2 className="w-6 h-6 animate-spin text-white" /> : <CheckCircle2 className="w-6 h-6" />}
+                                    CONFIRM PAYMENT
+                                 </button>
+                              </div>
+                              <ShieldCheck className="absolute bottom-[-40px] right-[-40px] w-64 h-64 text-white/5 -rotate-12" />
+                           </div>
+                        </div>
+                     </div>
+                   )}
+
+                   {orderStatus === 'APPROVED' && (
+                      <div className="w-full animate-in zoom-in duration-1000 delay-300">
+                         <button 
+                           onClick={() => orderId && onSuccess(orderId)}
+                           className="w-full bg-emerald-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-4 active:scale-95 transition-all text-[12px] uppercase tracking-[0.3em]"
+                         >
+                           Show Meal QR <ChevronRight className="w-5 h-5" />
+                         </button>
+                      </div>
+                   )}
                   </div>
 
-                  {/* 🟢 BOTTOM LAYER: TROUBLESHOOTING */}
-                  {isUPI && orderStatus !== 'APPROVED' && (
-                    <div className="w-full space-y-6">
-                       {!showManualUtr ? (
-                          <div className="space-y-4">
-                             <button 
-                               onClick={() => setShowManualUtr(true)}
-                               className="text-primary font-black text-[10px] uppercase tracking-[0.2em] border-b-2 border-primary/20 pb-1"
-                             >
-                               Payment not detected? Manual Sync
-                             </button>
-                             <div className="flex flex-col items-center gap-4 w-full">
-                                <button 
-                                  onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).phonepe} 
-                                  className="w-full bg-[#5f259f] text-white py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-[#5f259f]/20 flex items-center justify-center gap-3 active:scale-95 transition-all hover:scale-[1.02]"
-                                >
-                                   <Smartphone className="w-5 h-5" /> Open PhonePe
-                                </button>
-                                <button 
-                                  onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).gpay} 
-                                  className="w-full bg-white border-2 border-slate-200 text-slate-800 py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-all hover:scale-[1.02]"
-                                >
-                                   <Smartphone className="w-5 h-5" /> Open GPay
-                                </button>
-                                <button 
-                                  onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).paytm} 
-                                  className="w-full bg-[#002970] text-white py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-[#002970]/20 flex items-center justify-center gap-3 active:scale-95 transition-all hover:scale-[1.02]"
-                                >
-                                   <Smartphone className="w-5 h-5" /> Open Paytm
-                                </button>
-
-                                <button 
-                                  onClick={() => {
-                                    navigator.clipboard.writeText('7795351387@ybl');
-                                    alert('UPI ID Copied! Open PhonePe/GPay & Paste.');
-                                  }}
-                                  className="w-full mt-2 bg-slate-50 border border-slate-100 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
-                                >
-                                  Copy ID: 7795351387@ybl
-                                </button>
-                                
-                                <div className="flex items-center justify-center gap-6 opacity-30 mt-2">
-                                   <Landmark className="w-5 h-5" />
-                                   <Smartphone className="w-5 h-5" />
-                                   <ShieldCheck className="w-5 h-5" />
-                                </div>
-                             </div>
-                          </div>
-                       ) : (
-                          <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 animate-in slide-in-from-bottom-5">
-                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Internal Reference Sync</p>
-                             <div className="relative mb-4">
-                                <input 
-                                  type="text"
-                                  maxLength={12}
-                                  placeholder="Standard UTR No."
-                                  className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-center text-xl font-mono font-black tracking-[0.2em] outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
-                                  value={utr}
-                                  onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
-                                />
-                                {utr.length >= 10 && (
-                                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500"><ShieldCheck className="w-5 h-5" /></div>
-                                )}
-                             </div>
-                             <button 
-                               onClick={handleUTRSubmit}
-                               disabled={utr.length < 10 || isSubmittingUtr}
-                               className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-widest"
-                             >
-                                {isSubmittingUtr ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-                                FORCE RECONCILIATION
-                             </button>
-                             <button onClick={() => setShowManualUtr(false)} className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dismiss</button>
-                          </div>
-                       )}
-                    </div>
-                  )}
-
-                  {orderStatus === 'APPROVED' && (
-                     <div className="w-full animate-in zoom-in duration-1000 delay-300">
-                        <button 
-                          onClick={() => orderId && onSuccess(orderId)}
-                          className="w-full bg-emerald-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-4 active:scale-95 transition-all text-[12px] uppercase tracking-[0.3em]"
-                        >
-                          Show Meal QR <ChevronRight className="w-5 h-5" />
-                        </button>
-                     </div>
-                  )}
-              </div>
-
-              {/* CANCEL OPS */}
-              <div className="mt-10 opacity-30">
-                 <button onClick={handleCancelOrder} className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-1">Cancel Order Entry</button>
+                  {/* CANCEL OPS */}
+                  <div className="mt-10 opacity-30">
+                     <button onClick={handleCancelOrder} className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-1">Cancel Order Entry</button>
+                  </div>
               </div>
           </div>
       );
