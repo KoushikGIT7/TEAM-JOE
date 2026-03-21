@@ -152,7 +152,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
 
       // ⚡ [SONIC-PAY] UPI Intent Link
       const generateUPILink = (id: string, amt: number) => {
-        const pa = 'fcgtub@okicici';
+        const pa = 'paytmqr6wq8gu@ptys';
         const pn = 'JOE Cafeteria';
         const shortId = id.slice(-4).toUpperCase();
         return `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&tr=${id}&tn=${encodeURIComponent(`ORD${shortId}`)}&am=${amt}&cu=INR`;
@@ -314,12 +314,12 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                              <div className="flex flex-col items-center gap-4">
                                 <button 
                                   onClick={() => {
-                                    navigator.clipboard.writeText('fcgtub@okicici');
+                                    navigator.clipboard.writeText('paytmqr6wq8gu@ptys');
                                     alert('UPI ID Copied! Open PhonePe/GPay & Paste.');
                                   }}
                                   className="w-full bg-slate-50 border border-slate-100 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 shadow-sm flex items-center justify-center gap-2"
                                 >
-                                  Copy ID: fcgtub@okicici
+                                  Copy ID: paytmqr6wq8gu@ptys
                                 </button>
                                 
                                 <div className="flex items-center justify-center gap-6 opacity-30 mt-2">

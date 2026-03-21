@@ -326,21 +326,42 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {pendingOrders.map(order => {
              const hasConflict = conflictMap[order.totalAmount] > 1;
+             const isAutoVerified = order.paymentStatus === 'SUCCESS';
+             const isUtrSubmitted = order.paymentStatus === 'UTR_SUBMITTED';
+
              return (
-               <div key={order.id} className={`bg-white rounded-[2.5rem] border ${hasConflict ? 'border-amber-200 bg-amber-50/10' : 'border-slate-100'} p-8 shadow-xl hover:shadow-2xl transition-all group overflow-hidden relative`}>
+               <div key={order.id} className={`bg-white rounded-[2.5rem] border-4 transition-all duration-300 ${
+                 isAutoVerified ? 'border-emerald-500 bg-emerald-50/20 shadow-emerald-500/10' :
+                 hasConflict ? 'border-amber-400 bg-amber-50/30' : 
+                 isUtrSubmitted ? 'border-indigo-400 bg-indigo-50/30' : 'border-slate-100'
+               } p-8 shadow-xl hover:shadow-2xl group overflow-hidden relative active:scale-[0.99]`}>
                  <div className="flex justify-between items-start mb-8">
                     <div>
-                      <div className="flex items-center gap-2 mb-1">
-                         <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md uppercase tracking-wider italic">#{order.id.slice(-4).toUpperCase()}</span>
-                         {hasConflict && (
-                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Potential Conflict</span>
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                         <span className="text-[10px] font-black bg-slate-900 text-white px-2.5 py-1 rounded-lg uppercase tracking-wider italic shadow-sm">
+                           #{order.id.slice(-4).toUpperCase()}
+                         </span>
+                         {isAutoVerified && (
+                            <span className="text-[9px] font-black bg-emerald-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 animate-pulse">
+                              <CheckCircle className="w-3 h-3" /> VERIFIED
+                            </span>
+                         )}
+                         {hasConflict && !isAutoVerified && (
+                            <span className="text-[9px] font-black bg-amber-500 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                              <AlertCircle className="w-3 h-3" /> CONFLICT
+                            </span>
+                         )}
+                         {isUtrSubmitted && !isAutoVerified && (
+                            <span className="text-[9px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                              <Zap className="w-3 h-3" /> UTR SENT
+                            </span>
                          )}
                       </div>
-                      <h3 className="text-2xl font-black text-slate-900">{order.userName}</h3>
+                      <h3 className="text-3xl font-black text-slate-900 tracking-tight">{order.userName}</h3>
                     </div>
                     <div className="text-right">
-                      <p className="text-4xl font-black text-emerald-600 leading-none">₹{order.totalAmount}</p>
-                      <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-widest italic">{formatTime(order.createdAt)}</p>
+                      <p className={`text-5xl font-black leading-none ${isAutoVerified ? 'text-emerald-600' : 'text-slate-900'}`}>₹{order.totalAmount}</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-3 uppercase tracking-widest italic">{formatTime(order.createdAt)}</p>
                     </div>
                  </div>
                  
@@ -348,7 +369,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                     {order.paymentStatus === 'UTR_SUBMITTED' && (
                       <div className="w-full bg-indigo-50 border border-indigo-100 flex items-center gap-3 px-5 py-3 rounded-2xl mb-2">
                          <ShieldCheck className="w-5 h-5 text-indigo-600" />
-                         <p className="font-mono font-bold text-indigo-900 tracking-wider text-sm">UTR: {order.utr}</p>
+                         <p className="font-mono font-black text-indigo-900 tracking-[0.1em] text-lg uppercase">{order.utr}</p>
                       </div>
                     )}
                     {order.items.map((it, idx) => (
@@ -361,12 +382,27 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                  </div>
                  
                  <div className="flex gap-4 relative z-10">
-                    <button onClick={() => handleConfirm(order.id)} disabled={!!confirming} className={`flex-1 ${order.paymentStatus === 'UTR_SUBMITTED' ? 'bg-indigo-600 shadow-indigo-900/20' : 'bg-emerald-600 shadow-emerald-900/20'} text-white font-black py-5 rounded-2xl active:scale-95 transition-all text-xs uppercase tracking-[0.2em] shadow-xl`}>
-                      {confirming === order.id ? <RefreshCw className="w-5 h-5 animate-spin mx-auto" /> : (order.paymentStatus === 'UTR_SUBMITTED' ? "Verify & Approve" : "Approve Cash")}
+                    <button 
+                       onClick={() => handleConfirm(order.id)} 
+                       disabled={!!confirming || order.paymentStatus === 'SUCCESS'} 
+                       className={`flex-[2] h-20 rounded-[1.5rem] font-black text-sm uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3 ${
+                         order.paymentStatus === 'SUCCESS' ? 'bg-emerald-100 text-emerald-900 opacity-50 shadow-none' :
+                         order.paymentStatus === 'UTR_SUBMITTED' ? 'bg-indigo-600 text-white shadow-indigo-900/30' : 
+                         conflictMap[order.totalAmount] > 1 ? 'bg-amber-500 text-white shadow-amber-900/30' : 'bg-slate-900 text-white shadow-black/20'
+                       }`}
+                    >
+                       {confirming === order.id ? <RefreshCw className="w-6 h-6 animate-spin" /> : (
+                          <>
+                             {order.paymentStatus === 'SUCCESS' ? <CheckCircle className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
+                             {order.paymentStatus === 'SUCCESS' ? "PAID" : order.paymentStatus === 'UTR_SUBMITTED' ? "APPROVE UTR" : conflictMap[order.totalAmount] > 1 ? "SOLVE CONFLICT" : "APPROVE CASH"}
+                          </>
+                       )}
                     </button>
-                    <button onClick={() => handleReject(order.id)} disabled={!!rejecting} className="bg-rose-50 text-rose-600 font-black px-6 py-5 rounded-2xl border border-rose-100 active:scale-95 transition-all">
-                      <X className="w-6 h-6" />
-                    </button>
+                    {order.paymentStatus !== 'SUCCESS' && (
+                       <button onClick={() => handleReject(order.id)} disabled={!!rejecting} className="w-20 h-20 bg-rose-50 text-rose-600 font-black rounded-[1.5rem] border-2 border-rose-100 active:scale-95 transition-all flex items-center justify-center shadow-lg shadow-rose-900/5">
+                         <X className="w-8 h-8" />
+                       </button>
+                    )}
                  </div>
                  {hasConflict && (
                    <div className="absolute top-0 right-0 p-3"><AlertCircle className="w-6 h-6 text-amber-500 opacity-20" /></div>
