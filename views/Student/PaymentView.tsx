@@ -17,9 +17,14 @@ const UPI_PN = 'JOE Cafeteria';
 
 const generateSecureUPILinks = (id: string, amt: number) => {
   const shortId = id.slice(-4).toUpperCase();
-  const tn = encodeURIComponent(`ORD${shortId}`);
+  const tn = encodeURIComponent(`ORD-${shortId}`);
   const pn = encodeURIComponent(UPI_PN);
-  const query = `?pa=${UPI_PA}&pn=${pn}&tr=${id}&tn=${tn}&am=${amt}&cu=INR`;
+  
+  // 🛡️ [NPCI BYPASS] Sanitize 'tr' (Transaction Ref) to strictly alphanumeric. PhonePe/Paytm rejects hyphens or length > 35.
+  const cleanTr = id.replace(/[^a-zA-Z0-9]/g, '').substring(0, 35).toUpperCase();
+  
+  // 🛡️ [MCC BYPASS] Business accounts (@ptys) require a valid Merchant Category Code. '5814' = Fast Food.
+  const query = `?pa=${UPI_PA}&pn=${pn}&tr=${cleanTr}&mc=5814&tn=${tn}&am=${amt}&cu=INR`;
   
   return {
     generic: `upi://pay${query}`,
