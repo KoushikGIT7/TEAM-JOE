@@ -105,7 +105,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   }, [state, orderId, onSuccess, onBack]);
 
   const handleUTRSubmit = async () => {
-    if (!orderId || utr.length < 10) return;
+    if (!orderId || utr.length < 4) return;
     setIsSubmittingUtr(true);
     try {
       await submitOrderUTR(orderId, utr);
@@ -310,70 +310,87 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                    {/* 🟢 BOTTOM LAYER: PERMANENT UTR SYNC */}
                    {isUPI && orderStatus !== 'APPROVED' && (
                      <div className="w-full space-y-6">
-                        <div className="flex flex-col items-center gap-6 w-full">
-                           {/* 🛡️ THE SCANNER: Only QR Code */}
-                           <div className="w-full bg-white p-8 rounded-[3rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center animate-in zoom-in duration-500">
-                              <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-8">Official QR Scanner</div>
-                              
-                              <div className="p-4 bg-white rounded-[2.5rem] border-4 border-slate-50 shadow-inner mb-8">
-                                 <QRCodeSVG 
-                                   value={generateSecureUPILinks(orderId || '', total).generic} 
-                                   size={200} 
-                                   level="H" 
-                                   className="bg-white p-2"
-                                 />
+                        {payStatus === 'UTR_SUBMITTED' ? (
+                           <div className="w-full bg-emerald-50 p-10 rounded-[3rem] border-2 border-emerald-100 flex flex-col items-center animate-in zoom-in duration-500 text-center">
+                              <div className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-xl shadow-emerald-200">
+                                 <CheckCircle2 className="w-10 h-10 text-white" />
                               </div>
-
-                              {/* 📱 SMART INSTRUCTIONS */}
-                              <div className="w-full bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-2 mb-2">
-                                 <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Smart Guide:</p>
-                                 <div className="flex flex-col gap-1.5">
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">1</div>
-                                       <p className="text-[11px] font-bold text-slate-600">Take a Screenshot of this QR</p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">2</div>
-                                       <p className="text-[11px] font-bold text-slate-600">Open UPI App & Choose "Scan from Gallery"</p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">3</div>
-                                       <p className="text-[11px] font-bold text-slate-600">Enter the Ref ID below to confirm</p>
-                                    </div>
-                                 </div>
+                              <h3 className="text-xl font-black text-emerald-900 uppercase italic mb-2 tracking-tighter">Reference Submitted</h3>
+                              <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
+                                Our system is verifying your ₹{total} payment. <br/>
+                                This takes 10–60 seconds.
+                              </p>
+                              <div className="mt-8 flex items-center gap-2">
+                                 <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+                                 <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Waiting for Bank Sync</span>
                               </div>
-                              <p className="text-[9px] font-black text-slate-200 uppercase tracking-widest mt-2">{UPI_PA}</p>
                            </div>
-
-                           {/* 🏁 FINAL STEP: UTR SYNC */}
-                           <div className="w-full bg-slate-900 p-8 rounded-[3rem] shadow-2xl shadow-slate-900/40 relative overflow-hidden">
-                              <div className="relative z-10">
-                                 <p className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.4em] mb-6 text-center">Verify Transaction</p>
-                                 <div className="relative mb-6">
-                                    <input 
-                                      type="text"
-                                      maxLength={12}
-                                      placeholder="LAST 4 DIGITS"
-                                      className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-5 text-center text-3xl font-mono font-black tracking-[0.3em] outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all text-white placeholder:text-white/20"
-                                      value={utr}
-                                      onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
+                        ) : (
+                           <div className="flex flex-col items-center gap-6 w-full">
+                              {/* 🛡️ THE SCANNER: Only QR Code */}
+                              <div className="w-full bg-white p-8 rounded-[3rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center animate-in zoom-in duration-500">
+                                 <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-8">Official QR Scanner</div>
+                                 
+                                 <div className="p-4 bg-white rounded-[2.5rem] border-4 border-slate-50 shadow-inner mb-8">
+                                    <QRCodeSVG 
+                                      value={generateSecureUPILinks(orderId || '', total).generic} 
+                                      size={200} 
+                                      level="H" 
+                                      className="bg-white p-2"
                                     />
-                                    {utr.length >= 4 && (
-                                       <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 animate-in zoom-in"><ShieldCheck className="w-8 h-8" /></div>
-                                    )}
                                  </div>
-                                 <button 
-                                   onClick={handleUTRSubmit}
-                                   disabled={utr.length < 4 || isSubmittingUtr}
-                                   className="w-full bg-emerald-500 text-white font-black py-6 rounded-2xl shadow-xl disabled:opacity-20 active:scale-95 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-[0.3em] italic"
-                                 >
-                                    {isSubmittingUtr ? <Loader2 className="w-6 h-6 animate-spin text-white" /> : <CheckCircle2 className="w-6 h-6" />}
-                                    CONFIRM PAYMENT
-                                 </button>
+
+                                 {/* 📱 SMART INSTRUCTIONS */}
+                                 <div className="w-full bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-2 mb-2">
+                                    <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Smart Guide:</p>
+                                    <div className="flex flex-col gap-1.5">
+                                       <div className="flex items-center gap-3">
+                                          <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">1</div>
+                                          <p className="text-[11px] font-bold text-slate-600">Take a Screenshot of this QR</p>
+                                       </div>
+                                       <div className="flex items-center gap-3">
+                                          <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">2</div>
+                                          <p className="text-[11px] font-bold text-slate-600">Open UPI App & Pay via Gallery</p>
+                                       </div>
+                                       <div className="flex items-center gap-3">
+                                          <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">3</div>
+                                          <p className="text-[11px] font-bold text-slate-600">Enter your 4-digit Ref below</p>
+                                       </div>
+                                    </div>
+                                 </div>
+                                 <p className="text-[9px] font-black text-slate-200 uppercase tracking-widest mt-2">{UPI_PA}</p>
                               </div>
-                              <ShieldCheck className="absolute bottom-[-40px] right-[-40px] w-64 h-64 text-white/5 -rotate-12" />
+
+                              {/* 🏁 FINAL STEP: UTR SYNC */}
+                              <div className="w-full bg-slate-900 p-8 rounded-[3rem] shadow-2xl shadow-slate-900/40 relative overflow-hidden">
+                                 <div className="relative z-10">
+                                    <p className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.4em] mb-6 text-center">Verify Transaction</p>
+                                    <div className="relative mb-6">
+                                       <input 
+                                         type="text"
+                                         maxLength={12}
+                                         placeholder="LAST 4 DIGITS"
+                                         className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-5 text-center text-3xl font-mono font-black tracking-[0.3em] outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all text-white placeholder:text-white/20"
+                                         value={utr}
+                                         onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
+                                       />
+                                       {utr.length >= 4 && (
+                                          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 animate-in zoom-in"><ShieldCheck className="w-8 h-8" /></div>
+                                       )}
+                                    </div>
+                                    <button 
+                                      onClick={handleUTRSubmit}
+                                      disabled={utr.length < 4 || isSubmittingUtr}
+                                      className="w-full bg-emerald-500 text-white font-black py-6 rounded-2xl shadow-xl disabled:opacity-20 active:scale-95 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-[0.3em] italic"
+                                    >
+                                       {isSubmittingUtr ? <Loader2 className="w-6 h-6 animate-spin text-white" /> : <CheckCircle2 className="w-6 h-6" />}
+                                       CONFIRM PAYMENT
+                                    </button>
+                                 </div>
+                                 <ShieldCheck className="absolute bottom-[-40px] right-[-40px] w-64 h-64 text-white/5 -rotate-12" />
+                              </div>
                            </div>
-                        </div>
+                        )}
                      </div>
                    )}
 
