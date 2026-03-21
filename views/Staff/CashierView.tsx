@@ -40,18 +40,42 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
 
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
+  const notifiedUtrs = React.useRef<Set<string>>(new Set());
+
   // --- 📡 DATA LISTENERS ---
   useEffect(() => {
+    // 🔔 Request permission for live alerts
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
     let lastLen = 0;
     const unsubs = [
       listenToPendingCashOrders((data) => {
-        if (data.length > lastLen) {
-           // 🔊 SOUND BOX: Real-world buzz for cashier
-           try {
-              if (!audioRef.current) audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-              audioRef.current.play().catch(() => {});
-           } catch (e) {}
+        // 🚀 SMART NOTIFICATION: Check for NEW UTR submissions
+        data.forEach(order => {
+           if (order.paymentStatus === 'UTR_SUBMITTED' && order.utr && !notifiedUtrs.current.has(order.id + '_' + order.utr)) {
+              notifiedUtrs.current.add(order.id + '_' + order.utr);
+              
+              // 🔊 Audio Alert
+              if (audioRef.current) audioRef.current.play().catch(() => {});
+              
+              // 📝 Notification Card
+              if ('Notification' in window && Notification.permission === 'granted') {
+                 new Notification('💸 UTR RECEIVED: ' + order.utr, {
+                    body: `${order.userName} submitted a ₹${order.totalAmount} payment for verification.`,
+                    icon: '/JeoLogoFinal.png',
+                    requireInteraction: true
+                 });
+              }
+           }
+        });
+
+        if (data.length > lastLen && data.some(o => o.paymentStatus !== 'UTR_SUBMITTED')) {
+           // Standard cash order sound if it's not a UTR (redundant but safe)
+           if (audioRef.current) audioRef.current.play().catch(() => {});
         }
+
         lastLen = data.length;
         setPendingOrders(data);
         setLoading(false);
@@ -367,9 +391,16 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                  
                  <div className="flex flex-wrap gap-2 mb-8">
                     {order.paymentStatus === 'UTR_SUBMITTED' && (
-                      <div className="w-full bg-indigo-50 border border-indigo-100 flex items-center gap-3 px-5 py-3 rounded-2xl mb-2">
-                         <ShieldCheck className="w-5 h-5 text-indigo-600" />
-                         <p className="font-mono font-black text-indigo-900 tracking-[0.1em] text-lg uppercase">{order.utr}</p>
+                      <div className="w-full bg-indigo-900 shadow-xl shadow-indigo-900/20 px-8 py-6 rounded-[2rem] mb-6 animate-in slide-in-from-top-2 border border-indigo-400/20">
+                         <div className="flex items-center justify-between mb-3">
+                            <span className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.4em] italic">Audit Reference No</span>
+                            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                         </div>
+                         <p className="font-mono font-black text-white tracking-[0.2em] text-4xl leading-none drop-shadow-sm">{order.utr}</p>
+                         <div className="mt-4 flex items-center gap-2">
+                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                           <p className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em]">Match with Bank Statement</p>
+                         </div>
                       </div>
                     )}
                     {order.items.map((it, idx) => (

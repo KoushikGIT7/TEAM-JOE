@@ -1429,6 +1429,26 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
     if (!orderSnap.exists()) return;
     const orderData = orderSnap.data();
 
+    // 🏦 PRE-TRANSACTION SEARCH: 
+    // Find the matching ledger record BEFORE we start the transaction (Queries are NOT allowed inside transactions)
+    let depositDocId: string | null = null;
+    if (orderData.utr) {
+       try {
+          const ledgerQuery = query(collection(db, "payments_ledger"), where("status", "==", "AVAILABLE"));
+          const ledgerSnap = await getDocs(ledgerQuery);
+          const depositMatch = ledgerSnap.docs.find(d => {
+             const dep = d.data();
+             return dep.utr.endsWith(orderData.utr) && Number(dep.amount) === Number(orderData.totalAmount);
+          });
+          if (depositMatch) {
+             depositDocId = depositMatch.id;
+             console.log(`[LEDGER_PREVIEW] Matched deposit ${depositDocId} for UTR suffix ${orderData.utr}`);
+          }
+       } catch (e) {
+          console.error("[LEDGER_PREVIEW] Search failed, continuing with manual approval:", e);
+       }
+    }
+
     await runTransaction(db, async (transaction) => {
        transaction.update(orderRef, {
           paymentStatus: 'SUCCESS',
@@ -1443,10 +1463,9 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
           updatedAt: serverTimestamp()
        });
 
-       // If this was an autopair, claim the deposit in the ledger to prevent reuse
-       if (orderData.utr) {
-          const ledgerRef = doc(db, "payments_ledger", orderData.utr);
-          transaction.update(ledgerRef, {
+       // Now we use the specific docId we found earlier to lock the record atomically
+       if (depositDocId) {
+          transaction.update(doc(db, "payments_ledger", depositDocId), {
             status: 'CLAIMED',
             claimedByOrder: orderId,
             claimedAt: serverTimestamp()
