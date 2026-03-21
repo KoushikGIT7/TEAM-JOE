@@ -12,6 +12,23 @@ interface PaymentViewProps {
   onSuccess: (orderId: string) => void;
 }
 
+const UPI_PA = 'paytmqr6wq8gu@ptys';
+const UPI_PN = 'JOE Cafeteria';
+
+const generateSecureUPILinks = (id: string, amt: number) => {
+  const shortId = id.slice(-4).toUpperCase();
+  const tn = encodeURIComponent(`ORD${shortId}`);
+  const pn = encodeURIComponent(UPI_PN);
+  const query = `?pa=${UPI_PA}&pn=${pn}&tr=${id}&tn=${tn}&am=${amt}&cu=INR`;
+  
+  return {
+    generic: `upi://pay${query}`,
+    phonepe: `phonepe://pay${query}`,
+    gpay: `tezz://upi/pay${query}`, // Works better for GPay intent bypassing
+    paytm: `paytmmp://pay${query}`
+  };
+};
+
 const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'CASH_WAITING' | 'REJECTED' | 'SUCCESS'>('IDLE');
@@ -150,14 +167,6 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       }
       const guestName = profile?.name || 'Guest';
 
-      // ⚡ [SONIC-PAY] UPI Intent Link
-      const generateUPILink = (id: string, amt: number) => {
-        const pa = 'paytmqr6wq8gu@ptys';
-        const pn = 'JOE Cafeteria';
-        const shortId = id.slice(-4).toUpperCase();
-        return `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&tr=${id}&tn=${encodeURIComponent(`ORD${shortId}`)}&am=${amt}&cu=INR`;
-      };
-
       const newOrderId = await createOrder({
         userId: guestId,
         userName: guestName,
@@ -176,7 +185,8 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       localStorage.removeItem('joe_cart');
       
       if (isUPI) {
-        window.location.href = generateUPILink(newOrderId, total);
+        // Best-effort auto-redirect (may be blocked by browser on some devices)
+        try { window.location.href = generateSecureUPILinks(newOrderId, total).generic; } catch(e){}
         setState('CASH_WAITING');
       } else if (isCash) {
         setState('CASH_WAITING');
@@ -311,13 +321,32 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                                Payment not detected? Manual Sync
                              </button>
                              
-                             <div className="flex flex-col items-center gap-4">
+                             <div className="flex flex-col items-center gap-3 w-full">
+                                <a 
+                                  href={generateSecureUPILinks(orderId || '', total).phonepe} 
+                                  className="w-full bg-[#5f259f] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#5f259f]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                >
+                                   Open PhonePe
+                                </a>
+                                <a 
+                                  href={generateSecureUPILinks(orderId || '', total).gpay} 
+                                  className="w-full bg-white border-2 border-slate-200 text-slate-800 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                >
+                                   Open GPay
+                                </a>
+                                <a 
+                                  href={generateSecureUPILinks(orderId || '', total).paytm} 
+                                  className="w-full bg-[#002970] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#002970]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                >
+                                   Open Paytm
+                                </a>
+
                                 <button 
                                   onClick={() => {
                                     navigator.clipboard.writeText('paytmqr6wq8gu@ptys');
                                     alert('UPI ID Copied! Open PhonePe/GPay & Paste.');
                                   }}
-                                  className="w-full bg-slate-50 border border-slate-100 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 shadow-sm flex items-center justify-center gap-2"
+                                  className="w-full mt-2 bg-slate-50 border border-slate-100 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
                                 >
                                   Copy ID: paytmqr6wq8gu@ptys
                                 </button>
