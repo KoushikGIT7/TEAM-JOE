@@ -178,10 +178,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         items: cart,
         totalAmount: total,
         paymentType: selectedMethod as any,
-        paymentStatus: isCash ? 'PENDING' : 'INITIATED' as any,
+        paymentStatus: 'SUCCESS', // BYPASS: Force Success instantly
         arrivalTime: isDynamic ? (arrivalTime ?? undefined) : undefined,
         orderStatus: 'PENDING',
-        qrStatus: 'PENDING_PAYMENT',
+        qrStatus: 'ACTIVE',       // BYPASS: Force QR active immediately
         cafeteriaId: 'MAIN_CAFE',
         idempotencyKey
       });
@@ -189,15 +189,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       setOrderId(newOrderId);
       localStorage.removeItem('joe_cart');
       
-      if (isUPI) {
-        // Best-effort auto-redirect (may be blocked by browser on some devices)
-        try { window.location.href = generateSecureUPILinks(newOrderId, total).generic; } catch(e){}
-        setState('CASH_WAITING');
-      } else if (isCash) {
-        setState('CASH_WAITING');
-      } else {
-        onSuccess(newOrderId);
-      }
+      // BYPASS ALL CASHIER/UPI SCREENS - JUMP STRAIGHT TO ACTIVE ORDER
+      onSuccess(newOrderId);
+      return;
+      
     } catch (err: any) {
       console.error("Payment Flow Failed:", err);
       setState('IDLE');
