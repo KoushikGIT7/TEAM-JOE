@@ -20,7 +20,11 @@ interface ReportData {
     onlineTotal: number;
     approvedCount: number;
     rejectedCount: number;
+    avgTicket: number;
+    lostRevenue: number;
+    voidRate: number;
   };
+  categorySplit?: { category: string; revenue: number; volume: number }[];
   paymentSplit: { name: string; value: number }[];
   itemSales: { name: string; quantity: number; revenue: number }[];
   revenueTrend: { label: string; revenue: number }[];
@@ -51,8 +55,15 @@ const computeReport = (orders: Order[], rejected: Order[] = [], spanMs: number):
   let totalRevenue = 0;
   let cashTotal = 0;
   let onlineTotal = 0;
+  let lostRevenue = 0;
+  
+  rejected.forEach(o => {
+     lostRevenue += (o.totalAmount || 0);
+  });
+
   const paymentSplitMap: Record<string, number> = {};
   const itemMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
+  const categoryMap: Record<string, { revenue: number, volume: number }> = {};
   const trendMap: Record<string, number> = {};
   const peakMap: Record<string, { orders: number; revenue: number }> = {};
 
@@ -76,8 +87,17 @@ const computeReport = (orders: Order[], rejected: Order[] = [], spanMs: number):
       itemMap[key] = itemMap[key] || { name: item.name, quantity: 0, revenue: 0 };
       itemMap[key].quantity += item.quantity || 0;
       itemMap[key].revenue += (item.price || 0) * (item.quantity || 0);
+      
+      const cat = item.category || 'Uncategorized';
+      categoryMap[cat] = categoryMap[cat] || { revenue: 0, volume: 0 };
+      categoryMap[cat].revenue += (item.price || 0) * (item.quantity || 0);
+      categoryMap[cat].volume += item.quantity || 0;
     });
   });
+
+  const totalAttempted = successOrders.length + rejected.length;
+  const voidRate = totalAttempted > 0 ? (rejected.length / totalAttempted) * 100 : 0;
+  const avgTicket = successOrders.length > 0 ? (totalRevenue / successOrders.length) : 0;
 
   return {
     orders: successOrders,
@@ -88,8 +108,12 @@ const computeReport = (orders: Order[], rejected: Order[] = [], spanMs: number):
       cashTotal,
       onlineTotal,
       approvedCount: successOrders.length,
-      rejectedCount: rejected.length
+      rejectedCount: rejected.length,
+      avgTicket,
+      lostRevenue,
+      voidRate
     },
+    categorySplit: Object.entries(categoryMap).map(([category, m]) => ({ category, revenue: m.revenue, volume: m.volume })).sort((a,b) => b.revenue - a.revenue),
     paymentSplit: Object.entries(paymentSplitMap).map(([name, value]) => ({ name, value })),
     itemSales: Object.values(itemMap).sort((a, b) => b.quantity - a.quantity),
     revenueTrend: Object.entries(trendMap).map(([label, revenue]) => ({ label, revenue })),
@@ -188,73 +212,210 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     const jsPDF = (await import('jspdf')).default;
     const { default: autoTable } = await import('jspdf-autotable');
     
-    const doc = new jsPDF();
+    // Default config: A4 portrait
+    const doc = new jsPDF('p', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
 
-    // 🏨 [Grand Hotel Aesthetic] - Official Header
-    doc.setFillColor(20, 25, 35); // Deep Charcoal
-    doc.rect(0, 0, pageWidth, 45, 'F');
+    // --- COLOR PALETTE ---
+    const primaryDark: [number, number, number] = [15, 23, 42]; // slate-900
+    const accentGold: [number, number, number] = [212, 175, 55]; // champagne gold
+    const secondaryGray: [number, number, number] = [100, 116, 139]; // slate-500
+    const lightBg: [number, number, number] = [248, 250, 252]; // slate-50
+
+    // ==========================================
+    // PAGE 1: EXECUTIVE BRIEF & ANALYTICS
+    // ==========================================
     
-    doc.setTextColor(212, 175, 55); // Champagne Gold
-    doc.setFontSize(24);
+    // 1. Grand Header
+    doc.setFillColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.rect(0, 0, pageWidth, 60, 'F');
+    
+    doc.setTextColor(accentGold[0], accentGold[1], accentGold[2]);
     doc.setFont('helvetica', 'bold');
-    doc.text('JOE CAFETERIA', 15, 20);
+    doc.setFontSize(28);
+    doc.text('JOE CAFETERIA', 20, 25);
     
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text('OFFICIAL SHIFT RECONCILIATION & AUDIT LOG', 15, 28);
-    doc.text(`DATE: ${new Date().toLocaleDateString('en-IN')}`, 15, 33);
-    doc.text(`GENERATE BY: ${opts.typeLabel} ARCHIVE`, 15, 38);
+    doc.text('EXECUTIVE SHIFT RECONCILIATION & AUDIT LOG', 20, 35);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(200, 200, 200);
+    doc.text(`GENERATED: ${new Date().toLocaleString('en-IN')}`, 20, 45);
+    doc.text(`OPERATOR FLAG: ${opts.typeLabel.toUpperCase()}`, 20, 50);
 
-    // 📊 RECONCILIATION SUMMARY BOX
-    doc.setFillColor(245, 245, 245);
-    doc.roundedRect(14, 55, pageWidth - 28, 40, 5, 5, 'F');
-    
-    doc.setTextColor(50, 50, 50);
-    doc.setFontSize(12);
+    // 2. Financial Summary Cards
+    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text('SHIFT SUMMARY', 20, 65);
-    
+    doc.text('1. FINANCIAL OVERVIEW', 20, 75);
+
+    // Card 1: Total Revenue
+    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+    doc.roundedRect(20, 85, 80, 25, 4, 4, 'F');
+    doc.setFontSize(9);
+    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+    doc.text('GROSS GENERATED REVENUE', 25, 95);
+    doc.setFontSize(16);
+    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.text(`INR ${data.summary.totalRevenue.toLocaleString()}`, 25, 105);
+
+    // Card 2: Cash Target
+    doc.roundedRect(110, 85, 80, 25, 4, 4, 'F');
+    doc.setFontSize(9);
+    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+    doc.text('CASH IN DRAWER (ESTIMATED)', 115, 95);
+    doc.setFontSize(16);
+    doc.setTextColor(16, 185, 129); // emerald-500
+    doc.text(`INR ${data.summary.cashTotal.toLocaleString()}`, 115, 105);
+
+    // 3. Operational Metrics
+    doc.setFontSize(16);
+    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.text('2. KEY PERFORMANCE INDICATORS (KPI)', 20, 130);
+
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total Transactions: ${data.summary.totalOrders}`, 20, 75);
-    doc.text(`Total Net Revenue: INR ${data.summary.totalRevenue.toLocaleString()}`, 20, 82);
-    
-    doc.text(`Cash Collected: INR ${data.summary.cashTotal.toLocaleString()}`, 110, 75);
-    doc.text(`Online Transfers: INR ${data.summary.onlineTotal.toLocaleString()}`, 110, 82);
-
-    // 🧪 AUDIT LOG TABLE
-    doc.setTextColor(20, 25, 35);
-    doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('TRANSACTION LOG', 14, 110);
+    // Left Column
+    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+    doc.text('Total Volume:', 20, 140);
+    doc.text('Avg Check (Cover):', 20, 148);
+    doc.text('Online Net:', 20, 156);
+    
+    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.text(`${data.summary.totalOrders} Approved Orders`, 60, 140);
+    doc.text(`INR ${data.summary.avgTicket.toFixed(2)} / ticket`, 60, 148);
+    doc.text(`INR ${data.summary.onlineTotal.toLocaleString()}`, 60, 156);
+
+    // Right Column
+    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+    doc.text('Lost Revenue:', 110, 140);
+    doc.text('Void / Spoilage Rate:', 110, 148);
+    doc.text('Category Top:', 110, 156);
+
+    doc.setTextColor(239, 68, 68); // Red for lost revenue
+    doc.text(`INR ${data.summary.lostRevenue.toLocaleString()} (Rejected)`, 150, 140);
+    doc.text(`${data.summary.voidRate.toFixed(2)}%`, 150, 148);
+    
+    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    const topCat = (data.categorySplit && data.categorySplit.length > 0) ? data.categorySplit[0].category : 'N/A';
+    doc.text(`${topCat}`, 150, 156);
+
+    // 4. Bestselling Items
+    doc.setFontSize(16);
+    doc.text('3. BESTSELLING MENU ITEMS', 20, 175);
+    
+    const topItems = data.itemSales.slice(0, 5).map((it, i) => [
+       `#${i+1}`, it.name, `${it.quantity} Units`, `INR ${it.revenue}`
+    ]);
 
     autoTable(doc, {
-      head: [['ID', 'NAME', 'METHOD', 'AMOUNT', 'STATUS', 'TIMESTAMP']],
-      body: data.orders.map(o => [
-        `#${o.id.slice(-6).toUpperCase()}`,
-        o.userName.toUpperCase(),
-        o.paymentType,
-        `INR ${o.totalAmount}`,
-        o.paymentStatus === 'SUCCESS' ? 'PAID' : o.paymentStatus,
-        new Date(o.createdAt).toLocaleTimeString('en-US', { hour12: false })
-      ]),
-      startY: 115,
-      styles: { fontSize: 8, font: 'helvetica', cellPadding: 3 },
-      headStyles: { fillColor: [40, 45, 55], textColor: [255, 255, 255], fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [250, 250, 250] },
-      margin: { top: 120 }
+      startY: 180,
+      head: [['RANK', 'ITEM NAME', 'VOLUME SOLD', 'REVENUE YIELD']],
+      body: topItems,
+      theme: 'grid',
+      headStyles: { fillColor: primaryDark, textColor: 255, fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 20, right: 20 },
+    });
+
+    // 5. Peak Trading Hours
+    const finalY = (doc as any).lastAutoTable.finalY + 15;
+    doc.setFontSize(16);
+    doc.text('4. PEAK TRADING HOURS', 20, finalY);
+    
+    const sortedPeaks = [...data.peakHours].sort((a,b) => b.revenue - a.revenue).slice(0, 3);
+    const peakBody = sortedPeaks.map(p => [ p.hour, `${p.orders} Orders`, `INR ${p.revenue}` ]);
+
+    autoTable(doc, {
+      startY: finalY + 5,
+      head: [['HOUR BLOCK', 'TRAFFIC', 'GENERATED REVENUE']],
+      body: peakBody,
+      theme: 'plain',
+      headStyles: { fillColor: lightBg, textColor: secondaryGray, fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 20, right: 20 },
+    });
+
+    // Sub-footer pg 1
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(150, 150, 150);
+    doc.text('PAGE 1 OF 2 - CONFIDENTIAL BUSINESS REPORT', pageWidth / 2, pageHeight - 15, { align: 'center' });
+
+
+    // ==========================================
+    // PAGE 2: COMPREHENSIVE TRANSACTION LEDGER
+    // ==========================================
+    doc.addPage();
+    
+    // Minimal Header for Page 2
+    doc.setFillColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.rect(0, 0, pageWidth, 25, 'F');
+    doc.setTextColor(accentGold[0], accentGold[1], accentGold[2]);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('5. TRANSACTION LEDGER - FULL DISCLOSURE', 20, 16);
+
+    const ledgerData = (data.raw || []).map(o => {
+       const itemsPreview = o.items ? o.items.map((it:any) => `${it.quantity}x ${it.name}`).join(', ') : 'N/A';
+       const dateStr = new Date(o.createdAt).toLocaleString('en-IN', { hour12: true, hour: '2-digit', minute:'2-digit' });
+       return [
+         `#${(o.id || 'N/A').slice(-6).toUpperCase()}`,
+         dateStr,
+         (o.userName || 'Unknown').toUpperCase(),
+         itemsPreview.length > 30 ? itemsPreview.substring(0, 27) + '...' : itemsPreview,
+         o.paymentType || 'N/A',
+         `INR ${o.totalAmount || 0}`,
+         o.paymentStatus || 'UNKNOWN'
+       ];
+    });
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['ID', 'TIME', 'CUSTOMER', 'ITEMS', 'METHOD', 'AMOUNT', 'STATUS']],
+      body: ledgerData,
+      theme: 'striped',
+      headStyles: { fillColor: primaryDark, textColor: 255, fontSize: 8, fontStyle: 'bold', minCellHeight: 12 },
+      bodyStyles: { fontSize: 7, textColor: 50 },
+      alternateRowStyles: { fillColor: 250 },
+      margin: { left: 15, right: 15 },
+      columnStyles: {
+         3: { cellWidth: 50 },
+      },
+      didParseCell: function(dataParse) {
+          if (dataParse.section === 'body' && dataParse.column.index === 6) {
+             const statusValue = String(dataParse.cell.raw);
+             if (statusValue === 'SUCCESS') dataParse.cell.styles.textColor = [16, 185, 129] as [number, number, number];
+             else if (statusValue === 'REJECTED' || statusValue === 'FAILED') dataParse.cell.styles.textColor = [239, 68, 68] as [number, number, number];
+             else dataParse.cell.styles.textColor = [245, 158, 11] as [number, number, number]; // Amber for pending
+          }
+      }
     });
 
     // ✍️ AUTHORIZATION FOOTER
-    const finalY = (doc as any).lastAutoTable.finalY + 20;
-    doc.setFontSize(10);
-    doc.text('__________________________', 15, finalY);
-    doc.text('CASHIER SIGNATURE', 15, finalY + 5);
+    let signY = (doc as any).lastAutoTable.finalY + 40;
+    if (signY > pageHeight - 40) {
+        doc.addPage();
+        signY = 50;
+    }
     
-    doc.text('__________________________', pageWidth - 70, finalY);
-    doc.text('ADMIN APPROVAL', pageWidth - 70, finalY + 5);
+    doc.setDrawColor(200, 200, 200);
+    doc.line(30, signY, 90, signY); // Cashier line
+    doc.line(pageWidth - 90, signY, pageWidth - 30, signY); // Admin line
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+    doc.text('OPERATOR / CASHIER SIGNATURE', 60, signY + 6, { align: 'center' });
+    doc.text('ADMINISTRATOR SIGNATURE', pageWidth - 60, signY + 6, { align: 'center' });
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(150, 150, 150);
+    doc.text('PAGE 2 OF 2 - CONFIDENTIAL BUSINESS REPORT', pageWidth / 2, pageHeight - 15, { align: 'center' });
 
     doc.save(fileName);
     return;
