@@ -5,6 +5,7 @@ import {
   ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
 } from 'lucide-react';
 import SmartImage from '../../components/Common/SmartImage';
+import FoodLoader from '../../components/Common/FoodLoader';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
 import { CATEGORIES, FAST_ITEM_CATEGORIES } from '../../constants';
 import { getMenuOnce, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
@@ -415,8 +416,8 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
       {/* Dynamic Menu Container */}
       {loading ? (
-        <div className="p-24 flex justify-center">
-          <Loader2 className="w-10 h-10 text-primary animate-spin opacity-40" />
+        <div className="p-24 flex flex-col items-center justify-center">
+          <FoodLoader />
         </div>
       ) : filteredMenu.length === 0 ? (
         <div className="p-20 text-center space-y-6">

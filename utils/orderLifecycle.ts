@@ -6,7 +6,7 @@
 
 import { Order } from '../types';
 
-export type OrderUIState = 
+export type OrderUIState =
   | 'PENDING_PAYMENT'      // Awaiting payment (cash only)
   | 'PAYMENT_PROCESSING'   // Payment in progress
   | 'AWAITING_QR'          // Payment successful, QR generating
@@ -28,9 +28,9 @@ export const getOrderUIState = (order: Order): OrderUIState => {
 
   // 🏆 COMPLETION CHECK (Item-Level Truth)
   // All items served = COMPLETED regardless of global status
-  const allServed = order.items?.every(it => 
-    it.status === 'SERVED' || 
-    it.status === 'COMPLETED' || 
+  const allServed = order.items?.every(it =>
+    it.status === 'SERVED' ||
+    it.status === 'COMPLETED' ||
     (it.remainingQty === 0 && it.servedQty === it.quantity)
   );
   if (allServed || order.orderStatus === 'COMPLETED' || order.orderStatus === 'SERVED') {
@@ -51,7 +51,7 @@ export const getOrderUIState = (order: Order): OrderUIState => {
 
   // 💰 PAYMENT STATES
   if (order.paymentStatus === 'PENDING') return 'PENDING_PAYMENT';
-  
+
   // 📱 ACTIVE QR
   if (order.paymentStatus === 'SUCCESS' && (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED')) {
     return 'QR_ACTIVE';

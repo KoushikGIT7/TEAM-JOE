@@ -24,44 +24,13 @@ type ViewState =
   | 'STAFF_LOGIN'
   | 'STUDENT_HOME';
 
+import FoodLoader from './components/Common/FoodLoader';
+
 // Lazy load student views to improve initial bundle size
 const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
 const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
 const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
 const QRView      = React.lazy(() => import('./views/Student/QRView'));
-
-// ─── Food emoji loader ───────────────────────────────────────────────────────
-// Used as Suspense fallback during lazy-view transitions.
-// Must be a top-level named component so React hooks rules are satisfied.
-const FOOD_EMOJIS = ['🍛', '🥗', '🍜', '🥘', '🍱', '☕'];
-const FoodLoader: React.FC = () => {
-  const [fi, setFi] = useState(0);
-  useEffect(() => {
-    const iv = setInterval(() => setFi(f => (f + 1) % FOOD_EMOJIS.length), 420);
-    return () => clearInterval(iv);
-  }, []);
-  return (
-    <div className="h-screen w-full flex items-center justify-center bg-white">
-      <div className="flex flex-col items-center gap-3">
-        <div
-          className="text-5xl select-none"
-          style={{ animation: 'foodSpin 0.42s ease-in-out' }}
-          key={fi}
-        >
-          {FOOD_EMOJIS[fi]}
-        </div>
-        <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em]">Loading...</p>
-      </div>
-      <style>{`
-        @keyframes foodSpin {
-          0%   { opacity: 0; transform: scale(0.6) rotate(-15deg); }
-          50%  { opacity: 1; transform: scale(1.15) rotate(5deg); }
-          100% { opacity: 1; transform: scale(1) rotate(0deg); }
-        }
-      `}</style>
-    </div>
-  );
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 
