@@ -19,12 +19,10 @@ const generateSecureUPILinks = (id: string, amt: number) => {
   const shortId = id.slice(-4).toUpperCase();
   const tn = encodeURIComponent(`ORD-${shortId}`);
   const pn = encodeURIComponent(UPI_PN);
-  
-  // 🛡️ [NPCI BYPASS] Sanitize 'tr' (Transaction Ref) to strictly alphanumeric. PhonePe/Paytm rejects hyphens or length > 35.
-  const cleanTr = id.replace(/[^a-zA-Z0-9]/g, '').substring(0, 35).toUpperCase();
-  
-  // 🛡️ [MCC BYPASS] Business accounts (@ptys) require a valid Merchant Category Code. '5814' = Fast Food.
-  const query = `?pa=${UPI_PA}&pn=${pn}&tr=${cleanTr}&mc=5814&tn=${tn}&am=${amt}&cu=INR`;
+  // 🛡️ [PAYTM STATIC QR BYPASS] 
+  // For 'paytmqr...' static business VPAs, passing 'tr' or incorrect 'mc' triggers anti-fraud blocks. 
+  // We rely entirely on 'tn' (Transaction Note) and exact 'am' (Amount) for our SMS reconciliation engine.
+  const query = `?pa=${UPI_PA}&pn=${pn}&tn=${tn}&am=${amt}&cu=INR`;
   
   return {
     generic: `upi://pay${query}`,
