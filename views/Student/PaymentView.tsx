@@ -5,6 +5,7 @@ import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../
 import { db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { submitOrderUTR } from '../../services/firestore-db';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -20,9 +21,10 @@ const generateSecureUPILinks = (id: string, amt: number) => {
   const tn = encodeURIComponent(`ORD-${shortId}`);
   const pn = encodeURIComponent(UPI_PN);
   // 🛡️ [PAYTM STATIC QR BYPASS] 
-  // For 'paytmqr...' static business VPAs, passing 'tr' or incorrect 'mc' triggers anti-fraud blocks. 
-  // We rely entirely on 'tn' (Transaction Note) and exact 'am' (Amount) for our SMS reconciliation engine.
-  const query = `?pa=${UPI_PA}&pn=${pn}&tn=${tn}&am=${amt}&cu=INR`;
+  // Business VPAs (@ptys) aggressively block intent links (mode=04) without a payment gateway signature.
+  // By injecting 'mode=02' (Dynamic QR) and 'purpose=00', we trick the installed UPI apps (PhonePe, GPay) 
+  // into treating this click exactly as if the student scanned a physical QR code with their camera.
+  const query = `?pa=${UPI_PA}&pn=${pn}&tn=${tn}&am=${amt}&cu=INR&mode=02&purpose=00&orgid=000000`;
   
   return {
     generic: `upi://pay${query}`,
@@ -323,8 +325,16 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                              >
                                Payment not detected? Manual Sync
                              </button>
-                             
                              <div className="flex flex-col items-center gap-3 w-full">
+                                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 mb-2 flex flex-col items-center">
+                                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Or Scan to Pay</p>
+                                   <QRCodeSVG 
+                                     value={generateSecureUPILinks(orderId || '', total).generic} 
+                                     size={180} 
+                                     level="H" 
+                                   />
+                                   <p className="text-[9px] font-bold text-slate-400 mt-4 max-w-[180px] text-center leading-relaxed">Take a screenshot and use "Scan from Gallery" in any UPI app</p>
+                                </div>
                                 <a 
                                   href={generateSecureUPILinks(orderId || '', total).phonepe} 
                                   className="w-full bg-[#5f259f] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#5f259f]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
