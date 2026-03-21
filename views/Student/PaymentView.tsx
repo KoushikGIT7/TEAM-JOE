@@ -335,24 +335,24 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                                    />
                                    <p className="text-[9px] font-bold text-slate-400 mt-4 max-w-[180px] text-center leading-relaxed">Take a screenshot and use "Scan from Gallery" in any UPI app</p>
                                 </div>
-                                <a 
-                                  href={generateSecureUPILinks(orderId || '', total).phonepe} 
+                                <button 
+                                  onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).phonepe} 
                                   className="w-full bg-[#5f259f] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#5f259f]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
                                 >
                                    Open PhonePe
-                                </a>
-                                <a 
-                                  href={generateSecureUPILinks(orderId || '', total).gpay} 
+                                </button>
+                                <button 
+                                  onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).gpay} 
                                   className="w-full bg-white border-2 border-slate-200 text-slate-800 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-all"
                                 >
                                    Open GPay
-                                </a>
-                                <a 
-                                  href={generateSecureUPILinks(orderId || '', total).paytm} 
+                                </button>
+                                <button 
+                                  onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).paytm} 
                                   className="w-full bg-[#002970] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#002970]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
                                 >
                                    Open Paytm
-                                </a>
+                                </button>
 
                                 <button 
                                   onClick={() => {

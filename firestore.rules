@@ -116,5 +116,9 @@ service cloud.firestore {
       allow read: if isCashier();
       allow write: if isAdmin();
     }
+
+    match /payments_ledger/{utrId} {
+      allow read, write: if isStaff();
+    }
   }
 }

@@ -75,10 +75,6 @@ export const startBatchPreparation = async (batchId: string): Promise<void> => {
     await Promise.all(orderPromises);
 };
 
-/**
- * 3. markBatchReady
- * Supports partial releases (Micro-batching) for high-freshness items.
- */
 export const markBatchReady = async (batchId: string, limitCount?: number): Promise<void> => {
     const batchRef = doc(db, "prepBatches", batchId);
     const batchSnap = await getDoc(batchRef);
@@ -87,33 +83,52 @@ export const markBatchReady = async (batchId: string, limitCount?: number): Prom
     const batchData = batchSnap.data() as PrepBatch;
     const now = Date.now();
 
-    // If partial release, we don't move the whole batch to READY yet 
-    const isPartial = limitCount && limitCount < batchData.quantity;
+    // 1. Fetch connected orders to find which ones are actually pending
+    const orderRefs = (batchData.orderIds || []).map(oId => doc(db, "orders", oId));
+    const orderSnaps = await Promise.all(orderRefs.map(r => getDoc(r)));
+    
+    // 2. Identify orders whose target item is STILL NOT READY
+    let pendingOrders: { ref: any, data: Order }[] = [];
+    for (const snap of orderSnaps) {
+        if (!snap.exists()) continue;
+        const oData = snap.data() as Order;
+        const targetItem = oData.items?.find((i:any) => i.id === batchData.itemId);
+        // Only target items that need cooking/releasing
+        if (targetItem && (targetItem.status === 'PENDING' || targetItem.status === 'PREPARING')) {
+            pendingOrders.push({ ref: snap.ref, data: oData });
+        }
+    }
+
+    // 3. Slice the exact amount of limitCount from the genuinely pending unfulfilled orders
+    if (limitCount && pendingOrders.length > limitCount) {
+        pendingOrders = pendingOrders.slice(0, limitCount);
+    }
+
+    if (pendingOrders.length === 0) {
+        // [DEFENSE] Batch is orphaned or entirely fulfilled already. Auto-complete the bucket.
+        await updateDoc(batchRef, {
+            status: 'COMPLETED',
+            quantity: 0,
+            updatedAt: serverTimestamp()
+        });
+        return;
+    }
+
+    // Determine if batch is fully completed based on remaining unfulfilled amount
+    const remainingUnfulfilled = (batchData.quantity || 0) - pendingOrders.length;
+    const isPartial = remainingUnfulfilled > 0;
 
     await updateDoc(batchRef, {
         status: isPartial ? 'PREPARING' : 'READY', 
         readyAt: now,
+        quantity: Math.max(0, remainingUnfulfilled), // Decrement the batch bucket strictly
         updatedAt: serverTimestamp(),
-        // Decrement quantity if partial release? 
-        // No, current logic assumes batch is the "Bucket". 
-        // We track 'servable' count in orders.
     });
 
-    const ordersToNotify = isPartial ? (batchData.orderIds || []).slice(0, limitCount) : (batchData.orderIds || []);
-
-    const orderPromises = ordersToNotify.map(async (orderId) => {
-        const orderRef = doc(db, "orders", orderId);
-        const orderSnap = await getDoc(orderRef);
-        if (!orderSnap.exists()) return;
-        
-        const orderData = orderSnap.data() as Order;
-        
-        const updatedItems = (orderData.items || []).map(item => {
+    const orderPromises = pendingOrders.map(async ({ ref: orderRef, data: orderData }) => {
+        const updatedItems = (orderData.items || []).map((item: any) => {
             if (item.id === batchData.itemId && item.status !== 'SERVED') {
-                return { 
-                    ...item, 
-                    status: 'READY' as any,
-                };
+                return { ...item, status: 'READY' as any };
             }
             return item;
         });
@@ -172,14 +187,15 @@ export const serveItem = async (orderId: string, itemId: string): Promise<void> 
 export const updateSlotStatus = async (slot: number, status: PrepBatchStatus, size?: number): Promise<void> => {
     const q = query(
         collection(db, "prepBatches"),
-        where("arrivalTimeSlot", "==", slot),
-        where("status", "!=", "COMPLETED")
+        where("arrivalTimeSlot", "==", slot)
     );
     
     const querySnap = await getDocs(q);
     if (querySnap.empty) return;
 
-    const batchPromises = querySnap.docs.map(async (d) => {
+    const validBatches = querySnap.docs.filter(d => d.data().status !== 'COMPLETED');
+
+    const batchPromises = validBatches.map(async (d) => {
         if (status === 'PREPARING') {
             await startBatchPreparation(d.id);
         } else if (status === 'READY') {

@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { Timer, Flame, CheckCircle, ChefHat, Clock } from 'lucide-react';
+import { Timer, Flame, CheckCircle, ChefHat, Clock, Play, Check } from 'lucide-react';
 import { PrepBatch } from '../../types';
-import { updateSlotStatus } from '../../services/cook-workflow';
+import { startBatchPreparation, markBatchReady } from '../../services/cook-workflow';
 
 interface CookConsoleWorkspaceProps {
   batches: PrepBatch[];
@@ -29,6 +29,76 @@ const getUrgencyText = (scheduledSlotStr: string) => {
    return 'On-Time';
 };
 
+const BatchItemCard = ({ batch }: { batch: PrepBatch }) => {
+   const [isProcessing, setIsProcessing] = useState(false);
+
+   const onStart = async () => {
+       setIsProcessing(true);
+       try { await startBatchPreparation(batch.id); } 
+       catch(e) { console.error("Start prep failed:", e); } 
+       finally { setIsProcessing(false); }
+   };
+
+   const onRelease = async (count?: number) => {
+       setIsProcessing(true);
+       try { await markBatchReady(batch.id, count); } 
+       catch(e) { console.error("Release failed:", e); } 
+       finally { setIsProcessing(false); }
+   };
+
+   const isPreparing = batch.status === 'PREPARING';
+
+   return (
+      <div className={`p-5 rounded-3xl border-2 flex flex-col justify-between transition-all group ${
+         isPreparing ? 'border-orange-400 bg-orange-50/20 shadow-lg shadow-orange-900/5' : 'border-slate-200 bg-white hover:border-slate-300'
+      }`}>
+          <div className="flex justify-between items-start mb-6">
+              <div>
+                 <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${
+                    isPreparing ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500'
+                 }`}>
+                    {isPreparing ? 'Cooking' : 'Queued'}
+                 </span>
+                 <h3 className="text-2xl lg:text-3xl font-black text-slate-900 mt-3 uppercase tracking-tighter leading-none">{batch.itemName}</h3>
+              </div>
+              <div className={`text-4xl lg:text-5xl font-black italic font-mono ${isPreparing ? 'text-orange-600' : 'text-slate-900'}`}>
+                ×{batch.quantity}
+              </div>
+          </div>
+          
+          <div className="mt-auto">
+              {!isPreparing ? (
+                 <button 
+                   disabled={isProcessing}
+                   onClick={onStart}
+                   className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-2 hover:bg-black disabled:opacity-50"
+                 >
+                    {isProcessing ? <Timer className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />} Start Preparing
+                 </button>
+              ) : (
+                 <div className="flex gap-3">
+                    <button 
+                      disabled={isProcessing}
+                      onClick={() => onRelease(1)}
+                      className="flex-1 border-2 border-orange-500 text-orange-600 rounded-2xl py-4 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all hover:bg-orange-50 disabled:opacity-50"
+                    >
+                      Release 1
+                    </button>
+                    <button 
+                      disabled={isProcessing}
+                      onClick={() => onRelease()}
+                      className="flex-[2] bg-orange-500 text-white rounded-2xl py-4 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all shadow-xl shadow-orange-500/20 hover:bg-orange-600 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <Check className="w-5 h-5" /> Push All
+                    </button>
+                 </div>
+              )}
+          </div>
+      </div>
+   );
+};
+
+
 const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) => {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -36,254 +106,130 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
     return () => clearInterval(timer);
   }, []);
 
+  // 1. Identify active slot
   const activeBatchSlot = useMemo(() => {
-    const preparing = batches.find(b => b.status === 'PREPARING' || b.status === 'ALMOST_READY');
+    const preparing = batches.find(b => b.status === 'PREPARING');
     if (preparing) return preparing.arrivalTimeSlot;
     
-    // 🛡️ RE-QUEUE SENSITIVITY: Pick the earliest QUEUED slot, but if there's a RE-QUEUED item, 
-    // it MUST appear at the front of the queue even if it belongs to a past slot.
     const queuedItems = batches.filter(b => b.status === 'QUEUED' && b.quantity > 0)
                                .sort((a, b) => a.arrivalTimeSlot - b.arrivalTimeSlot);
     return queuedItems[0]?.arrivalTimeSlot || null;
   }, [batches]);
 
-  const activeBatchSlotBatches = useMemo(() => {
+  // 2. Identify specific items inside the active slot
+  const activeBatchItems = useMemo(() => {
     if (!activeBatchSlot) return [];
-    return batches.filter(b => b.arrivalTimeSlot === activeBatchSlot);
+    return batches.filter(b => 
+       b.arrivalTimeSlot === activeBatchSlot && 
+       b.quantity > 0 && 
+       ['QUEUED', 'PREPARING'].includes(b.status)
+    ).sort((a, b) => a.status === 'PREPARING' ? -1 : 1);
   }, [batches, activeBatchSlot]);
 
-  const activeBatchBatch = useMemo(() => {
-    // If any batch in this slot is QUEUED, the whole slot status for the button should be QUEUED/Start
-    const hasQueued = activeBatchSlotBatches.some(b => b.status === 'QUEUED');
-    return hasQueued ? 'QUEUED' : (activeBatchSlotBatches[0]?.status || 'QUEUED');
-  }, [activeBatchSlotBatches]);
-  
-  const activeBatchStatus = activeBatchBatch;
-
-  const activeBatchItems = useMemo(() => {
-    const agg: Record<string, { itemId: string; itemName: string; quantity: number }> = {};
-    activeBatchSlotBatches.forEach(b => {
-      if (b.quantity <= 0) return; // Hide emptied re-queues
-      if (!agg[b.itemId]) agg[b.itemId] = { itemId: b.itemId, itemName: b.itemName, quantity: 0 };
-      agg[b.itemId].quantity += b.quantity;
-    });
-    return Object.values(agg);
-  }, [activeBatchSlotBatches]);
-
-  // 🚀 UNIFIED FEED: Show all valid production slots in the pipeline
+  // 3. Upcoming Slots (ignoring active slot)
   const productionFeed = useMemo(() => {
     const validBatches = batches.filter(b => 
-      ['QUEUED', 'PREPARING', 'ALMOST_READY', 'READY'].includes(b.status) &&
-      (b.quantity > 0)
+      ['QUEUED', 'PREPARING'].includes(b.status) &&
+      (b.quantity > 0) &&
+      b.arrivalTimeSlot !== activeBatchSlot
     );
     const groups: Record<number, PrepBatch[]> = {};
-    
     validBatches.forEach(b => {
       const slot = b.arrivalTimeSlot;
       if (!groups[slot]) groups[slot] = [];
       groups[slot].push(b);
     });
-
     return Object.entries(groups).sort(([a], [b]) => Number(a) - Number(b));
-  }, [batches]);
-
-
-  const readyBatchesMapping = useMemo(() => {
-    const ready = batches.filter(b => b.status === 'READY' && b.quantity > 0);
-    const slots: Record<number, { itemName: string; quantity: number }[]> = {};
-    ready.forEach(b => {
-      if (!slots[b.arrivalTimeSlot]) slots[b.arrivalTimeSlot] = [];
-      const item = slots[b.arrivalTimeSlot].find(i => i.itemName === b.itemName);
-      if (item) item.quantity += b.quantity;
-      else slots[b.arrivalTimeSlot].push({ itemName: b.itemName, quantity: b.quantity });
-    });
-    return Object.entries(slots).sort(([a], [b]) => Number(a) - Number(b));
-  }, [batches]);
+  }, [batches, activeBatchSlot]);
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-50 relative overflow-hidden h-full">
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-8 py-8 flex flex-col gap-10">
-        
-        {/* ACTIVE SECTION */}
-        <section>
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-4 flex items-center gap-2 px-1">
-             <Flame className="w-4 h-4 text-orange-500" /> Current Production Manifest
-          </h3>
+    <div className="flex-1 flex bg-slate-50 relative overflow-hidden h-full">
+       
+      {/* LEFT: MAIN ACTIVE BOARD */}
+      <div className="flex-[3] overflow-y-auto custom-scrollbar p-8 border-r border-slate-200">
+         <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-6 flex items-center gap-2">
+            <Flame className="w-4 h-4 text-orange-500" /> Current Target Slot
+         </h3>
 
-          <div className="flex flex-col lg:flex-row gap-6">
-             {activeBatchSlot ? (
-               <div className={`flex-[2] bg-white border border-slate-200 rounded-2xl p-8 flex flex-col shadow-sm transition-all duration-300 ${
-                  activeBatchStatus === 'PREPARING' ? 'border-orange-200 ring-2 ring-orange-50' : 'border-slate-200'
-               }`}>
-                  <div className="flex justify-between items-start mb-8">
-                     <div className="flex items-center gap-5">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${
-                          activeBatchStatus === 'PREPARING' ? 'bg-orange-600 text-white border-orange-500' : 'bg-slate-50 text-slate-400 border-slate-200'
-                        }`}>
-                           <ChefHat className="w-6 h-6" />
-                        </div>
-                        <div>
-                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                             {activeBatchStatus === 'PREPARING' ? 'Preparing Phase 🟠' : 'Staged for Intake ⚪'}
-                           </p>
-                           <h2 className="text-5xl font-bold text-slate-900 font-mono tracking-tighter leading-none">
-                             {formatSlot(activeBatchSlot)}
-                           </h2>
-                        </div>
-                     </div>
-                     <span className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                        getUrgencyText(activeBatchSlot.toString()) === 'Delayed' ? 'bg-red-50 text-red-600' :
-                        getUrgencyText(activeBatchSlot.toString()) === 'Start Now' ? 'bg-amber-50 text-amber-600' :
-                        'bg-green-50 text-green-600'
-                     }`}>
-                        {getUrgencyText(activeBatchSlot.toString())}
-                     </span>
+         {activeBatchSlot ? (
+            <div>
+               <div className="flex items-center gap-5 mb-8 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-slate-900 text-white shadow-xl">
+                     <ChefHat className="w-8 h-8" />
                   </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 flex-1 content-start mb-8">
-                      {activeBatchItems.map((it, idx) => {
-                        const hasArrived = activeBatchSlotBatches.some(b => b.itemId === it.itemId && b.arrivedCount && b.arrivedCount > 0);
-                        return (
-                          <div key={idx} className={`rounded-xl p-5 flex flex-col justify-between border transition-all ${
-                             hasArrived ? 'bg-amber-50 border-amber-200 ring-2 ring-amber-100/30' : 'bg-slate-50 border-slate-100'
-                          }`}>
-                             <div className="flex justify-between items-start">
-                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide leading-tight mb-1">{it.itemName}</span>
-                                {hasArrived && (
-                                   <span className="text-[8px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-full animate-pulse">VIP ARRIVED</span>
-                                )}
-                             </div>
-                             <span className="text-3xl font-bold text-slate-900 font-mono">×{it.quantity}</span>
-                          </div>
-                        );
-                      })}
-                  </div>
-
-                  <div className="mt-auto pt-4">
-                    {activeBatchStatus === 'QUEUED' ? (
-                      <button 
-                        onClick={() => updateSlotStatus(activeBatchSlot, 'PREPARING' as any)}
-                        className="w-full h-16 bg-slate-900 hover:bg-black text-white font-bold text-sm uppercase tracking-widest rounded-xl shadow-lg transition-all active:scale-[0.98]"
-                      >
-                        Start Production Cycle
-                      </button>
-                    ) : (
-                      <div className="grid grid-cols-3 gap-4 h-24">
-                         {[1, 2, 3].map(size => (
-                            <button
-                              key={size}
-                              onClick={() => updateSlotStatus(activeBatchSlot, 'READY' as any, size)}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white flex flex-col items-center justify-center rounded-2xl shadow-lg shadow-emerald-900/10 transition-all active:scale-90 active:rotate-2 group"
-                            >
-                               <span className="text-[10px] font-black uppercase tracking-tighter opacity-70 group-hover:scale-110 transition-transform text-center leading-none mb-1">Release</span>
-                               <span className="text-3xl font-black italic">×{size}</span>
-                            </button>
-                         ))}
-                      </div>
-                    )}
+                  <div className="flex-1">
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                       Target Window
+                     </p>
+                     <h2 className="text-4xl font-black text-slate-900 font-mono tracking-tighter leading-none flex items-center gap-4">
+                       {formatSlot(activeBatchSlot)}
+                       <span className={`px-4 py-1.5 rounded-xl text-[12px] font-bold uppercase tracking-widest ${
+                          getUrgencyText(activeBatchSlot.toString()) === 'Delayed' ? 'bg-red-100 text-red-700 font-sans italic' :
+                          getUrgencyText(activeBatchSlot.toString()) === 'Start Now' ? 'bg-orange-100 text-orange-700 font-sans italic' :
+                          'bg-green-100 text-green-700 font-sans'
+                       }`}>
+                          {getUrgencyText(activeBatchSlot.toString())}
+                       </span>
+                     </h2>
                   </div>
                </div>
-             ) : (
-               <div className="flex-[2] min-h-[300px] border-2 border-slate-200 border-dashed rounded-2xl bg-white flex flex-col items-center justify-center text-slate-300">
-                  <ChefHat className="w-12 h-12 mb-4 opacity-20" />
-                  <p className="text-xs font-bold uppercase tracking-widest italic">Operations Idle</p>
+
+               {/* COMPACT PER-ITEM CARDS */}
+               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                   {activeBatchItems.map(batch => (
+                      <BatchItemCard key={batch.id} batch={batch} />
+                   ))}
                </div>
-             )}
+            </div>
+         ) : (
+            <div className="min-h-[400px] border-2 border-slate-200 border-dashed rounded-[3rem] bg-white flex flex-col items-center justify-center text-slate-300">
+               <ChefHat className="w-16 h-16 mb-5 opacity-20" />
+               <p className="text-sm font-black uppercase tracking-[0.3em] opacity-50">Kitchen is Clear</p>
+            </div>
+         )}
+      </div>
 
-             {/* UPCOMING COLUMN */}
-             <div className="flex-1 flex flex-col gap-4 w-full lg:w-80 shrink-0">
-               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Production Feed</h4>
-               {productionFeed.length > 0 ? (
-                 productionFeed.map(([slot, batchesInSlot]) => {
-                   const isActive = Number(slot) === activeBatchSlot;
-                   const isPreparing = batchesInSlot.some(b => b.status === 'PREPARING' || b.status === 'ALMOST_READY');
-                   const isRequeued = batchesInSlot.some(b => b.isRequeued === true);
-                   
-                   // Aggregate items for display within this slot
-                   const aggregatedItems: Record<string, { itemName: string; quantity: number }> = {};
-                   batchesInSlot.forEach(b => {
-                     if (b.quantity <= 0) return;
-                     if (!aggregatedItems[b.itemId]) aggregatedItems[b.itemId] = { itemName: b.itemName, quantity: 0 };
-                     aggregatedItems[b.itemId].quantity += b.quantity;
-                   });
-                   const itemsToDisplay = Object.values(aggregatedItems);
-
-                   if (itemsToDisplay.length === 0) return null;
-
-                   return (
-                     <div key={slot} className={`bg-white rounded-2xl p-5 shadow-sm border ${isActive ? 'border-amber-500 bg-amber-50/10' : 'border-slate-200'} flex flex-col group hover:border-slate-400 transition-all`}>
-                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-50">
-                          <div className="flex items-center gap-2">
-                             <Clock className={`w-3 h-3 ${isActive ? 'text-amber-500' : 'text-slate-400'}`} />
-                             <h4 className={`text-lg font-bold ${isActive ? 'text-amber-600' : 'text-slate-800'} font-mono tracking-tighter`}>{formatSlot(Number(slot))}</h4>
-                          </div>
-                          {isActive ? (
-                             <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-1.5 py-0.5 rounded tracking-tighter uppercase ring-1 ring-amber-200">ACTIVE {isPreparing ? '• PREPARING' : ''}</span>
-                          ) : isRequeued ? (
-                             <span className="bg-red-100 text-red-700 text-[8px] font-black px-1.5 py-0.5 rounded tracking-tighter uppercase ring-1 ring-red-200">URGENT RE-FILL</span>
-                          ) : (
-                             <span className={`text-[9px] font-bold uppercase tracking-widest ${
-                               getUrgencyText(String(slot).padStart(4, '0')) === 'Delayed' ? 'text-red-500' : 'text-slate-400'
-                             }`}>{getUrgencyText(String(slot).padStart(4, '0'))}</span>
-                          )}
+      {/* RIGHT: UPCOMING QUEUE (No scroll pollution) */}
+      <div className="flex-1 max-w-sm flex flex-col bg-white shrink-0">
+         <div className="p-6 border-b border-slate-100">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+               <Timer className="w-4 h-4" /> Pipeline Feed
+            </h4>
+         </div>
+         
+         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {productionFeed.length > 0 ? (
+               productionFeed.map(([slot, batchesInSlot]) => {
+                  return (
+                     <div key={slot} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 shadow-sm">
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-base font-bold text-slate-800 font-mono tracking-tighter">
+                            {formatSlot(Number(slot))}
+                          </h4>
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${
+                            getUrgencyText(String(slot).padStart(4, '0')) === 'Delayed' ? 'text-red-500' : 'text-slate-400'
+                          }`}>{getUrgencyText(String(slot).padStart(4, '0'))}</span>
                         </div>
                         <div className="space-y-1.5">
-                           {itemsToDisplay.map((it, idx) => (
-                             <div key={idx} className={`flex justify-between items-center ${isActive ? 'bg-amber-50' : 'bg-slate-50'} px-3 py-2 rounded-lg group-hover:bg-slate-100 transition-colors`}>
-                               <span className="text-[10px] font-bold text-slate-500 uppercase">{it.itemName}</span>
-                               <span className="text-sm font-bold text-slate-900 font-mono">×{it.quantity}</span>
+                           {batchesInSlot.map((b, idx) => (
+                             <div key={idx} className="flex justify-between items-center bg-white px-3 py-2 rounded-xl shadow-sm border border-slate-100/50">
+                               <span className="text-[10px] font-bold text-slate-500 uppercase">{b.itemName}</span>
+                               <span className="text-sm font-black text-slate-900 font-mono">×{b.quantity}</span>
                              </div>
                            ))}
                         </div>
                      </div>
-                   );
-                 })
-               ) : (
-                  <div className="flex-1 border border-slate-200 border-dashed rounded-2xl flex flex-col items-center justify-center text-slate-300 bg-white/50">
-                     <Timer className="w-8 h-8 mb-2 opacity-20" />
-                     <p className="text-[9px] font-bold uppercase tracking-wider text-center">Pipeline Empty</p>
-                  </div>
-               )}
-             </div>
-          </div>
-        </section>
-
-        {/* READY PASS-THROUGH */}
-        <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-green-600 mb-6 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" /> Transit Station (Waiting for Servers)
-          </h3>
-          
-          {readyBatchesMapping.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {readyBatchesMapping.map(([slot, items]) => (
-                <div key={slot} className="bg-green-50 border border-green-100 rounded-xl p-4">
-                   <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-bold text-green-800 font-mono italic">
-                        {formatSlot(Number(slot))}
-                      </span>
-                      <span className="text-[8px] font-bold text-green-500 uppercase tracking-widest px-2 py-0.5 bg-white rounded border border-green-100">
-                        Ready
-                      </span>
-                   </div>
-                   <div className="space-y-1">
-                      {items.map((it, idx) => (
-                        <div key={idx} className="flex justify-between items-center px-3 py-1.5 bg-white/80 rounded border border-green-50">
-                          <span className="text-[9px] font-bold text-slate-600 uppercase">{it.itemName}</span>
-                          <span className="text-xs font-bold text-green-700">×{it.quantity}</span>
-                        </div>
-                      ))}
-                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-             <div className="h-20 rounded-xl flex items-center justify-center text-slate-300 bg-slate-50 border border-slate-100 border-dashed">
-                <p className="text-[10px] font-bold uppercase tracking-widest">Pass-through is cleared</p>
-             </div>
-          )}
-        </section>
+                  );
+               })
+            ) : (
+               <div className="h-full flex flex-col items-center justify-center opacity-30 text-center px-4">
+                  <Clock className="w-10 h-10 mb-4" />
+                  <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">No remaining<br/>upcoming slots</p>
+               </div>
+            )}
+         </div>
       </div>
+
     </div>
   );
 };
