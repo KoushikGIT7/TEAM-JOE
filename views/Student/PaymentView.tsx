@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, CreditCard, Smartphone, Landmark, Banknote, ShieldCheck, Loader2, CheckCircle2, Clock, ChevronRight } from 'lucide-react';
+import { ChevronLeft, CreditCard, Smartphone, Landmark, Banknote, ShieldCheck, Loader2, CheckCircle2, Clock, ChevronRight, RefreshCw } from 'lucide-react';
 import { UserProfile, CartItem } from '../../types';
 import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../services/firestore-db';
 import { db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { submitOrderUTR } from '../../services/firestore-db';
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -20,6 +21,19 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   const [rejectionMessage, setRejectionMessage] = useState<string>('');
   const [orderingDisabled, setOrderingDisabled] = useState<boolean>(false);
   const [arrivalTime, setArrivalTime] = useState<number | null>(null);
+  const [utr, setUtr] = useState<string>('');
+  const [isSubmittingUtr, setIsSubmittingUtr] = useState<boolean>(false);
+  const [payStatus, setPayStatus] = useState<string>('INITIATED');
+  const [timer, setTimer] = useState<number>(60);
+  const [showManualUtr, setShowManualUtr] = useState<boolean>(false);
+
+  useEffect(() => {
+    let interval: any;
+    if (state === 'CASH_WAITING' && timer > 0 && selectedMethod === 'UPI') {
+      interval = setInterval(() => setTimer(prev => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [state, timer, selectedMethod]);
 
   useEffect(() => {
     const savedCart = localStorage.getItem('joe_cart');
@@ -41,9 +55,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       let hasNavigated = false;
       const unsubscribe = listenToOrder(orderId, (order) => {
         if (order) {
+          setPayStatus(order.paymentStatus);
           if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
             setOrderStatus('APPROVED');
-          } else if (order.paymentStatus === 'PENDING') {
+          } else if (order.paymentStatus === 'UTR_SUBMITTED' || order.paymentStatus === 'PENDING') {
             setOrderStatus('PENDING');
           }
         }
@@ -66,6 +81,19 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       return unsubscribe;
     }
   }, [state, orderId, onSuccess, onBack]);
+
+  const handleUTRSubmit = async () => {
+    if (!orderId || utr.length < 10) return;
+    setIsSubmittingUtr(true);
+    try {
+      await submitOrderUTR(orderId, utr);
+      // Logic handles the move to UTR_SUBMITTED
+    } catch (err: any) {
+      alert(err.message || 'Verification failed. Contact staff.');
+    } finally {
+      setIsSubmittingUtr(false);
+    }
+  };
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const isDynamic = cart.some(it => it.orderType === 'PREPARATION_ITEM');
@@ -124,9 +152,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
 
       // ⚡ [SONIC-PAY] UPI Intent Link
       const generateUPILink = (id: string, amt: number) => {
-        const pa = 'fcgtub@oksbi';
+        const pa = 'fcgtub@okicici';
         const pn = 'JOE Cafeteria';
-        return `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&tr=${id}&tn=${encodeURIComponent(`Order ${id.slice(-4)}`)}&am=${amt}&cu=INR`;
+        const shortId = id.slice(-4).toUpperCase();
+        return `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&tr=${id}&tn=${encodeURIComponent(`ORD${shortId}`)}&am=${amt}&cu=INR`;
       };
 
       const newOrderId = await createOrder({
@@ -222,54 +251,117 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
 
   if (state === 'CASH_WAITING') {
       const isUPI = selectedMethod === 'UPI';
+      const shortId = orderId?.slice(-4).toUpperCase();
+      
       return (
-          <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-6 text-center animate-in fade-in duration-500">
+          <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-8 text-center animate-in fade-in duration-500 overflow-y-auto">
               <div className="flex-1 flex flex-col items-center justify-center">
-                  <div className={`w-20 h-20 ${isUPI ? 'bg-primary/10' : 'bg-amber-100'} rounded-full flex items-center justify-center mb-6 ${orderStatus === 'PENDING' || !orderStatus ? 'animate-pulse' : ''}`}>
-                      {isUPI ? <Smartphone className="w-10 h-10 text-primary" /> : <Clock className="w-10 h-10 text-amber-600" />}
-                  </div>
-                  <h2 className="text-2xl font-black text-textMain mb-2">
-                    {isUPI ? 'Verifying UPI Payment' : 'Awaiting Cash Payment'}
-                  </h2>
-                  <p className="text-textSecondary mb-8">
-                    {isUPI 
-                      ? 'Please complete the transaction in your UPI app. Do not close this window.'
-                      : `Please pay ₹${total} at the counter to activate your order.`
-                    }
-                  </p>
-                  
-                  <div className="w-full bg-gray-50 rounded-2xl p-6 border border-black/5 text-left mb-6">
-                      <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Real-time Status</p>
-                      <div className="flex items-center gap-3">
-                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                          <p className="text-base font-bold text-textMain">
-                            {orderStatus === 'APPROVED' ? 'Payment Verified!' : 'Waiting for confirmation...'}
-                          </p>
-                      </div>
+                  {/* 🟢 TOP LAYER: VERIFICATION RADIUS */}
+                  <div className="relative mb-12">
+                     <div className={`w-48 h-48 rounded-[4rem] border-4 flex flex-col items-center justify-center transition-all duration-700 ${
+                        orderStatus === 'APPROVED' ? 'bg-emerald-50 border-emerald-500 shadow-2xl shadow-emerald-500/10' :
+                        'bg-slate-50 border-slate-200'
+                     }`}>
+                        {orderStatus === 'APPROVED' ? (
+                           <div className="animate-in zoom-in duration-500 flex flex-col items-center">
+                              <CheckCircle2 className="w-16 h-16 text-emerald-600 mb-2" />
+                              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Verified</span>
+                           </div>
+                        ) : (
+                           <div className="flex flex-col items-center">
+                              <span className="text-4xl font-black text-slate-900 tracking-tighter mb-1 select-all italic">#{shortId}</span>
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Order Ref</span>
+                           </div>
+                        )}
+                        
+                        {/* 🟡 PULSE RING */}
+                        {orderStatus !== 'APPROVED' && isUPI && (
+                           <div className="absolute inset-0 border-[6px] border-emerald-500 rounded-[4rem] animate-ping opacity-10" />
+                        )}
+                     </div>
+                     
+                     {/* 💰 FLOATING PRICE TAG */}
+                     <div className="absolute -bottom-4 bg-slate-900 text-white px-6 py-2 rounded-2xl shadow-xl border border-white/10">
+                        <span className="text-lg font-black italic">₹{total}</span>
+                     </div>
                   </div>
 
-                  {isUPI && (
-                    <button 
-                      onClick={() => orderId && (window.location.href = `upi://pay?pa=fcgtub@oksbi&tr=${orderId}&am=${total}&cu=INR`)}
-                      className="text-primary font-black text-xs uppercase tracking-widest bg-primary/5 px-6 py-3 rounded-xl border border-primary/20"
-                    >
-                      Re-open UPI App
-                    </button>
+                  {/* 🟢 MIDDLE LAYER: STATUS & FEEDBACK */}
+                  <div className="max-w-xs space-y-4 mb-10">
+                    <h2 className="text-2xl font-black text-slate-900 uppercase italic leading-none tracking-tighter">
+                      {orderStatus === 'APPROVED' ? 'Success! Move forward' : (isUPI ? 'Automatic Syncing...' : 'Awaiting Cashier')}
+                    </h2>
+                    <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                      {orderStatus === 'APPROVED' 
+                        ? 'Payment confirmed by bank. Your food is in preparation.'
+                        : (isUPI ? `Checking for your ₹${total} transaction. Time remaining: ${timer}s` : 'Show your phone screen to the cashier for manual activation.')
+                      }
+                    </p>
+                  </div>
+
+                  {/* 🟢 BOTTOM LAYER: TROUBLESHOOTING */}
+                  {isUPI && orderStatus !== 'APPROVED' && (
+                    <div className="w-full space-y-6">
+                       {!showManualUtr ? (
+                          <div className="space-y-4">
+                             <button 
+                               onClick={() => setShowManualUtr(true)}
+                               className="text-primary font-black text-[10px] uppercase tracking-[0.2em] border-b-2 border-primary/20 pb-1"
+                             >
+                               Payment not detected? Manual Sync
+                             </button>
+                             
+                             <div className="flex items-center justify-center gap-6 opacity-30">
+                                <Landmark className="w-5 h-5" />
+                                <Smartphone className="w-5 h-5" />
+                                <ShieldCheck className="w-5 h-5" />
+                             </div>
+                          </div>
+                       ) : (
+                          <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 animate-in slide-in-from-bottom-5">
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Internal Reference Sync</p>
+                             <div className="relative mb-4">
+                                <input 
+                                  type="text"
+                                  maxLength={12}
+                                  placeholder="Standard UTR No."
+                                  className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-center text-xl font-mono font-black tracking-[0.2em] outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
+                                  value={utr}
+                                  onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
+                                />
+                                {utr.length >= 10 && (
+                                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500"><ShieldCheck className="w-5 h-5" /></div>
+                                )}
+                             </div>
+                             <button 
+                               onClick={handleUTRSubmit}
+                               disabled={utr.length < 10 || isSubmittingUtr}
+                               className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-widest"
+                             >
+                                {isSubmittingUtr ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+                                FORCE RECONCILIATION
+                             </button>
+                             <button onClick={() => setShowManualUtr(false)} className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dismiss</button>
+                          </div>
+                       )}
+                    </div>
+                  )}
+
+                  {orderStatus === 'APPROVED' && (
+                     <div className="w-full animate-in zoom-in duration-1000 delay-300">
+                        <button 
+                          onClick={() => orderId && onSuccess(orderId)}
+                          className="w-full bg-emerald-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-4 active:scale-95 transition-all text-[12px] uppercase tracking-[0.3em]"
+                        >
+                          Show Meal QR <ChevronRight className="w-5 h-5" />
+                        </button>
+                     </div>
                   )}
               </div>
-              <div className="p-4 space-y-3">
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="w-full py-4 text-textMain font-black text-xs uppercase tracking-widest bg-gray-50 rounded-2xl border border-black/5"
-                >
-                    I have paid (Re-check)
-                </button>
-                <button 
-                  onClick={handleCancelOrder}
-                  className="w-full py-2 text-textSecondary font-bold text-xs"
-                >
-                    Cancel Order
-                </button>
+
+              {/* CANCEL OPS */}
+              <div className="mt-10 opacity-30">
+                 <button onClick={handleCancelOrder} className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-1">Cancel Order Entry</button>
               </div>
           </div>
       );

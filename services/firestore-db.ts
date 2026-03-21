@@ -1276,8 +1276,7 @@ export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): 
   return onSnapshot(
     query(
       collection(db, "orders"),
-      where("paymentType", "==", "CASH"),
-      where("paymentStatus", "==", "PENDING")
+      where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED"])
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
@@ -1292,40 +1291,165 @@ export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): 
   );
 };
 
+/** 
+ * [SONIC-AUTOMATION] Reconciliation Engine 
+ * Allows an external sync (SMS/Forwarder) to populate the confirmed bank deposits.
+ */
+export const registerBankDeposit = async (utr: string, amount: number, meta: any = {}): Promise<void> => {
+  const cleanUTR = utr.trim().replace(/\D/g, '');
+  if (cleanUTR.length < 10) return;
+
+  const depositRef = doc(db, "payments_ledger", cleanUTR);
+  const snap = await getDoc(depositRef);
+  
+  if (!snap.exists()) {
+    // 1. RECORD DEPOSIT
+    await setDoc(depositRef, {
+      utr: cleanUTR,
+      amount: Number(amount),
+      status: 'AVAILABLE',
+      receivedAt: serverTimestamp(),
+      meta,
+      updatedAt: serverTimestamp()
+    });
+    console.log(`[LEDGER] New deposit indexed: ${cleanUTR} | ₹${amount}`);
+
+    // 2. ⚡ SONIC-MATCH ENGINE
+    let targetOrderId: string | null = null;
+    const note = (meta.note || "").toUpperCase();
+
+    // LAYER A: Note Match (ORD-XXXX)
+    if (note.includes('ORD')) {
+       const shortIdArr = note.match(/ORD([A-F0-9]{4})/);
+       const shortId = shortIdArr ? shortIdArr[1] : null;
+       if (shortId) {
+          const q = query(collection(db, "orders"), 
+            where("totalAmount", "==", Number(amount)), 
+            where("paymentStatus", "in", ["INITIATED", "UTR_SUBMITTED"]),
+            limit(10)
+          );
+          const oSnap = await getDocs(q);
+          const match = oSnap.docs.find(d => d.id.toUpperCase().endsWith(shortId));
+          if (match) targetOrderId = match.id;
+       }
+    }
+
+    // LAYER B: Deduction (Amount + Time Window)
+    if (!targetOrderId) {
+       const now = Date.now();
+       const q = query(collection(db, "orders"), 
+         where("totalAmount", "==", Number(amount)),
+         where("paymentStatus", "in", ["INITIATED", "UTR_SUBMITTED", "PENDING"]),
+         limit(5)
+       );
+       const oSnap = await getDocs(q);
+       const candidates = oSnap.docs.filter(d => {
+          const oData = d.data();
+          const ageSec = Math.abs(now - oData.createdAt) / 1000;
+          return ageSec < 300; // ± 5 min window
+       });
+
+       if (candidates.length === 1) {
+          targetOrderId = candidates[0].id;
+          console.log(`[RECON] Found unique amount match for ₹${amount}.`);
+       } else if (candidates.length > 1) {
+          console.warn(`[RECON] Conflict! ${candidates.length} orders found for ₹${amount}. Awaiting cashier.`);
+       }
+    }
+
+    // 3. EXECUTE AUTO-APPROVAL
+    if (targetOrderId) {
+       console.log(`[AUTOPAIR] Resolving Order ${targetOrderId} via Bank Deposit ${cleanUTR}`);
+       await confirmCashPayment(targetOrderId, 'SYSTEM_SONIC_RECON_V1');
+    }
+  }
+};
+
+export const submitOrderUTR = async (orderId: string, utr: string): Promise<void> => {
+  const cleanUTR = utr.trim().replace(/\D/g, '');
+  if (cleanUTR.length < 10) throw new Error("Invalid UTR. Standard VPA UTR is 12 digits.");
+
+  try {
+    const orderRef = doc(db, "orders", orderId);
+    const orderSnap = await getDoc(orderRef);
+    if (!orderSnap.exists()) throw new Error("Order not found");
+    const orderData = orderSnap.data();
+
+    // 1. Initial Update (Move to Review Queue)
+    await updateDoc(orderRef, {
+      paymentStatus: 'UTR_SUBMITTED',
+      utr: cleanUTR,
+      utrSubmittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    // 🚀 [SONIC-RECON] Attempt Automatic Pairing
+    const ledgerRef = doc(db, "payments_ledger", cleanUTR);
+    const ledgerSnap = await getDoc(ledgerRef);
+
+    if (ledgerSnap.exists()) {
+       const deposit = ledgerSnap.data();
+       // SECURE MATCH: UTR must match AND Amount must match perfectly AND must be Available
+       if (deposit.status === 'AVAILABLE' && Number(deposit.amount) === Number(orderData.totalAmount)) {
+          console.log(`[AUTOPAIR] Perfect match found for Order ${orderId}. Automating...`);
+          await confirmCashPayment(orderId, 'SYSTEM_AUTOPAIR_V1');
+       }
+    }
+  } catch (err: any) {
+    console.error("Error submitting UTR:", err);
+    throw err;
+  }
+};
+
 export const confirmCashPayment = async (orderId: string, _cashierUid: string): Promise<void> => {
   if (useCallables()) {
     try {
       await confirmPaymentCallable({ orderId });
       return;
     } catch (err: any) {
-      console.error("Error confirming cash payment (callable):", err);
-      throw err?.message?.includes?.('ALREADY') ? new Error("Order already confirmed") : err;
+      console.error("Error confirming payment (callable):", err);
+      throw err;
     }
   }
+
   try {
     const orderRef = doc(db, "orders", orderId);
-    // [Performance Architect] - Transactions are overkill for simple status updates 
-    // and cause 429 errors easily. Switching to Direct Update.
-    await updateDoc(orderRef, {
-      paymentStatus: 'SUCCESS',
-      qrStatus: 'ACTIVE',
-      qr: { 
-        token: `QR_CASH_${orderId}_${Date.now()}`, // Fast payload generator
-        status: 'ACTIVE', 
-        createdAt: serverTimestamp() 
-      },
-      confirmedBy: _cashierUid,
-      confirmedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+    const orderSnap = await getDoc(orderRef);
+    if (!orderSnap.exists()) return;
+    const orderData = orderSnap.data();
+
+    await runTransaction(db, async (transaction) => {
+       transaction.update(orderRef, {
+          paymentStatus: 'SUCCESS',
+          qrStatus: 'ACTIVE',
+          qr: { 
+            token: `v1.${orderId}.QR_AUTO_${Date.now()}`, 
+            status: 'ACTIVE', 
+            createdAt: Date.now() 
+          },
+          confirmedBy: _cashierUid,
+          confirmedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+       });
+
+       // If this was an autopair, claim the deposit in the ledger to prevent reuse
+       if (orderData.utr) {
+          const ledgerRef = doc(db, "payments_ledger", orderData.utr);
+          transaction.update(ledgerRef, {
+            status: 'CLAIMED',
+            claimedByOrder: orderId,
+            claimedAt: serverTimestamp()
+          });
+       }
     });
     
-    // Invalidate cache locally
+    // Invalidate local cache
     try {
       const { invalidateReportsCache } = await import('./reporting');
       invalidateReportsCache();
     } catch (_e) {}
   } catch (error) {
-    console.error("Error confirming cash payment:", error);
+    console.error("Error confirming payment:", error);
     throw error;
   }
 };

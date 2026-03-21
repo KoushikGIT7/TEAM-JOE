@@ -3,10 +3,13 @@ import {
   LogOut, CheckCircle, Clock, Banknote, RefreshCw, Search, LayoutDashboard, 
   FileText, BarChart3, Settings, X, AlertCircle, TrendingUp, DollarSign,
   Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon,
-  Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid
+  Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid, Zap
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
-import { listenToPendingCashOrders, confirmCashPayment, rejectCashPayment, listenToAllOrders, listenToMenu } from '../../services/firestore-db';
+import { 
+  listenToPendingCashOrders, confirmCashPayment, rejectCashPayment, 
+  listenToAllOrders, listenToMenu, registerBankDeposit 
+} from '../../services/firestore-db';
 import Logo from '../../components/Logo';
 import { offlineDetector } from '../../utils/offlineDetector';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -19,7 +22,7 @@ interface CashierViewProps {
   onLogout: () => void;
 }
 
-type CashierTab = 'PENDING' | 'ORDERS' | 'INSIGHT' | 'SUMMARY' | 'SETTINGS';
+type CashierTab = 'PENDING' | 'ORDERS' | 'INSIGHT' | 'SUMMARY' | 'SETTINGS' | 'LEDGER';
 
 const COLORS = ['#10B981', '#F59E0B', '#6366F1', '#EC4899'];
 
@@ -32,11 +35,24 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   const [reportData, setReportData] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [syncInput, setSyncInput] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   // --- 📡 DATA LISTENERS ---
   useEffect(() => {
+    let lastLen = 0;
     const unsubs = [
       listenToPendingCashOrders((data) => {
+        if (data.length > lastLen) {
+           // 🔊 SOUND BOX: Real-world buzz for cashier
+           try {
+              if (!audioRef.current) audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+              audioRef.current.play().catch(() => {});
+           } catch (e) {}
+        }
+        lastLen = data.length;
         setPendingOrders(data);
         setLoading(false);
         offlineDetector.recordPing();
@@ -45,11 +61,18 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
         setAllOrders(data);
         offlineDetector.recordPing();
       }),
-      // Monitoring and reporting sync only.
-      // All order data is now strictly limited to 100 recent entries to prevent quota-exceeded errors.
     ];
     return () => unsubs.forEach(fn => fn());
   }, []);
+
+  // Conflict Intelligence: Detect multiple orders for the same amount
+  const conflictMap = useMemo(() => {
+    const counts: Record<number, number> = {};
+    pendingOrders.forEach(o => {
+      counts[o.totalAmount] = (counts[o.totalAmount] || 0) + 1;
+    });
+    return counts;
+  }, [pendingOrders]);
 
   // PERFORMANCE FIX [Laziness Strategy]: Only sync report data when the user is actually 
   // looking at the Insight or Summary tabs. This stops massive background reads during peak hours.
@@ -104,6 +127,37 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     await exportReport(reportData, { typeLabel: 'Daily Audit', format: 'pdf' });
   };
 
+  const handleBulkSync = async () => {
+    if (!syncInput.trim()) return;
+    setIsSyncing(true);
+    try {
+      // REGEX-PARSER: Target standard bank SMS formats like:
+      // "Received Rs 50.00... UTR: 123456789012"
+      const utrRegex = /UTR[:\s]?(\d{10,12})/gi;
+      const amtRegex = /(?:Rs\.?|₹)\s?(\d+(?:\.\d{2})?)/gi;
+      
+      const foundUtrs = [...syncInput.matchAll(utrRegex)].map(m => m[1]);
+      const foundAmts = [...syncInput.matchAll(amtRegex)].map(m => m[1]);
+      
+      let syncCount = 0;
+      for (let i = 0; i < foundUtrs.length; i++) {
+        const amt = i < foundAmts.length ? parseFloat(foundAmts[i]) : 0;
+        if (foundUtrs[i] && amt > 0) {
+          await registerBankDeposit(foundUtrs[i], amt, { source: 'MANUAL_DUMP', syncedBy: profile.uid });
+          syncCount++;
+        }
+      }
+      
+      alert(`Success! Indexed ${syncCount} deposits. Auto-reconciliation engine is now clearing the queue.`);
+      setSyncInput('');
+      setActiveTab('PENDING'); // Return to see orders turn green
+    } catch (err: any) {
+      alert('Sync failed: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const formatTime = (ts?: number) => {
     if (!ts) return '--:--';
     const d = new Date(ts);
@@ -152,6 +206,47 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       paymentSplit
     };
   }, [allOrders]);
+
+  // --- 💻 AUTOMATION TERMINAL ---
+  const renderLedgerSync = () => (
+    <div className="max-w-4xl mx-auto animate-in fade-in zoom-in duration-500">
+       <div className="bg-[#111827] rounded-[3rem] p-12 text-white shadow-2xl relative overflow-hidden mb-8 border border-white/5">
+          <div className="relative z-10">
+             <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Sync Zero-Touch Engine</h2>
+             <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] opacity-60">Paste raw bank logs or SMS alerts to auto-pair orders</p>
+          </div>
+          <Zap className="absolute top-0 right-0 w-64 h-64 text-emerald-500/10 -mr-20 -mt-20 rotate-12" />
+       </div>
+
+       <div className="bg-white rounded-[2.5rem] p-10 border border-slate-100 shadow-xl">
+          <div className="flex items-center gap-4 mb-8">
+             <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center">
+                <RefreshCw className={`w-6 h-6 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+             </div>
+             <div>
+                <h3 className="text-lg font-black text-slate-900 uppercase italic">Ledger Input Terminal</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Supports Standard Bank Formats</p>
+             </div>
+          </div>
+
+          <textarea 
+            value={syncInput}
+            onChange={(e) => setSyncInput(e.target.value)}
+            placeholder="Example: Received ₹50.00 from Student A. UTR: 123456789012..."
+            className="w-full h-64 bg-slate-50 border border-slate-100 rounded-[2rem] p-8 text-sm font-mono font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all mb-8 placeholder:opacity-30"
+          />
+
+          <button 
+            onClick={handleBulkSync}
+            disabled={isSyncing || !syncInput.trim()}
+            className="w-full bg-slate-900 text-white font-black py-6 rounded-2xl shadow-2xl shadow-slate-900/40 active:scale-95 transition-all text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-4 disabled:opacity-50"
+          >
+             {isSyncing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+             Synchronize Bank Deposits
+          </button>
+       </div>
+    </div>
+  );
 
   // --- 💻 DESKTOP COMPONENTS (ORIGINAL STYLE) ---
   const renderDesktopDashboard = () => (
@@ -229,37 +324,56 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
        </div>
 
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {pendingOrders.map(order => (
-            <div key={order.id} className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-xl hover:shadow-2xl transition-all group overflow-hidden relative">
-               <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Session #{order.id.slice(-8).toUpperCase()}</span>
-                    <h3 className="text-2xl font-black text-slate-900 mt-1">{order.userName}</h3>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-4xl font-black text-emerald-600 leading-none">₹{order.totalAmount}</p>
-                    <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-widest italic">{formatTime(order.createdAt)}</p>
-                  </div>
-               </div>
-               <div className="flex flex-wrap gap-2 mb-8">
-                  {order.items.map((it, idx) => (
-                    <div key={idx} className="bg-slate-50 border border-slate-100 flex items-center px-3 py-1.5 rounded-xl">
-                      <span className="text-xs font-black text-slate-700 tracking-tight">
-                        {it.quantity}x {it.name}
-                      </span>
+          {pendingOrders.map(order => {
+             const hasConflict = conflictMap[order.totalAmount] > 1;
+             return (
+               <div key={order.id} className={`bg-white rounded-[2.5rem] border ${hasConflict ? 'border-amber-200 bg-amber-50/10' : 'border-slate-100'} p-8 shadow-xl hover:shadow-2xl transition-all group overflow-hidden relative`}>
+                 <div className="flex justify-between items-start mb-8">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                         <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md uppercase tracking-wider italic">#{order.id.slice(-4).toUpperCase()}</span>
+                         {hasConflict && (
+                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Potential Conflict</span>
+                         )}
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-900">{order.userName}</h3>
                     </div>
-                  ))}
+                    <div className="text-right">
+                      <p className="text-4xl font-black text-emerald-600 leading-none">₹{order.totalAmount}</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-widest italic">{formatTime(order.createdAt)}</p>
+                    </div>
+                 </div>
+                 
+                 <div className="flex flex-wrap gap-2 mb-8">
+                    {order.paymentStatus === 'UTR_SUBMITTED' && (
+                      <div className="w-full bg-indigo-50 border border-indigo-100 flex items-center gap-3 px-5 py-3 rounded-2xl mb-2">
+                         <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                         <p className="font-mono font-bold text-indigo-900 tracking-wider text-sm">UTR: {order.utr}</p>
+                      </div>
+                    )}
+                    {order.items.map((it, idx) => (
+                      <div key={idx} className="bg-slate-50 border border-slate-100 flex items-center px-3 py-1.5 rounded-xl">
+                        <span className="text-xs font-black text-slate-700 tracking-tight">
+                          {it.quantity}x {it.name}
+                        </span>
+                      </div>
+                    ))}
+                 </div>
+                 
+                 <div className="flex gap-4 relative z-10">
+                    <button onClick={() => handleConfirm(order.id)} disabled={!!confirming} className={`flex-1 ${order.paymentStatus === 'UTR_SUBMITTED' ? 'bg-indigo-600 shadow-indigo-900/20' : 'bg-emerald-600 shadow-emerald-900/20'} text-white font-black py-5 rounded-2xl active:scale-95 transition-all text-xs uppercase tracking-[0.2em] shadow-xl`}>
+                      {confirming === order.id ? <RefreshCw className="w-5 h-5 animate-spin mx-auto" /> : (order.paymentStatus === 'UTR_SUBMITTED' ? "Verify & Approve" : "Approve Cash")}
+                    </button>
+                    <button onClick={() => handleReject(order.id)} disabled={!!rejecting} className="bg-rose-50 text-rose-600 font-black px-6 py-5 rounded-2xl border border-rose-100 active:scale-95 transition-all">
+                      <X className="w-6 h-6" />
+                    </button>
+                 </div>
+                 {hasConflict && (
+                   <div className="absolute top-0 right-0 p-3"><AlertCircle className="w-6 h-6 text-amber-500 opacity-20" /></div>
+                 )}
                </div>
-               <div className="flex gap-4 relative z-10">
-                  <button onClick={() => handleConfirm(order.id)} disabled={!!confirming} className="flex-1 bg-emerald-600 text-white font-black py-5 rounded-2xl active:scale-95 transition-all text-sm uppercase tracking-widest shadow-xl shadow-emerald-900/20">
-                    {confirming === order.id ? <RefreshCw className="w-6 h-6 animate-spin mx-auto" /> : "APPROVE PAYMENT"}
-                  </button>
-                  <button onClick={() => handleReject(order.id)} disabled={!!rejecting} className="bg-rose-50 text-rose-600 font-black px-6 py-5 rounded-2xl border border-rose-100 active:scale-95 transition-all">
-                    <X className="w-6 h-6" />
-                  </button>
-               </div>
-            </div>
-          ))}
+             );
+          })}
           {pendingOrders.length === 0 && (
             <div className="md:col-span-2 py-32 text-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
                <ShieldCheck className="w-20 h-20 text-slate-100 mb-6" />
@@ -382,128 +496,12 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     </div>
   );
 
-  // --- 🧱 MOBILE COMPONENTS (SIMPLIFIED TERMINAL) ---
   const renderMobileControl = () => {
-    switch(activeTab) {
-      case 'PENDING': return (
-        <div className="space-y-4 animate-in fade-in duration-300">
-           <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 italic uppercase tracking-tight">Queue <span className="text-xs bg-rose-500 text-white px-2 rounded-full not-italic">{pendingOrders.length}</span></h2>
-              <RefreshCw className={`w-4 h-4 text-emerald-500 ${loading ? 'animate-spin' : ''}`} />
-           </div>
-           {pendingOrders.map(order => (
-             <div key={order.id} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm active:scale-[0.98] transition-all">
-                <div className="flex justify-between items-start mb-4">
-                   <div>
-                      <p className="text-[10px] font-bold text-slate-400">ID #{order.id.slice(-6).toUpperCase()}</p>
-                      <h3 className="text-lg font-bold text-slate-900 leading-tight">{order.userName}</h3>
-                   </div>
-                   <p className="text-2xl font-black text-emerald-600 italic">₹{order.totalAmount}</p>
-                </div>
-                <div className="flex flex-wrap gap-2 mb-4">
-                   {order.items.map((it, idx) => (
-                     <div key={idx} className="bg-slate-50 text-slate-700 px-3 py-2 rounded-xl text-[10px] font-black uppercase border border-slate-100 flex items-center shrink-0">
-                        <span>{it.quantity}x {it.name}</span>
-                     </div>
-                   ))}
-                </div>
-                <div className="flex gap-3">
-                   <button onClick={() => handleConfirm(order.id)} disabled={!!confirming} className="flex-1 bg-emerald-600 text-white font-black py-4 rounded-xl active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 text-xs tracking-widest shadow-lg shadow-emerald-50">
-                      {confirming === order.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} CONFIRM CASH
-                   </button>
-                   <button onClick={() => handleReject(order.id)} disabled={!!rejecting} className="bg-rose-50 text-rose-500 px-5 rounded-xl border border-rose-100 active:scale-95"><X className="w-5 h-5" /></button>
-                </div>
-             </div>
-           ))}
-           {pendingOrders.length === 0 && <div className="py-20 text-center text-slate-300 font-black uppercase tracking-widest text-[10px] italic">Queue Empty</div>}
-        </div>
-      );
-      case 'ORDERS': return (
-        <div className="space-y-4 animate-in fade-in duration-300">
-           <div className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur-md pb-4 pt-2">
-              <input type="text" placeholder="Search ledger..." value={search} onChange={e => setSearch(e.target.value)} className="w-full bg-white border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold shadow-sm outline-none" />
-           </div>
-           {filteredOrders.slice(0, 20).map(order => (
-             <div key={order.id} className="bg-white p-4 rounded-2xl border border-slate-50 flex items-center justify-between shadow-sm">
-                <div>
-                  <p className="text-sm font-bold text-slate-900 leading-none">{order.userName}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest">{formatTime(order.createdAt)} • {order.paymentType}</p>
-                </div>
-                <p className="text-md font-black text-slate-800 italic">₹{order.totalAmount}</p>
-             </div>
-           ))}
-        </div>
-      );
-      case 'INSIGHT': return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-           {/* Primary Visual Graph */}
-           <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-              <div className="flex items-center justify-between mb-8">
-                 <div>
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] leading-none">Hourly Velocity</h3>
-                    <p className="text-md font-black text-slate-900 italic mt-1.5">Traffic Analysis</p>
-                 </div>
-                 <div className="bg-emerald-50 p-2 rounded-xl"><TrendingUp className="w-4 h-4 text-emerald-600" /></div>
-              </div>
-              
-              <div className="h-56 w-full -ml-4">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stats.hourlyData} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                       <XAxis 
-                         dataKey="hour" 
-                         tick={{fontSize: 8, fontWeight: 800, fill: '#94a3b8'}} 
-                         axisLine={false} 
-                         tickLine={false} 
-                         dy={10}
-                       />
-                       <YAxis 
-                         tick={{fontSize: 8, fontWeight: 800, fill: '#94a3b8'}} 
-                         axisLine={false} 
-                         tickLine={false}
-                         width={30}
-                       />
-                       <Tooltip 
-                         contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', fontSize: '10px', fontWeight: 900}} 
-                         cursor={{fill: '#f8fafc'}} 
-                       />
-                       <Bar dataKey="orders" fill="#10B981" radius={[6, 6, 0, 0]} barSize={20} />
-                    </BarChart>
-                 </ResponsiveContainer>
-              </div>
-           </div>
-
-           {/* High-Impact Stats Cards */}
-           <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-[1.8rem] border border-slate-100 shadow-lg shadow-slate-200/30">
-                 <div className="w-9 h-9 bg-blue-50 rounded-2xl flex items-center justify-center mb-4"><Receipt className="w-4 h-4 text-blue-600" /></div>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Total Sales</p>
-                 <p className="text-3xl font-black text-slate-900 italic mt-2 leading-none">{stats.count}</p>
-                 <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-tighter mt-2 flex items-center gap-1"><ArrowUpRight className="w-3 h-3" /> Live Feed</p>
-              </div>
-              
-              <div className="bg-white p-5 rounded-[1.8rem] border border-slate-100 shadow-lg shadow-slate-200/30">
-                 <div className="w-9 h-9 bg-indigo-50 rounded-2xl flex items-center justify-center mb-4"><Calculator className="w-4 h-4 text-indigo-600" /></div>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Avg Ticket</p>
-                 <p className="text-3xl font-black text-emerald-600 italic mt-2 leading-none">₹{Math.round(stats.avg)}</p>
-                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-2">Per Session</p>
-              </div>
-           </div>
-
-           {/* Trend Banner */}
-           <div className="bg-[#111827] p-5 rounded-[1.8rem] text-white flex items-center justify-between border border-white/5 relative overflow-hidden">
-              <div className="relative z-10">
-                 <p className="text-[8px] font-black text-emerald-500 uppercase tracking-[0.4em] mb-1">Session Target</p>
-                 <h4 className="text-sm font-black italic uppercase">Operational Efficiency</h4>
-              </div>
-              <div className="relative z-10 text-right">
-                 <p className="text-lg font-black italic">100%</p>
-                 <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Active System</p>
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-500/5 to-transparent skew-x-12 translate-x-1/2" />
-           </div>
-        </div>
-      );
+    switch (activeTab) {
+      case 'PENDING': return renderDesktopRequests();
+      case 'ORDERS': return renderDesktopHistory();
+      case 'INSIGHT': return renderDesktopDashboard();
+      case 'LEDGER': return renderLedgerSync();
       case 'SUMMARY': return (
         <div className="space-y-6 animate-in fade-in duration-300">
            <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
@@ -544,6 +542,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             <nav className="flex-1 space-y-3">
                {[
                  { id: 'INSIGHT', label: 'Monitor Deck', icon: LayoutDashboard },
+                 { id: 'LEDGER', label: 'Automation Hub', icon: Zap },
                  { id: 'PENDING', label: 'Inbound Queue', icon: Banknote },
                  { id: 'ORDERS', label: 'Master Ledger', icon: FileText },
                  { id: 'SUMMARY', label: 'Settlement', icon: Calculator }
@@ -575,6 +574,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">
                     {activeTab === 'INSIGHT' ? 'DIAGNOSTIC STRATAGEM' : 
                      activeTab === 'PENDING' ? 'QUEUE VERIFICATION' :
+                     activeTab === 'LEDGER' ? 'AUTOMATED RECONCILIATION' :
                      activeTab === 'ORDERS' ? 'CRYPTOGRAPHIC LEDGER' : 'SETTLEMENT PROTOCOL'}
                   </h1>
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.5em] mt-1 leading-none">Authorization Level 4 • Station 202</p>
@@ -586,6 +586,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             <div className="p-16 max-w-7xl mx-auto w-full flex-1">
                {activeTab === 'INSIGHT' ? renderDesktopDashboard() : 
                 activeTab === 'PENDING' ? renderDesktopRequests() :
+                activeTab === 'LEDGER' ? renderLedgerSync() :
                 activeTab === 'ORDERS' ? renderDesktopHistory() : 
                 renderDesktopSummary()}
             </div>
@@ -603,6 +604,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
         <nav className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-2xl border-t border-slate-100 px-6 py-6 flex items-center justify-between z-40 pb-safe shadow-[0_-15px_40px_rgba(0,0,0,0.08)]">
           {[
             { id: 'PENDING', icon: AlertCircle, label: 'Queue' },
+            { id: 'LEDGER', icon: Zap, label: 'Auto' },
             { id: 'ORDERS', icon: Receipt, label: 'Ledger' },
             { id: 'INSIGHT', icon: LayoutDashboard, label: 'Insight' },
             { id: 'SUMMARY', icon: LayoutGrid, label: 'Admin' }

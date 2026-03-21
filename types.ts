@@ -55,9 +55,14 @@ export interface Order {
   items: CartItem[];
   totalAmount: number;
   paymentType: 'UPI' | 'CARD' | 'CASH' | 'NET';
-  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED' | 'INITIATED';
+  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED' | 'INITIATED' | 'UTR_SUBMITTED';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
+
+  /** 🖇️ UTR Verification Fields (Phased Testing) */
+  utr?: string;
+  utrSubmittedAt?: any;
+
   /** Zero-wait: FAST_ITEM (instant serve) vs PREPARATION_ITEM (kitchen + pickup window) */
   orderType?: OrderType;
   /** Serve flow: PAID | NEW | PREPARING | READY | SERVED */
