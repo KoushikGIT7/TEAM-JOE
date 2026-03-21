@@ -58,6 +58,9 @@ export interface Order {
   paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED' | 'INITIATED' | 'UTR_SUBMITTED';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
+  /** 🍳 [SONIC-JIT] Pre-order Arrival Signal */
+  arrivalSignal?: 'ARRIVED' | 'PENDING';
+  arrivalSignalAt?: any;
 
   /** 🖇️ UTR Verification Fields (Phased Testing) */
   utr?: string;
@@ -242,6 +245,9 @@ export interface PrepBatch {
   arrivalTimeSlot: number;
   status: PrepBatchStatus;
   isRequeued?: boolean;
+  /** 🍳 [SONIC-JIT] Tracking students physically present */
+  arrivedCount?: number;
+  arrivedOrderIds?: string[];
   readyAt?: number;
   createdAt: number;
   updatedAt: number;

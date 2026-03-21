@@ -48,32 +48,13 @@ service cloud.firestore {
           request.resource.data.userId is string && request.resource.data.userId.matches('guest_.*')
         );
 
-      allow update: if (isStaff() && (
-        // CASE A: CASHIER CONFIRMATION
-        (isCashier() && 
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['paymentStatus', 'qrStatus', 'qr', 'confirmedBy', 'confirmedAt', 'updatedAt']) &&
-         resource.data.paymentStatus != 'SUCCESS' &&
-         request.resource.data.paymentStatus == 'SUCCESS' &&
-         request.resource.data.confirmedBy == request.auth.uid &&
-         request.resource.data.items == resource.data.items &&
-         request.resource.data.totalAmount == resource.data.totalAmount &&
-         request.resource.data.updatedAt == request.time &&
-         request.resource.data.confirmedAt == request.time &&
-         request.resource.data.qr.createdAt == request.time 
-        ) ||
-        // CASE B: KITCHEN WORKFLOW & MAINTENANCE
-        (isStaff() && 
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasAny([
-             'kitchenStatus', 'serveFlowStatus', 'items', 'pickupWindow', 
-             'estimatedReadyTime', 'updatedAt', 'arrivalTimeSlot', 
-             'batchIds', 'missedCount', 'orderStatus', 'qrStatus', 'qrState',
-             'scannedAt', 'qrStatus', 'paymentStatus', 'rejectedAt', 'rejectedBy'
-           ]) &&
-         request.resource.data.updatedAt == request.time
-        )
-      )) || (isAuthenticated() && request.auth.uid == resource.data.userId);
+      allow update: if (isStaff()) 
+          || (isAuthenticated() && request.auth.uid == resource.data.userId)
+          || (resource.data.userId is string && resource.data.userId.matches('guest_.*') && 
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'utr', 'utrSubmittedAt', 'paymentStatus', 'arrivalSignal', 'arrivalSignalAt', 'updatedAt'
+              ])
+             );
 
       allow delete: if isAdmin();
       

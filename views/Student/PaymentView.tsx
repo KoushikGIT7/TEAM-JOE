@@ -311,10 +311,22 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                                Payment not detected? Manual Sync
                              </button>
                              
-                             <div className="flex items-center justify-center gap-6 opacity-30">
-                                <Landmark className="w-5 h-5" />
-                                <Smartphone className="w-5 h-5" />
-                                <ShieldCheck className="w-5 h-5" />
+                             <div className="flex flex-col items-center gap-4">
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText('fcgtub@okicici');
+                                    alert('UPI ID Copied! Open PhonePe/GPay & Paste.');
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-100 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 shadow-sm flex items-center justify-center gap-2"
+                                >
+                                  Copy ID: fcgtub@okicici
+                                </button>
+                                
+                                <div className="flex items-center justify-center gap-6 opacity-30 mt-2">
+                                   <Landmark className="w-5 h-5" />
+                                   <Smartphone className="w-5 h-5" />
+                                   <ShieldCheck className="w-5 h-5" />
+                                </div>
                              </div>
                           </div>
                        ) : (

@@ -245,35 +245,69 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       {/* ── The Static QR (Centerpiece) ── */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
         <div className="w-full max-w-[320px] aspect-square bg-white border-[12px] border-gray-50 rounded-[3rem] shadow-2xl shadow-black/5 flex items-center justify-center relative overflow-hidden">
-          {qrString ? (
-            <div className="p-4 relative bg-white w-full h-full flex items-center justify-center">
-              {/* Blur/Hide logic (Deterministic Lockdown) */}
-              <div className={`transition-all duration-700 ${qrVisible ? 'opacity-100 blur-0' : 'opacity-10 blur-xl scale-90 pointer-events-none'}`}>
-                 <QRCodeSVG value={qrString} size={220} level="M" />
-              </div>
-              
-              {!qrVisible && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-10 animate-in fade-in zoom-in duration-500">
-                   <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-2xl mb-4 text-white ${isMissed ? 'bg-amber-600' : 'bg-gray-900'}`}>
-                      {isMissed ? <Clock className="w-10 h-10" /> : <Clock className="w-10 h-10" />}
-                   </div>
-                   <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">{isMissed ? 'Expired' : 'Locked'}</h3>
-                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 text-center max-w-[200px]">
-                     {isMissed ? 'Window missed - Order re-queued' : 'QR reveals when food is ready'}
-                   </p>
-                </div>
-              )}
-
-              {isServed && (
-                <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in duration-500 z-20">
-                  <CheckCircle2 className="w-20 h-20 text-green-500 mb-2" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-green-600">Served</span>
-                </div>
-              )}
+          
+          {/* 🍳 [SONIC-JIT] Arrival Signal Overlay */}
+          {!isReady && !isServed && order.arrivalTime && (
+            <div className="absolute inset-0 z-40 bg-white/40 backdrop-blur-md flex flex-col items-center justify-center p-8 animate-in fade-in duration-500">
+               <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-black/5 flex flex-col items-center text-center max-w-[280px]">
+                  <div className="w-20 h-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-6 animate-pulse">
+                     <ChefHat className="w-10 h-10 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase mb-2">Pre-Order Locked</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed mb-8">
+                    Dosa is cooked fresh on arrival. Tap when you are 2 mins away.
+                  </p>
+                  
+                  <button 
+                    onClick={async () => {
+                      await updateDoc(doc(db, 'orders', order.id), { 
+                        arrivalSignal: 'ARRIVED',
+                        arrivalSignalAt: serverTimestamp() 
+                      });
+                    }}
+                    disabled={order.arrivalSignal === 'ARRIVED'}
+                    className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                     {order.arrivalSignal === 'ARRIVED' ? <Check className="w-4 h-4" /> : <Zap className="w-4 h-4 text-emerald-400" />}
+                     {order.arrivalSignal === 'ARRIVED' ? 'SIGNAL SENT' : "I'M ARRIVED - COOK NOW"}
+                  </button>
+                  {order.arrivalSignal === 'ARRIVED' && (
+                     <p className="mt-4 text-[9px] font-bold text-emerald-600 uppercase tracking-widest animate-pulse">Walk to seating area...</p>
+                  )}
+               </div>
             </div>
-          ) : (
-            <Loader2 className="w-10 h-10 animate-spin text-gray-100" />
           )}
+
+          <div className="p-4 relative bg-white w-full h-full flex items-center justify-center">
+            {qrString ? (
+              <>
+                <div className={`transition-all duration-700 ${qrVisible ? 'opacity-100 blur-0' : 'opacity-10 blur-xl scale-90 pointer-events-none'}`}>
+                   <QRCodeSVG value={qrString} size={220} level="M" />
+                </div>
+                
+                {!qrVisible && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center z-10 animate-in fade-in zoom-in duration-500">
+                     <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-2xl mb-4 text-white ${isMissed ? 'bg-amber-600' : 'bg-gray-900'}`}>
+                        {isMissed ? <Clock className="w-10 h-10" /> : <Clock className="w-10 h-10" />}
+                     </div>
+                     <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">{isMissed ? 'Expired' : 'Locked'}</h3>
+                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 text-center max-w-[200px]">
+                       {isMissed ? 'Window missed - Order re-queued' : 'QR reveals when food is ready'}
+                     </p>
+                  </div>
+                )}
+
+                {isServed && (
+                  <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in duration-500 z-20">
+                    <CheckCircle2 className="w-20 h-20 text-green-500 mb-2" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-green-600">Served</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <Loader2 className="w-10 h-10 animate-spin text-gray-100" />
+            )}
+          </div>
 
           {/* Real-time scan pulse */}
           {!isServed && statusKey === 'READY' && (

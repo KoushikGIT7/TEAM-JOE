@@ -61,10 +61,10 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
   const activeBatchStatus = activeBatchBatch;
 
   const activeBatchItems = useMemo(() => {
-    const agg: Record<string, { itemName: string; quantity: number }> = {};
+    const agg: Record<string, { itemId: string; itemName: string; quantity: number }> = {};
     activeBatchSlotBatches.forEach(b => {
       if (b.quantity <= 0) return; // Hide emptied re-queues
-      if (!agg[b.itemId]) agg[b.itemId] = { itemName: b.itemName, quantity: 0 };
+      if (!agg[b.itemId]) agg[b.itemId] = { itemId: b.itemId, itemName: b.itemName, quantity: 0 };
       agg[b.itemId].quantity += b.quantity;
     });
     return Object.values(agg);
@@ -141,29 +141,45 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3 flex-1 content-start mb-8">
-                     {activeBatchItems.map((it, idx) => (
-                       <div key={idx} className="bg-slate-50 border border-slate-100 rounded-xl p-5 flex flex-col justify-between">
-                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide leading-tight mb-1">{it.itemName}</span>
-                          <span className="text-3xl font-bold text-slate-900 font-mono">×{it.quantity}</span>
-                       </div>
-                     ))}
+                      {activeBatchItems.map((it, idx) => {
+                        const hasArrived = activeBatchSlotBatches.some(b => b.itemId === it.itemId && b.arrivedCount && b.arrivedCount > 0);
+                        return (
+                          <div key={idx} className={`rounded-xl p-5 flex flex-col justify-between border transition-all ${
+                             hasArrived ? 'bg-amber-50 border-amber-200 ring-2 ring-amber-100/30' : 'bg-slate-50 border-slate-100'
+                          }`}>
+                             <div className="flex justify-between items-start">
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide leading-tight mb-1">{it.itemName}</span>
+                                {hasArrived && (
+                                   <span className="text-[8px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-full animate-pulse">VIP ARRIVED</span>
+                                )}
+                             </div>
+                             <span className="text-3xl font-bold text-slate-900 font-mono">×{it.quantity}</span>
+                          </div>
+                        );
+                      })}
                   </div>
 
                   <div className="mt-auto pt-4">
                     {activeBatchStatus === 'QUEUED' ? (
                       <button 
-                        onClick={() => updateSlotStatus(activeBatchSlot, 'PREPARING')}
+                        onClick={() => updateSlotStatus(activeBatchSlot, 'PREPARING' as any)}
                         className="w-full h-16 bg-slate-900 hover:bg-black text-white font-bold text-sm uppercase tracking-widest rounded-xl shadow-lg transition-all active:scale-[0.98]"
                       >
-                        Start Batch Preparation
+                        Start Production Cycle
                       </button>
                     ) : (
-                      <button 
-                        onClick={() => updateSlotStatus(activeBatchSlot, 'READY')}
-                        className="w-full h-16 bg-green-600 hover:bg-green-700 text-white font-bold text-sm uppercase tracking-widest rounded-xl shadow-lg shadow-green-900/10 transition-all active:scale-[0.98]"
-                      >
-                        Mark as Ready for Pickup
-                      </button>
+                      <div className="grid grid-cols-3 gap-4 h-24">
+                         {[1, 2, 3].map(size => (
+                            <button
+                              key={size}
+                              onClick={() => updateSlotStatus(activeBatchSlot, 'READY' as any, size)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white flex flex-col items-center justify-center rounded-2xl shadow-lg shadow-emerald-900/10 transition-all active:scale-90 active:rotate-2 group"
+                            >
+                               <span className="text-[10px] font-black uppercase tracking-tighter opacity-70 group-hover:scale-110 transition-transform text-center leading-none mb-1">Release</span>
+                               <span className="text-3xl font-black italic">×{size}</span>
+                            </button>
+                         ))}
+                      </div>
                     )}
                   </div>
                </div>

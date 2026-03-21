@@ -77,8 +77,9 @@ export const startBatchPreparation = async (batchId: string): Promise<void> => {
 
 /**
  * 3. markBatchReady
+ * Supports partial releases (Micro-batching) for high-freshness items.
  */
-export const markBatchReady = async (batchId: string): Promise<void> => {
+export const markBatchReady = async (batchId: string, limitCount?: number): Promise<void> => {
     const batchRef = doc(db, "prepBatches", batchId);
     const batchSnap = await getDoc(batchRef);
     if (!batchSnap.exists()) throw new Error("Batch not found");
@@ -86,13 +87,21 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
     const batchData = batchSnap.data() as PrepBatch;
     const now = Date.now();
 
+    // If partial release, we don't move the whole batch to READY yet 
+    const isPartial = limitCount && limitCount < batchData.quantity;
+
     await updateDoc(batchRef, {
-        status: 'READY',
+        status: isPartial ? 'PREPARING' : 'READY', 
         readyAt: now,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        // Decrement quantity if partial release? 
+        // No, current logic assumes batch is the "Bucket". 
+        // We track 'servable' count in orders.
     });
 
-    const orderPromises = (batchData.orderIds || []).map(async (orderId) => {
+    const ordersToNotify = isPartial ? (batchData.orderIds || []).slice(0, limitCount) : (batchData.orderIds || []);
+
+    const orderPromises = ordersToNotify.map(async (orderId) => {
         const orderRef = doc(db, "orders", orderId);
         const orderSnap = await getDoc(orderRef);
         if (!orderSnap.exists()) return;
@@ -101,7 +110,10 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
         
         const updatedItems = (orderData.items || []).map(item => {
             if (item.id === batchData.itemId && item.status !== 'SERVED') {
-                return { ...item, status: 'READY' as any };
+                return { 
+                    ...item, 
+                    status: 'READY' as any,
+                };
             }
             return item;
         });
@@ -111,8 +123,8 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
             items: updatedItems,
             pickupWindow: {
                startTime: now,
-               endTime: now + 600000,
-               durationMs: 600000,
+               endTime: now + 420000,
+               durationMs: 420000,
                status: 'COLLECTING'
             },
             updatedAt: serverTimestamp()
@@ -124,7 +136,6 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
 
 /**
  * 4. serveItem
- * Mutates one item natively. If all are served, complete the order.
  */
 export const serveItem = async (orderId: string, itemId: string): Promise<void> => {
     const orderRef = doc(db, "orders", orderId);
@@ -156,28 +167,24 @@ export const serveItem = async (orderId: string, itemId: string): Promise<void> 
 
 /**
  * 5. updateSlotStatus 
- * Helper for KitchenView which manipulates whole slots at once.
+ * Helper for KitchenView which manipulates whole slots or partial batches.
  */
-export const updateSlotStatus = async (slot: number, status: PrepBatchStatus): Promise<void> => {
+export const updateSlotStatus = async (slot: number, status: PrepBatchStatus, size?: number): Promise<void> => {
     const q = query(
         collection(db, "prepBatches"),
         where("arrivalTimeSlot", "==", slot),
         where("status", "!=", "COMPLETED")
     );
     
-    // Non-transactional read
     const querySnap = await getDocs(q);
     if (querySnap.empty) return;
 
-    // Fast parallel execution
     const batchPromises = querySnap.docs.map(async (d) => {
         if (status === 'PREPARING') {
             await startBatchPreparation(d.id);
         } else if (status === 'READY') {
-            await markBatchReady(d.id);
+            await markBatchReady(d.id, size);
         } else {
-            // Treat ALMOST_READY lightly (just a flag, but for strictness we use markBatchReady if needed)
-            // or just update batch directly.
             await updateDoc(d.ref, { status, updatedAt: serverTimestamp() });
         }
     });
