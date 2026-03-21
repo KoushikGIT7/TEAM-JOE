@@ -5,7 +5,7 @@ import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../
 import { db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { submitOrderUTR } from '../../services/firestore-db';
-import { QRCodeSVG } from 'qrcode.react';
+
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -13,23 +13,22 @@ interface PaymentViewProps {
   onSuccess: (orderId: string) => void;
 }
 
-const UPI_PA = 'paytmqr6wq8gu@ptys';
+const UPI_PA = '7795351387@ybl';
 const UPI_PN = 'JOE Cafeteria';
 
 const generateSecureUPILinks = (id: string, amt: number) => {
   const shortId = id.slice(-4).toUpperCase();
   const tn = encodeURIComponent(`ORD-${shortId}`);
   const pn = encodeURIComponent(UPI_PN);
-  // 🛡️ [PAYTM STATIC QR BYPASS] 
-  // Business VPAs (@ptys) aggressively block intent links (mode=04) without a payment gateway signature.
-  // By injecting 'mode=02' (Dynamic QR) and 'purpose=00', we trick the installed UPI apps (PhonePe, GPay) 
-  // into treating this click exactly as if the student scanned a physical QR code with their camera.
-  const query = `?pa=${UPI_PA}&pn=${pn}&tn=${tn}&am=${amt}&cu=INR&mode=02&purpose=00&orgid=000000`;
+  // 🛡️ [CLEAN UPI INTENT] 
+  // We use standard parameters (pa, pn, tn, am, cu) which are supported across 
+  // all NPCI-compliant apps (Google Pay, PhonePe, Paytm, BHIM, etc.)
+  const query = `?pa=${UPI_PA}&pn=${pn}&tn=${tn}&am=${amt}&cu=INR`;
   
   return {
     generic: `upi://pay${query}`,
     phonepe: `phonepe://pay${query}`,
-    gpay: `tezz://upi/pay${query}`, // Works better for GPay intent bypassing
+    gpay: `upi://pay${query}`, // Standard intent works best for GPay to avoid rejection
     paytm: `paytmmp://pay${query}`
   };
 };
@@ -178,10 +177,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         items: cart,
         totalAmount: total,
         paymentType: selectedMethod as any,
-        paymentStatus: 'SUCCESS', // BYPASS: Force Success instantly
+        paymentStatus: 'PENDING', 
         arrivalTime: isDynamic ? (arrivalTime ?? undefined) : undefined,
         orderStatus: 'PENDING',
-        qrStatus: 'ACTIVE',       // BYPASS: Force QR active immediately
+        qrStatus: 'PENDING_PAYMENT',     // Correct type: waiting for cashier/UPISync
         cafeteriaId: 'MAIN_CAFE',
         idempotencyKey
       });
@@ -189,8 +188,8 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       setOrderId(newOrderId);
       localStorage.removeItem('joe_cart');
       
-      // BYPASS ALL CASHIER/UPI SCREENS - JUMP STRAIGHT TO ACTIVE ORDER
-      onSuccess(newOrderId);
+      // Move to the waiting/sync screen to allow real payment
+      setState('CASH_WAITING');
       return;
       
     } catch (err: any) {
@@ -320,43 +319,34 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
                              >
                                Payment not detected? Manual Sync
                              </button>
-                             <div className="flex flex-col items-center gap-3 w-full">
-                                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 mb-2 flex flex-col items-center">
-                                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Or Scan to Pay</p>
-                                   <QRCodeSVG 
-                                     value={generateSecureUPILinks(orderId || '', total).generic} 
-                                     size={180} 
-                                     level="H" 
-                                   />
-                                   <p className="text-[9px] font-bold text-slate-400 mt-4 max-w-[180px] text-center leading-relaxed">Take a screenshot and use "Scan from Gallery" in any UPI app</p>
-                                </div>
+                             <div className="flex flex-col items-center gap-4 w-full">
                                 <button 
                                   onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).phonepe} 
-                                  className="w-full bg-[#5f259f] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#5f259f]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                  className="w-full bg-[#5f259f] text-white py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-[#5f259f]/20 flex items-center justify-center gap-3 active:scale-95 transition-all hover:scale-[1.02]"
                                 >
-                                   Open PhonePe
+                                   <Smartphone className="w-5 h-5" /> Open PhonePe
                                 </button>
                                 <button 
                                   onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).gpay} 
-                                  className="w-full bg-white border-2 border-slate-200 text-slate-800 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                  className="w-full bg-white border-2 border-slate-200 text-slate-800 py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-all hover:scale-[1.02]"
                                 >
-                                   Open GPay
+                                   <Smartphone className="w-5 h-5" /> Open GPay
                                 </button>
                                 <button 
                                   onClick={() => window.location.href = generateSecureUPILinks(orderId || '', total).paytm} 
-                                  className="w-full bg-[#002970] text-white py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#002970]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                                  className="w-full bg-[#002970] text-white py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-xl shadow-[#002970]/20 flex items-center justify-center gap-3 active:scale-95 transition-all hover:scale-[1.02]"
                                 >
-                                   Open Paytm
+                                   <Smartphone className="w-5 h-5" /> Open Paytm
                                 </button>
 
                                 <button 
                                   onClick={() => {
-                                    navigator.clipboard.writeText('paytmqr6wq8gu@ptys');
+                                    navigator.clipboard.writeText('7795351387@ybl');
                                     alert('UPI ID Copied! Open PhonePe/GPay & Paste.');
                                   }}
                                   className="w-full mt-2 bg-slate-50 border border-slate-100 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
                                 >
-                                  Copy ID: paytmqr6wq8gu@ptys
+                                  Copy ID: 7795351387@ybl
                                 </button>
                                 
                                 <div className="flex items-center justify-center gap-6 opacity-30 mt-2">

@@ -25,11 +25,45 @@ type ViewState =
   | 'STUDENT_HOME';
 
 // Lazy load student views to improve initial bundle size
-const HomeView = React.lazy(() => import('./views/Student/HomeView'));
+const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
 const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
-const OrdersView = React.lazy(() => import('./views/Student/OrdersView'));
-const QRView = React.lazy(() => import('./views/Student/QRView'));
+const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
+const QRView      = React.lazy(() => import('./views/Student/QRView'));
 
+// ─── Food emoji loader ───────────────────────────────────────────────────────
+// Used as Suspense fallback during lazy-view transitions.
+// Must be a top-level named component so React hooks rules are satisfied.
+const FOOD_EMOJIS = ['🍛', '🥗', '🍜', '🥘', '🍱', '☕'];
+const FoodLoader: React.FC = () => {
+  const [fi, setFi] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setFi(f => (f + 1) % FOOD_EMOJIS.length), 420);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div className="h-screen w-full flex items-center justify-center bg-white">
+      <div className="flex flex-col items-center gap-3">
+        <div
+          className="text-5xl select-none"
+          style={{ animation: 'foodSpin 0.42s ease-in-out' }}
+          key={fi}
+        >
+          {FOOD_EMOJIS[fi]}
+        </div>
+        <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em]">Loading...</p>
+      </div>
+      <style>{`
+        @keyframes foodSpin {
+          0%   { opacity: 0; transform: scale(0.6) rotate(-15deg); }
+          50%  { opacity: 1; transform: scale(1.15) rotate(5deg); }
+          100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
   const { user, profile: authProfile, loading: authLoading } = useAuth();
@@ -42,8 +76,7 @@ const App: React.FC = () => {
   useOrderNotifications(profile?.uid || null);
 
   // Splash is shown while auth is resolving. Once authLoading is false we
-  // apply a short (600ms) cosmetic delay so the splash animation completes
-  // gracefully. We do NOT start routing until both are false.
+  // apply a cosmetic delay (1800ms) so the logo animation fully breathes.
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
@@ -54,8 +87,8 @@ const App: React.FC = () => {
   // Dismiss splash only after auth has fully resolved
   useEffect(() => {
     if (!authLoading) {
-      // Short cosmetic delay so logo animation can finish
-      const timer = setTimeout(() => setShowSplash(false), 600);
+      // Cosmetic delay — long enough for logo animation to fully breathe
+      const timer = setTimeout(() => setShowSplash(false), 1800);
       return () => clearTimeout(timer);
     }
   }, [authLoading]);
@@ -72,32 +105,26 @@ const App: React.FC = () => {
   }, [user]);
 
   // ─── ROLE-BASED ROUTING ──────────────────────────────────────────────────
-  // Shared helper for all navigation entry points (Auth Change, Login Success)
   const getViewForRole = (r: UserProfile['role']): ViewState => {
     switch (r) {
       case ROLES.ADMIN:   return 'ADMIN';
       case ROLES.CASHIER: return 'CASHIER';
       case ROLES.SERVER:  return 'KITCHEN';
-      default:        return 'STUDENT_HOME';
+      default:            return 'STUDENT_HOME';
     }
   };
 
   // Only runs after splash is gone AND auth is fully resolved (including profile).
-  // This eliminates the 1st-login wrong-redirect bug.
   useEffect(() => {
-    // Wait until both guards are clear
     if (authLoading || showSplash) return;
 
     if (!profile) {
-      // Not logged in → land on Welcome/Login gate
       if (view !== 'WELCOME' && view !== 'STAFF_LOGIN') {
         setView('WELCOME');
       }
       return;
     }
 
-    // User is logged in and profile is confirmed
-    // Only auto-redirect when on a neutral / login view to avoid kicking someone off a subview
     if (role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
       setView(getViewForRole(role));
     }
@@ -121,19 +148,17 @@ const App: React.FC = () => {
 
   const handleGuestLogin = async () => {
     if (guestLoading) return;
-    // ⚡ OPTIMISTIC UI: Immediately switch to STUDENT_HOME + show SplashScreen
-    // This eliminates the white-page flash that occurred during the async import.
-    // The SplashScreen acts as a loading gate until the profile is ready.
+    // ⚡ OPTIMISTIC UI: Immediately switch to STUDENT_HOME so FoodLoader shows
+    // instead of a white screen while the async import resolves.
     setGuestLoading(true);
     setStudentSubView('HOME');
-    setView('STUDENT_HOME'); // Show splash fallback immediately
+    setView('STUDENT_HOME');
     try {
       const { signInAsGuest } = await import('./services/auth');
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
     } catch (error) {
       console.error('❌ Guest login error:', error);
-      // Roll back to welcome if it fails
       setView('WELCOME');
     } finally {
       setGuestLoading(false);
@@ -148,7 +173,7 @@ const App: React.FC = () => {
     setGuestProfile(null);
     setView('WELCOME');
     setStudentSubView('HOME');
-    setActiveOrderId(null); // Clear active order state
+    setActiveOrderId(null);
   };
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
@@ -162,7 +187,7 @@ const App: React.FC = () => {
         switch (view) {
           case 'WELCOME':
             return (
-          <WelcomeView
+              <WelcomeView
                 onGoogleLogin={handleGoogleLogin}
                 onGuestLogin={handleGuestLogin}
                 onStaffLogin={navigateToStaffLogin}
@@ -194,9 +219,9 @@ const App: React.FC = () => {
           case 'KITCHEN':
           case 'SERVING_COUNTER':
             return (
-              <UnifiedKitchenConsole 
-                profile={profile!} 
-                onLogout={handleLogout} 
+              <UnifiedKitchenConsole
+                profile={profile!}
+                onLogout={handleLogout}
                 onBack={() => setView('ADMIN')}
               />
             );
@@ -208,10 +233,10 @@ const App: React.FC = () => {
                   switch (studentSubView) {
                     case 'HOME':
                       return (
-                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
-                          <HomeView 
-                            profile={profile} 
-                            onLogout={handleLogout} 
+                        <React.Suspense fallback={<FoodLoader />}>
+                          <HomeView
+                            profile={profile}
+                            onLogout={handleLogout}
                             onProceed={() => setStudentSubView('PAYMENT')}
                             onViewOrders={() => setStudentSubView('ORDERS')}
                             onViewQR={(id) => {
@@ -223,9 +248,9 @@ const App: React.FC = () => {
                       );
                     case 'PAYMENT':
                       return (
-                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
-                          <PaymentView 
-                            profile={profile} 
+                        <React.Suspense fallback={<FoodLoader />}>
+                          <PaymentView
+                            profile={profile}
                             onBack={() => setStudentSubView('HOME')}
                             onSuccess={(id) => {
                               setActiveOrderId(id);
@@ -236,9 +261,9 @@ const App: React.FC = () => {
                       );
                     case 'ORDERS':
                       return (
-                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
-                          <OrdersView 
-                            profile={profile} 
+                        <React.Suspense fallback={<FoodLoader />}>
+                          <OrdersView
+                            profile={profile}
                             onBack={() => setStudentSubView('HOME')}
                             onQROpen={(id) => {
                               setActiveOrderId(id);
@@ -249,9 +274,9 @@ const App: React.FC = () => {
                       );
                     case 'QR':
                       return (
-                        <React.Suspense fallback={<SplashScreen onFinish={() => {}} />}>
-                          <QRView 
-                            orderId={activeOrderId!} 
+                        <React.Suspense fallback={<FoodLoader />}>
+                          <QRView
+                            orderId={activeOrderId!}
                             onBack={() => setStudentSubView('HOME')}
                             onViewOrders={() => setStudentSubView('ORDERS')}
                           />

@@ -17,7 +17,7 @@ import {
   listenToAllOrders, listenToMenu, listenToAllUsers,
   updateUserRole, toggleUserStatus, addMenuItem, updateMenuItem, deleteMenuItem,
   listenToSettings, updateSettings, listenToInventory, listenToInventoryMeta, updateInventoryItem,
-  getDailyConsumptionByItem, getPopularMenuItems
+  getDailyConsumptionByItem, getPopularMenuItems, initializeMenu
 } from '../../services/firestore-db';
 import { CATEGORIES } from '../../constants';
 import Logo from '../../components/Logo';
@@ -616,17 +616,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
           <h3 className="text-2xl font-black text-textMain uppercase tracking-tighter">Kitchen Catalog</h3>
           <p className="text-xs text-textSecondary font-bold">Manage meal parameters and pricing</p>
         </div>
-        <button 
-          onClick={() => {
-            setEditingItem(null);
-            setMenuForm({ name: '', price: 0, costPrice: 0, category: 'Breakfast', imageUrl: '', active: true });
-            setImagePreview(null);
-            setShowMenuModal(true);
-          }}
-          className="flex items-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all"
-        >
-          <Plus className="w-4 h-4" /> Add Item
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={async () => {
+              if (confirm("This will synchronize all items with the official menu in constants.tsx and update all images/prices. Continue?")) {
+                try {
+                  await initializeMenu();
+                  alert("Menu synchronized successfully!");
+                } catch (err) {
+                  alert("Sync failed: " + (err as any).message);
+                }
+              }
+            }}
+            className="flex items-center gap-2 bg-gray-100 text-textMain px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-primary/10 transition-all border border-black/5"
+          >
+            <RefreshCw className="w-4 h-4" /> Re-seed
+          </button>
+          <button 
+            onClick={() => {
+              setEditingItem(null);
+              setMenuForm({ name: '', price: 0, costPrice: 0, category: 'Breakfast', imageUrl: '', active: true });
+              setImagePreview(null);
+              setShowMenuModal(true);
+            }}
+            className="flex items-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all"
+          >
+            <Plus className="w-4 h-4" /> Add Item
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
