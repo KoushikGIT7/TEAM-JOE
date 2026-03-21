@@ -47,6 +47,7 @@ const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR'>('HOME');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
 
@@ -119,14 +120,23 @@ const App: React.FC = () => {
   };
 
   const handleGuestLogin = async () => {
+    if (guestLoading) return;
+    // ⚡ OPTIMISTIC UI: Immediately switch to STUDENT_HOME + show SplashScreen
+    // This eliminates the white-page flash that occurred during the async import.
+    // The SplashScreen acts as a loading gate until the profile is ready.
+    setGuestLoading(true);
+    setStudentSubView('HOME');
+    setView('STUDENT_HOME'); // Show splash fallback immediately
     try {
       const { signInAsGuest } = await import('./services/auth');
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
-      setStudentSubView('HOME');
-      setView('STUDENT_HOME');
     } catch (error) {
       console.error('❌ Guest login error:', error);
+      // Roll back to welcome if it fails
+      setView('WELCOME');
+    } finally {
+      setGuestLoading(false);
     }
   };
 
@@ -152,11 +162,12 @@ const App: React.FC = () => {
         switch (view) {
           case 'WELCOME':
             return (
-              <WelcomeView
+          <WelcomeView
                 onGoogleLogin={handleGoogleLogin}
                 onGuestLogin={handleGuestLogin}
                 onStaffLogin={navigateToStaffLogin}
                 googleLoading={googleSignInLoading}
+                guestLoading={guestLoading}
               />
             );
 
@@ -262,6 +273,7 @@ const App: React.FC = () => {
                 onGuestLogin={handleGuestLogin}
                 onStaffLogin={navigateToStaffLogin}
                 googleLoading={googleSignInLoading}
+                guestLoading={guestLoading}
               />
             );
         }

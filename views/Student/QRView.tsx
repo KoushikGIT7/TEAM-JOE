@@ -36,6 +36,9 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const [orderCount, setOrderCount] = useState(1);
   const prevFlow = useRef<string>('');
   const [, setTick] = useState(0);
+  // 🛡️ TERMINAL LATCH: Once we reach a served/terminal state, never go backwards
+  // This prevents Firestore multi-write race conditions from causing status flashes
+  const terminalLatch = useRef(false);
 
   // 🛡️ Top-level ticker: ensures isTimeExpired recalcs even if Firestore is quiet
   useEffect(() => {
@@ -83,10 +86,13 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   // ── Auto-navigation after scan ───────────────────────────────────────────
   useEffect(() => {
     if (!order) return;
+    // Expanded terminal detection — includes qrState='SCANNED' so nav fires
+    // on the FIRST write, not waiting for the second async write to land
+    const isQrScanned = (order.qrState as string) === 'SCANNED';
     const isDestroyed = order.qrStatus === 'DESTROYED' || order.qrStatus === 'USED';
-    const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
+    const isOrderServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
     
-    if (isDestroyed || isServed) {
+    if (isQrScanned || isDestroyed || isOrderServed) {
       // FAST_ITEM (Static) should return home faster
       const isFast = order.orderType === 'FAST_ITEM';
       const delay = isFast ? 1200 : 2500;
@@ -97,7 +103,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       }, delay); 
       return () => clearTimeout(timer);
     }
-  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus]);
+  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus, order?.qrState]);
 
   // ── Haptic on READY ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -139,23 +145,36 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   // ⏱️ Industry-grade Immediate Lockdown (Client-side)
   const isTimeExpired = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
   
-  // 🏁 TERMINAL STATE DETECTION (Sonic Speed)
+  // 🏁 TERMINAL STATE DETECTION
+  // qrState=SCANNED means the server has already scanned — treat as terminal immediately.
+  // This prevents the multi-write race condition where Firestore fires qrState='SCANNED'
+  // before orderStatus='SERVED' lands, causing a brief flash back to 'PREPARING'.
+  const isQrScanned =
+    (order.qrState as string) === 'SCANNED' ||
+    (order.qrStatus as string) === 'USED' ||
+    (order.qrStatus as string) === 'DESTROYED';
+
   const isServed = 
     order.orderStatus === 'SERVED' || 
     order.orderStatus === 'COMPLETED' || 
     (order.serveFlowStatus as string) === 'SERVED' || 
-    (order.qrStatus as string) === 'DESTROYED' ||
-    order.qrStatus === 'USED';
+    isQrScanned;
+
+  // Lock the terminal latch — once served, never un-serve
+  if (isServed) terminalLatch.current = true;
+  const isTerminal = terminalLatch.current;
     
-  const isMissed = !isServed && (uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired);
+  const isMissed = !isTerminal && (uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired);
   
-  // Resolve strict status
+  // Resolve strict status — SERVED takes absolute priority
   let statusKey = 'SCHEDULED';
-  if (isServed) statusKey = 'SERVED';
+  if (isTerminal) statusKey = 'SERVED';
   else if (isMissed) statusKey = 'MISSED';
   else if (order.paymentType === 'CASH' && order.paymentStatus === 'PENDING') statusKey = 'CASH_PENDING';
   else if (flow === 'READY') statusKey = 'READY';
-  else if (flow === 'SERVED_PARTIAL' || (order.qrState as string) === 'SCANNED') statusKey = 'PREPARING'; // Show preparing while partially served
+  // NOTE: 'SERVED_PARTIAL' stays PREPARING (partial serve is still in progress)
+  // NOTE: qrState='SCANNED' is now handled by isTerminal — NOT mapped to PREPARING
+  else if (flow === 'SERVED_PARTIAL') statusKey = 'PREPARING';
   else if (flow === 'PREPARING' || flow === 'ALMOST_READY') statusKey = 'PREPARING';
   else if (order.paymentStatus === 'SUCCESS') statusKey = 'SCHEDULED';
 
@@ -244,39 +263,42 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
       {/* ── The Static QR (Centerpiece) ── */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
-        <div className="w-full max-w-[320px] aspect-square bg-white border-[12px] border-gray-50 rounded-[3rem] shadow-2xl shadow-black/5 flex items-center justify-center relative overflow-hidden">
-          
-          {/* 🍳 [SONIC-JIT] Arrival Signal Overlay */}
-          {!isReady && !isServed && order.arrivalTime && (
-            <div className="absolute inset-0 z-40 bg-white/40 backdrop-blur-md flex flex-col items-center justify-center p-8 animate-in fade-in duration-500">
-               <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-black/5 flex flex-col items-center text-center max-w-[280px]">
-                  <div className="w-20 h-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-6 animate-pulse">
-                     <ChefHat className="w-10 h-10 text-primary" />
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase mb-2">Pre-Order Locked</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed mb-8">
-                    Dosa is cooked fresh on arrival. Tap when you are 2 mins away.
-                  </p>
-                  
-                  <button 
-                    onClick={async () => {
-                      await updateDoc(doc(db, 'orders', order.id), { 
-                        arrivalSignal: 'ARRIVED',
-                        arrivalSignalAt: serverTimestamp() 
-                      });
-                    }}
-                    disabled={order.arrivalSignal === 'ARRIVED'}
-                    className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 disabled:opacity-50"
-                  >
-                     {order.arrivalSignal === 'ARRIVED' ? <Check className="w-4 h-4" /> : <Zap className="w-4 h-4 text-emerald-400" />}
-                     {order.arrivalSignal === 'ARRIVED' ? 'SIGNAL SENT' : "I'M ARRIVED - COOK NOW"}
-                  </button>
-                  {order.arrivalSignal === 'ARRIVED' && (
-                     <p className="mt-4 text-[9px] font-bold text-emerald-600 uppercase tracking-widest animate-pulse">Walk to seating area...</p>
-                  )}
-               </div>
+
+        {/* 🍳 Arrival Signal chip (non-blocking) - shown below status */}
+        {!isReady && !isServed && order.arrivalTime && (
+          <div className="w-full max-w-[320px] mb-4 animate-in fade-in duration-500">
+            <div className="bg-slate-50 border border-slate-100 rounded-[1.5rem] p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                  <ChefHat className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-700 uppercase tracking-tight">Scheduled Order</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Tap when 2 mins away</p>
+                </div>
+              </div>
+              <button 
+                onClick={async () => {
+                  await updateDoc(doc(db, 'orders', order.id), { 
+                    arrivalSignal: 'ARRIVED',
+                    arrivalSignalAt: serverTimestamp() 
+                  });
+                }}
+                disabled={order.arrivalSignal === 'ARRIVED'}
+                className={`shrink-0 px-4 py-2.5 rounded-2xl font-black text-[9px] uppercase tracking-[0.15em] flex items-center gap-2 transition-all active:scale-95 ${
+                  order.arrivalSignal === 'ARRIVED'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-slate-900 text-white shadow-lg'
+                }`}
+              >
+                {order.arrivalSignal === 'ARRIVED' ? <Check className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
+                {order.arrivalSignal === 'ARRIVED' ? 'Signalled' : "I'm Here"}
+              </button>
             </div>
-          )}
+          </div>
+        )}
+
+        <div className="w-full max-w-[320px] aspect-square bg-white border-[12px] border-gray-50 rounded-[3rem] shadow-2xl shadow-black/5 flex items-center justify-center relative overflow-hidden">
 
           <div className="p-4 relative bg-white w-full h-full flex items-center justify-center">
             {qrString ? (

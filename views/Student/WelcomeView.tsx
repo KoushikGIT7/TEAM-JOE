@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Loader2, LogIn, UserCircle, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Loader2, UserCircle } from 'lucide-react';
 import Logo from '../../components/Logo';
 
 interface WelcomeViewProps {
@@ -8,6 +8,7 @@ interface WelcomeViewProps {
   onGuestLogin: () => void;
   disabled?: boolean;
   googleLoading?: boolean;
+  guestLoading?: boolean;
 }
 
 const WelcomeView: React.FC<WelcomeViewProps> = ({ 
@@ -15,7 +16,8 @@ const WelcomeView: React.FC<WelcomeViewProps> = ({
   onStaffLogin, 
   onGuestLogin, 
   disabled = false, 
-  googleLoading = false 
+  googleLoading = false,
+  guestLoading = false
 }) => {
   return (
     <div className="h-screen w-full flex flex-col items-center justify-between p-6 sm:p-8 bg-white max-w-md mx-auto relative overflow-hidden">
@@ -75,11 +77,20 @@ const WelcomeView: React.FC<WelcomeViewProps> = ({
 
           <button
             onClick={onGuestLogin}
-            disabled={disabled || googleLoading}
-            className="w-full bg-gray-50 text-textMain font-bold py-5 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 border-2 border-transparent hover:border-gray-200 text-lg"
+            disabled={disabled || googleLoading || guestLoading}
+            className="w-full bg-gray-50 text-textMain font-bold py-5 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 border-2 border-transparent hover:border-gray-200 text-lg disabled:opacity-70"
           >
-            <UserCircle className="w-6 h-6 text-textSecondary" />
-            <span>Continue as Guest</span>
+            {guestLoading ? (
+              <>
+                <Loader2 className="w-6 h-6 animate-spin text-textSecondary" />
+                <span>Setting up your session...</span>
+              </>
+            ) : (
+              <>
+                <UserCircle className="w-6 h-6 text-textSecondary" />
+                <span>Continue as Guest</span>
+              </>
+            )}
           </button>
         </div>
       </div>
