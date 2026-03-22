@@ -1,19 +1,40 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Camera, Check, CheckCircle, X, ChevronRight, Utensils, Clock, Zap, AlertTriangle, Search, CookingPot, PackageCheck, ShieldCheck, ShieldAlert, LogOut, LayoutDashboard } from 'lucide-react';
-import { startBatchPreparation, markBatchReady, serveItem, updateSlotStatus, requeueMissedOrder } from '../../services/cook-workflow';
+import { 
+  CheckCircle, 
+  ChevronRight, 
+  Clock, 
+  AlertTriangle, 
+  ShieldAlert, 
+  Zap, 
+  Send, 
+  Sparkles, 
+  Search, 
+  ChevronLeft, 
+  CheckCircle2, 
+  ClipboardList,
+  ShieldCheck,
+  LayoutDashboard,
+  LogOut,
+  X
+} from 'lucide-react';
 import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { PrepBatch, Order, UserProfile } from '../../types';
 import { 
   listenToBatches, 
   listenToActiveOrders, 
-  flushMissedPickups, 
-  validateQRForServing, 
-  serveFullOrder,
+  startBatchPreparation, 
+  markBatchAlmostReady,
+  markBatchReady,
   serveItemBatch,
-  abandonItem,
   serveOrderItemsAtomic,
-  processAtomicIntake
+  forceReadyOrder,
+  validateQRForServing,
+  broadcastSystemMessage,
+  processAtomicIntake,
+  flushMissedPickups,
+  serveFullOrder,
+  abandonItem
 } from '../../services/firestore-db';
 import { parseQRPayload, parseServingQR } from '../../services/qr';
 import { initializeScanner } from '../../services/scanner';
@@ -21,21 +42,19 @@ import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
 import QRScanner from '../../components/QRScanner';
 
-
 interface UnifiedKitchenConsoleProps {
   profile: UserProfile;
   onLogout: () => void;
   onBack?: () => void;
 }
 
-// New UnifiedHeader component
 interface UnifiedHeaderProps {
   profile: UserProfile;
   onLogout: () => void;
   onBack?: () => void;
   currentTime: Date;
-  activeWorkspace: 'COOK' | 'SERVER';
-  setActiveWorkspace: (workspace: 'COOK' | 'SERVER') => void;
+  activeWorkspace: 'COOK' | 'SERVER' | 'MARKETING';
+  setActiveWorkspace: (workspace: 'COOK' | 'SERVER' | 'MARKETING') => void;
 }
 
 const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack, currentTime, activeWorkspace, setActiveWorkspace }) => {
@@ -46,11 +65,10 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
             <span className="text-white font-bold text-lg tracking-tight uppercase">JOE CAFE</span>
          </div>
          
-         {/* Workspace Switcher */}
          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button 
               onClick={() => setActiveWorkspace('COOK')}
-              className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
+              className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all ${
                 activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -58,11 +76,19 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
             </button>
             <button 
               onClick={() => setActiveWorkspace('SERVER')}
-              className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-                activeWorkspace === 'SERVER' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all ${
+                activeWorkspace === 'SERVER' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white/50 text-indigo-900 border border-indigo-100 hover:bg-white'
               }`}
             >
-              Server Desk
+              Server Console
+            </button>
+            <button 
+              onClick={() => setActiveWorkspace('MARKETING')}
+              className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${
+                activeWorkspace === 'MARKETING' ? 'bg-rose-600 text-white shadow-lg' : 'bg-white/50 text-rose-900 border border-rose-100 hover:bg-white'
+              }`}
+            >
+              📣 Marketing Hub <div className="bg-white/20 px-2 py-0.5 rounded-md text-[10px]">NEW</div>
             </button>
          </div>
       </div>
@@ -99,16 +125,10 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
   );
 };
 
-
 const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
-  // --- CORE DATA STATE ---
   const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
-  // Operational sync is handled by the global maintenance loop in the next useEffect.
-
-  
-  // --- UI STATE ---
-  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER'>('SERVER');
+  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MARKETING'>('COOK');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [optimisticOrders, setOptimisticOrders] = useState<Record<string, Order>>({});
@@ -116,11 +136,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [localScanBuffer, setLocalScanBuffer] = useState<string[]>([]);
 
-
-  // 🛡️ SCAN QUEUE SYNC: Derived from Firestore 'SCANNED' state
-  // This ensures the queue survives page refresh, crashes, or multi-tablet environments.
   const scanQueue = useMemo(() => {
-    // [ROOT-FIX] Use mergedActiveOrders so scanning creates an optimistic queue entry
     const merged = [...activeOrders];
     Object.values(optimisticOrders).forEach(oo => {
         if (!merged.find(m => m.id === oo.id)) merged.push(oo);
@@ -128,7 +144,6 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
     const firestoreQueue = merged
       .filter(o => {
-        // Optimistic state might already be completed
         const realStatus = optimisticOrders[o.id]?.orderStatus || o.orderStatus;
         return (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && 
         realStatus !== 'SERVED' && 
@@ -141,20 +156,15 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   }, [activeOrders, localScanBuffer, optimisticOrders]);
 
   const mergedActiveOrders = useMemo(() => {
-    // Merge optimistic (recently scanned) orders with active orders for sub-millisecond rendering
     const merged = [...activeOrders];
     Object.values(optimisticOrders).forEach(oo => {
       const idx = merged.findIndex(m => m.id === oo.id);
-      if (idx === -1) {
-        merged.push(oo);
-      } else {
-        merged[idx] = oo; // Overlay optimistic over stale firestore
-      }
+      if (idx === -1) merged.push(oo);
+      else merged[idx] = oo;
     });
     return merged;
   }, [activeOrders, optimisticOrders]);
 
-  // 🔊 [SONIC-SYNC] Full Screen Feedback State
   const [sonicMode, setSonicMode] = useState<{
     status: 'SUCCESS' | 'ERROR' | 'IDLE';
     title: string;
@@ -162,25 +172,26 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     icon: 'CHECK' | 'X' | 'CLOCK';
   }>({ status: 'IDLE', title: '', sub: '', icon: 'CHECK' });
 
-  const triggerSonicPulse = (status: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
+  const triggerSonicPulse = (status: 'SUCCESS' | 'ERROR', title: string, sub: string, persistent = false) => {
     setSonicMode({ status, title, sub, icon: status === 'SUCCESS' ? 'CHECK' : 'X' });
     if ('vibrate' in navigator) {
       if (status === 'SUCCESS') navigator.vibrate(100);
       else navigator.vibrate([200, 100, 200]);
     }
-    setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 700 : 2500);
+    
+    if (status !== 'SUCCESS' || !persistent) {
+        setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 700 : 2500);
+    }
   };
 
-  // --- REFS ---
-  const inFlightTokenRef = useRef<string | null>(null);
-  const lastSuccessRef = useRef<{ id: string; time: number } | null>(null);
+  const scanLockRef = useRef(false);
+  const scanHistoryRef = useRef<Record<string, number>>({});
 
-  // --- ETIOLOGY: GLOBAL MAINTENANCE LOOP ---
   useEffect(() => {
     const maintenanceLoop = setInterval(async () => {
       setCurrentTime(new Date());
       await flushMissedPickups(); 
-    }, 3000); 
+    }, 15000); 
 
     const unsubBatches = listenToBatches(setBatches);
     const unsubOrders = listenToActiveOrders(setActiveOrders);
@@ -190,124 +201,49 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       unsubBatches();
       unsubOrders();
     };
-  }, [profile.uid]);
+  }, []);
 
-  // --- HEADLESS SCANNER INPUT FOCUS ---
-  useEffect(() => {
-    if (activeWorkspace !== 'SERVER' || !isCameraOpen) return;
-
-    const focusT = setInterval(() => {
-      const el = document.getElementById('headless-scanner-input');
-      if (el && document.activeElement !== el) el.focus();
-    }, 1000);
-
-    const scanner = initializeScanner({ suffixKey: 'Enter', autoFocus: true });
-    scanner.onScan((data) => {
-      // 🛡️ [Principal Architect] Double-gate: only scan if camera is open AND we aren't already processing
-      if (activeWorkspace === 'SERVER' && isCameraOpen && !inFlightTokenRef.current) {
-         // Lock immediately to prevent race conditions from millisecond frames
-         inFlightTokenRef.current = 'PENDING'; 
-         handleQRScan(data);
-      }
-    });
-
-    return () => {
-      clearInterval(focusT);
-      scanner.destroy();
-    };
-  }, [activeWorkspace, isCameraOpen]);
-
-  // --- SONIC SCAN LOCKS (Hard synchronous gates) ---
-  const scanLockRef = useRef(false);
-  const scanHistoryRef = useRef<Record<string, number>>({});
-
-  // --- OPERATIONAL HANDLERS ---
-  const handleQRScan = async (rawData: string, resumeScanner: () => void = () => {}) => {
-    if (!rawData?.trim()) return;
-    
-    // 🛡️ [PRINCIPAL-LOCK] Hard synchronous gate to block redundant frames instantly
-    if (scanLockRef.current) return;
+  const handleQRScan = async (rawData: string) => {
+    if (!rawData?.trim() || scanLockRef.current) return;
     scanLockRef.current = true;
 
-    // 🛡️ [COOLDOWN-SHIELD] 3-second mandatory ignore window for the same token
     const now = Date.now();
     const lastScan = scanHistoryRef.current[rawData] || 0;
     if (now - lastScan < 3000) {
-       // Silent ignore for 3 seconds per business rule
-       setTimeout(() => { scanLockRef.current = false; }, 500); // Quick release for different items
+       setTimeout(() => { scanLockRef.current = false; }, 500);
        return;
     }
-    // 🔊 [SONIC-BOOST] Instant Haptic Feedback
-    if ('vibrate' in navigator) navigator.vibrate(80);
 
     const intake = parseServingQR(rawData.trim());
-    
-    // [SONIC-PULSE] PRELIMINARY OPTIMISTIC FEEDBACK
     if (intake.orderId) {
        triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
     }
 
-    // 🛑 STOP CAMERA IMMEDIATELY
     setIsCameraOpen(false);
 
-    // [SONIC-SYNC] Reset Timeout (REDUCED: 1.2s for rapid-fire)
-    const releaseLock = (delay = 1200) => {
-        setTimeout(() => {
-            scanLockRef.current = false;
-        }, delay);
-    };
-
     try {
-        // ⚡ [SONIC-ATOMIC] Hand off entirely to the single backend transaction
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
-
-        // [SONIC-SYNC] Immediately update optimistic state 
         setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
         
         if (result === 'AWAITING_PAYMENT') {
-           setLocalScanBuffer(prev => prev.includes(order.id) ? prev : [order.id, ...prev]);
-           triggerSonicPulse('SUCCESS', 'AWAITING CASH', `#${order.id.slice(-4).toUpperCase()} – Unpaid.`);
+           triggerSonicPulse('SUCCESS', 'AWAITING CASH', `#${order.id.slice(-4).toUpperCase()} – Unpaid.`, true);
         } else if (result === 'CONSUMED') {
-           triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`);
-           setLocalScanBuffer(prev => prev.filter(id => id !== order.id)); // Instantly remove from queue
-        } else if (result === 'MANIFESTED') {
-           setLocalScanBuffer(prev => prev.includes(order.id) ? prev : [order.id, ...prev]);
-           triggerSonicPulse('SUCCESS', 'MEAL VERIFIED', `#${order.id.slice(-4).toUpperCase()} – Added.`);
-        } else if (result === 'ALREADY_MANIFESTED') {
-           triggerSonicPulse('SUCCESS', 'IN QUEUE', 'Items already on manifest.');
+           triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`, false);
+           setLocalScanBuffer(prev => prev.filter(id => id !== order.id));
+        } else if (result === 'MANIFESTED' || result === 'ALREADY_MANIFESTED') {
+           triggerSonicPulse('SUCCESS', 'MEAL VERIFIED', `#${order.id.slice(-4).toUpperCase()} – TAP TO SERVE`, true);
         }
         
-        releaseLock(1200); // 1.2s rapid recovery
+        setTimeout(() => { scanLockRef.current = false; }, 1200);
     } catch (err: any) {
         const msg = err?.message || String(err);
-        
-        if (msg.includes('ALREADY_CONSUMED')) {
-            triggerSonicPulse('ERROR', 'ALREADY SERVED', 'Ticket was consumed.');
-        } else if (msg.includes('ALREADY_SCANNED')) {
-            triggerSonicPulse('ERROR', 'ALREADY SCANNED', 'In manifests.');
-        } else if (msg.includes('SECURITY_BREACH')) {
-            triggerSonicPulse('ERROR', 'INVALID TOKEN', 'Verification failed.');
-        } else {
-            triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
-        }
-        
-        releaseLock(1200); // 1.2s rapid recovery
+        triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
+        setTimeout(() => { scanLockRef.current = false; }, 1200);
     }
   };
 
   const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
     if (isProcessing) return;
-    
-    // ⚡ [SONIC-SYNC] Optimistic local update for sub-millisecond removal from manifest
-    setOptimisticOrders(prev => {
-      const order = prev[orderId] || activeOrders.find(o => o.id === orderId);
-      if (!order) return prev;
-      const updatedItems = order.items.map(it => 
-        it.id === itemId ? { ...it, status: 'SERVED' as any, remainingQty: 0, servedQty: it.quantity } : it
-      );
-      return { ...prev, [orderId]: { ...order, items: updatedItems } };
-    });
-
     setIsProcessing(true);
     try {
       await serveItemBatch(orderId, itemId, qty, profile.uid);
@@ -321,15 +257,6 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   const handleServeFullOrder = async (orderId: string) => {
     if (isProcessing) return;
-
-    // ⚡ [SONIC-SYNC] Optimistic local update
-    setOptimisticOrders(prev => {
-       const order = prev[orderId] || activeOrders.find(o => o.id === orderId);
-       if (!order) return prev;
-       const updatedItems = order.items.map(it => ({ ...it, status: 'SERVED' as any, remainingQty: 0, servedQty: it.quantity }));
-       return { ...prev, [orderId]: { ...order, items: updatedItems, orderStatus: 'COMPLETED' as any, qrStatus: 'DESTROYED' as any } };
-    });
-
     setIsProcessing(true);
     try {
       await serveFullOrder(orderId, profile.uid);
@@ -344,12 +271,12 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   const handleForceReady = async (orderId: string) => {
      try {
-       const orderRef = doc(db, 'orders', orderId);
-       await updateDoc(orderRef, { serveFlowStatus: 'READY', updatedAt: serverTimestamp() });
+       await forceReadyOrder(orderId, profile.uid);
      } catch (err) {
        console.error("Force ready error:", err);
      }
   };
+
   const handleAbandonItem = async (orderId: string, itemId: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -363,7 +290,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background font-sans select-none">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans select-none">
       <div className="flex-1 flex flex-col min-w-0">
         <UnifiedHeader 
           profile={profile} 
@@ -375,9 +302,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         />
 
         <main className="flex-1 overflow-hidden relative">
-          {activeWorkspace === 'COOK' ? (
-             <CookConsoleWorkspace batches={batches} />
-          ) : (
+          {activeWorkspace === 'COOK' && <CookConsoleWorkspace batches={batches} />}
+          {activeWorkspace === 'SERVER' && (
              <ServerConsoleWorkspace 
                 activeOrders={mergedActiveOrders}
                 scanQueue={scanQueue}
@@ -392,43 +318,54 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                 isProcessing={isProcessing}
              />
           )}
+          {activeWorkspace === 'MARKETING' && <MarketingHub />}
 
-          {/* ⚡ [SONIC] FEEDBACK OVERLAY (Principal UX lanes) */}
           {sonicMode.status !== 'IDLE' && (
             <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
                 sonicMode.status === 'SUCCESS' ? 'bg-emerald-600' : 'bg-rose-600'
             }`}>
                <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
-                  {sonicMode.icon === 'CHECK' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
+                  {sonicMode.status === 'SUCCESS' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
                </div>
                <h1 className="text-6xl font-black text-white uppercase tracking-tighter italic mb-4 drop-shadow-2xl">{sonicMode.title}</h1>
-               <p className="text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono">{sonicMode.sub}</p>
+               <p className="text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono mb-12">{sonicMode.sub}</p>
+
+               {sonicMode.status === 'SUCCESS' && (
+                 <div className="w-full max-w-lg space-y-4 px-8">
+                   <button 
+                     onClick={() => {
+                        const idMatch = sonicMode.sub.match(/#([A-Z0-9]{4})/);
+                        if (idMatch) {
+                           const targetOrder = mergedActiveOrders.find(o => o.id.toLowerCase().endsWith(idMatch[1].toLowerCase()));
+                           if (targetOrder) handleServeFullOrder(targetOrder.id);
+                        }
+                        setSonicMode(prev => ({ ...prev, status: 'IDLE' }));
+                     }}
+                     className="w-full bg-white text-emerald-600 h-24 rounded-[2rem] font-black text-2xl uppercase tracking-[0.2em] shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-4"
+                   >
+                     Complete & Serve All <Zap className="w-8 h-8" />
+                   </button>
+                   <button 
+                     onClick={() => setSonicMode(prev => ({ ...prev, status: 'IDLE' }))}
+                     className="w-full bg-emerald-700/50 text-white/80 h-16 rounded-[1.5rem] font-black text-sm uppercase tracking-widest active:scale-95 transition-all"
+                   >
+                     Dismiss
+                   </button>
+                 </div>
+               )}
             </div>
           )}
 
-          {/* 📷 [SERVER] CAMERA SCANNER MODAL */}
-          {activeWorkspace === 'SERVER' && isCameraOpen && (
+          {isCameraOpen && (
             <QRScanner 
-               onScan={(data, resume) => {
-                 handleQRScan(data, resume);
-               }}
+               onScan={(data) => handleQRScan(data)}
                onClose={() => setIsCameraOpen(false)}
             />
           )}
         </main>
 
-        {/* 🧩 [HEADLESS] HIDDEN INPUT FOR HARDWARE SCANNERS */}
-        <input 
-          id="headless-scanner-input"
-          type="text"
-          className="fixed -top-10 opacity-0 pointer-events-none"
-          autoComplete="off"
-          readOnly
-        />
-
-        {/* ERROR OVERLAY */}
         {error && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-red-600/90 backdrop-blur-md text-white px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4">
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4">
             <AlertTriangle className="w-6 h-6" />
             <span className="font-black uppercase tracking-widest text-sm">{error}</span>
             <button onClick={() => setError(null)} className="ml-4 bg-white/20 p-1 rounded-lg">
@@ -439,6 +376,93 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       </div>
     </div>
   );
+};
+
+const MarketingHub = () => {
+    const [msg, setMsg] = useState('');
+    const [status, setStatus] = useState<'IDLE' | 'SENDING' | 'SENT'>('IDLE');
+
+    const templates = [
+        { label: "🍱 Lunch Rush", text: "JOE: Lunch is served! 🥘 Avoid the massive queue—book your 1:00 PM Pulse now and walk straight to the counter! 🚀" },
+        { label: "🥐 Breakfast Hub", text: "JOE: Rise and grind! ☕ Your Masala Dosa is waiting. Catch the 8:45 hot window before it fills up! 🍱" },
+        { label: "🍵 Tea Break", text: "JOE: Chai + Samosa o'clock! ☕ Enjoy your perfect 5-min break. Slots for 5:30 PM are opening now! ✨" }
+    ];
+
+    const pushMessage = async () => {
+        if (!msg) return;
+        setStatus('SENDING');
+        try {
+            await broadcastSystemMessage(msg);
+            setStatus('SENT');
+            setTimeout(() => setStatus('IDLE'), 3000);
+            setMsg('');
+        } catch (e) {
+            setStatus('IDLE');
+        }
+    };
+
+    return (
+        <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500 overflow-y-auto h-full pb-32">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white rounded-[2.5rem] shadow-xl border border-rose-100 p-8">
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="bg-rose-100 p-4 rounded-[1.5rem]">
+                            <Zap className="w-8 h-8 text-rose-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black text-rose-900">Digital Marketing Hub</h2>
+                            <p className="text-sm font-bold text-rose-400">Target All 400 Students Instantly</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4 mb-8">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Message Campaign</label>
+                        <textarea 
+                            value={msg}
+                            onChange={(e) => setMsg(e.target.value)}
+                            placeholder="Type your Swiggy-style notification here..."
+                            className="w-full h-40 bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-6 font-bold text-slate-700 focus:border-rose-300 focus:ring-0 transition-all placeholder:text-slate-300 outline-none"
+                        />
+                    </div>
+
+                    <button 
+                        onClick={pushMessage}
+                        disabled={status === 'SENDING' || !msg}
+                        className={`w-full h-20 rounded-[1.5rem] font-black uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-4 ${
+                            status === 'SENT' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                        }`}
+                    >
+                        {status === 'SENDING' ? 'Broadcasting...' : status === 'SENT' ? 'Campaign Fired! 🚀' : 'Fire Pulse Campaign 📢'}
+                        <Send className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="bg-rose-900 rounded-[2.5rem] p-8 text-white shadow-xl">
+                        <h3 className="text-xl font-black mb-6 flex items-center gap-3">
+                            <Sparkles className="w-6 h-6" /> Best-Selling Templates
+                        </h3>
+                        <div className="space-y-4">
+                            {templates.map(t => (
+                                <button 
+                                    key={t.label}
+                                    onClick={() => setMsg(t.text)}
+                                    className="w-full bg-white/10 hover:bg-white/20 border border-white/10 rounded-[1.5rem] p-5 text-left transition-all group active:scale-[0.98]"
+                                >
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-rose-300 mb-2">{t.label}</div>
+                                    <div className="text-xs font-bold text-white/80 group-hover:text-white leading-relaxed">{t.text}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-[2rem] p-8 border border-slate-100 italic font-bold text-slate-400 text-sm leading-relaxed">
+                        "Pro Tip: Sending a notification 15 minutes before the lunch rush increases 'Pulse Bookings' by up to 40%."
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 export default UnifiedKitchenConsole;

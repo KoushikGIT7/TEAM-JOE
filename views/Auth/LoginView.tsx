@@ -129,7 +129,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onBack }) => {
                 setEmail(e.target.value);
                 setError(''); // Clear error on input
               }}
-              autoComplete="email"
+              autoComplete="off"
               autoFocus
               disabled={isSubmitting}
               className="w-full bg-gray-50 border-none rounded-2xl py-4 sm:py-5 pl-14 pr-4 text-lg font-bold outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed min-h-[52px]"
@@ -154,7 +154,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onBack }) => {
                 setPassword(e.target.value);
                 setError(''); // Clear error on input
               }}
-              autoComplete="current-password"
+              autoComplete="off"
               disabled={isSubmitting}
               className="w-full bg-gray-50 border-none rounded-2xl py-4 sm:py-5 pl-14 pr-4 text-lg font-bold outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed min-h-[52px]"
               placeholder="Enter password"

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Order, PrepBatch } from '../types';
+import { joeSounds } from '../utils/audio';
 
 /**
  * Hook to listen for updates across ALL active orders for the student.
@@ -43,8 +44,7 @@ export const useOrderNotifications = (userId: string | null) => {
                  * silently — in-memory (waveTimersRef) deduplication covers
                  * the current session. No noisy log for expected guest failures.
                  */
-                const markNotified = async (id: string, isGuestOrder: boolean): Promise<void> => {
-                    if (isGuestOrder) return; // Expected: guests have no auth token
+                const markNotified = async (id: string): Promise<void> => {
                     try {
                         await updateDoc(doc(db, 'orders', id), { notifiedAt: Date.now() });
                     } catch (err: any) {
@@ -56,15 +56,13 @@ export const useOrderNotifications = (userId: string | null) => {
                     }
                 };
 
-                const isGuest = typeof data.userId === 'string' && data.userId.startsWith('guest_');
-
                 // 1. REJECTED: Immediate notification (no waves)
                 if ((!prev || prev.status !== 'REJECTED') && currentStatus === 'REJECTED' && !data.notifiedAt) {
                     triggerLocalNotification(
                         '⚠️ Order Issue',
                         `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
                     );
-                    await markNotified(orderId, isGuest);
+                    await markNotified(orderId);
                 }
 
                 // 2. READY: Wave-based delivery for Kitchen items, Immediate for Fast items
@@ -76,7 +74,7 @@ export const useOrderNotifications = (userId: string | null) => {
                             '🍽️ Order Ready!',
                             `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
                         );
-                        await markNotified(orderId, isGuest);
+                        await markNotified(orderId);
                         return;
                     }
 
@@ -110,13 +108,12 @@ export const useOrderNotifications = (userId: string | null) => {
                         try {
                             const freshSnap = await getDoc(doc(db, 'orders', orderId));
                             const freshData = freshSnap.data() as Order;
-                            const freshIsGuest = typeof freshData?.userId === 'string' && freshData.userId.startsWith('guest_');
                             if (freshSnap.exists() && freshData.serveFlowStatus === 'READY' && !freshData.notifiedAt) {
                                 triggerLocalNotification(
                                     '🍽️ Order Ready!',
                                     `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
                                 );
-                                await markNotified(orderId, freshIsGuest);
+                                await markNotified(orderId);
                             }
                         } catch (e) {
                             console.error('Final trigger error:', e);
@@ -135,6 +132,9 @@ export const useOrderNotifications = (userId: string | null) => {
 };
 
 const triggerLocalNotification = (title: string, body: string) => {
+    // 🔊 AUDIO FEEDBACK INSTANTLY
+    joeSounds.playAlert();
+    
     if (!('Notification' in window)) return;
     
     if (Notification.permission === 'granted') {

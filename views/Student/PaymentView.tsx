@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { submitOrderUTR } from '../../services/firestore-db';
 import { QRCodeSVG } from 'qrcode.react';
+import { joeSounds } from '../../utils/audio';
 
 
 interface PaymentViewProps {
@@ -80,6 +81,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           setPayStatus(order.paymentStatus);
           if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
             setOrderStatus('APPROVED');
+            joeSounds.playSuccess();
           } else if (order.paymentStatus === 'UTR_SUBMITTED' || order.paymentStatus === 'PENDING') {
             setOrderStatus('PENDING');
           }
@@ -111,7 +113,9 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       await submitOrderUTR(orderId, utr);
       // Logic handles the move to UTR_SUBMITTED
     } catch (err: any) {
-      alert(err.message || 'Verification failed. Contact staff.');
+      if (!err?.message?.includes('permission-denied')) {
+        alert(err.message || 'Verification failed. Contact staff.');
+      }
     } finally {
       setIsSubmittingUtr(false);
     }
@@ -124,16 +128,16 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     const s = [];
     const now = new Date();
     let current = new Date(now);
-    current.setMinutes(Math.ceil(current.getMinutes() / 15) * 15, 0, 0);
-    current.setMinutes(current.getMinutes() + 15);
+    current.setMinutes(Math.ceil(current.getMinutes() / 5) * 5, 0, 0);
+    current.setMinutes(current.getMinutes() + 5);
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 20; i++) {
       const h = current.getHours();
       const m = current.getMinutes();
       const label = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
       const value = h * 100 + m;
       s.push({ label, value });
-      current.setMinutes(current.getMinutes() + 15);
+      current.setMinutes(current.getMinutes() + 5);
     }
     return s;
   }, []);

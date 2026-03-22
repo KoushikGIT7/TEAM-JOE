@@ -1,19 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { useOrderNotifications } from './hooks/useOrderNotifications';
+import { useMarketingPulses } from './services/marketing-sync';
 import SplashScreen from './components/SplashScreen';
-import { signInWithGoogle } from './services/auth';
+import { signInWithGoogle, signInAsGuest, signOut } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
-import { UserProfile, ROLES } from './types';
+import { UserProfile } from './types';
+import { Bell, X } from 'lucide-react';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
 import CashierView from './views/Staff/CashierView';
 import AdminDashboard from './views/Admin/Dashboard';
-import ServingCounterView from './views/Staff/ServingCounterView';
-import KitchenView from './views/Staff/KitchenView';
 import UnifiedKitchenConsole from './views/Staff/UnifiedKitchenConsole';
 import LoginView from './views/Auth/LoginView';
+
+import FoodLoader from './components/Common/FoodLoader';
+
+// Lazy load student views to improve initial bundle size
+const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
+const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
+const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
+const QRView      = React.lazy(() => import('./views/Student/QRView'));
 
 type ViewState =
   | 'WELCOME'
@@ -24,28 +32,32 @@ type ViewState =
   | 'STAFF_LOGIN'
   | 'STUDENT_HOME';
 
-import FoodLoader from './components/Common/FoodLoader';
-
-// Lazy load student views to improve initial bundle size
-const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
-const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
-const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
-const QRView      = React.lazy(() => import('./views/Student/QRView'));
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 const App: React.FC = () => {
-  const { user, profile: authProfile, loading: authLoading } = useAuth();
-  const [guestProfile, setGuestProfile] = useState<UserProfile | null>(null);
+  const { user: authUser, profile: authProfile, loading: authLoading } = useAuth();
+  
+  const [guestProfile, setGuestProfile] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem('joe_guest_profile');
+    return saved ? JSON.parse(saved) : null;
+  });
   
   const profile = authProfile || guestProfile;
-  const role = profile?.role || null;
+  const { latestPulse, clearPulse } = useMarketingPulses(profile?.role || null);
+  const [isInitializingGuest, setIsInitializingGuest] = useState(true);
+
+  // Restore Guest identity from Long-term Storage
+  useEffect(() => {
+    const savedGuest = localStorage.getItem('joe_guest_profile');
+    if (savedGuest && !authProfile) {
+        try {
+            setGuestProfile(JSON.parse(savedGuest));
+        } catch (_) { /* invalid json */ }
+    }
+    setIsInitializingGuest(false);
+  }, [authProfile]);
 
   // Initialize order notifications for students/guests
   useOrderNotifications(profile?.uid || null);
 
-  // Splash is shown while auth is resolving. Once authLoading is false we
-  // apply a cosmetic delay (1800ms) so the logo animation fully breathes.
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
@@ -53,39 +65,35 @@ const App: React.FC = () => {
   const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR'>('HOME');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
 
-  // Dismiss splash only after auth has fully resolved
   useEffect(() => {
     if (!authLoading) {
-      // Cosmetic delay — long enough for logo animation to fully breathe
       const timer = setTimeout(() => setShowSplash(false), 1800);
       return () => clearTimeout(timer);
     }
   }, [authLoading]);
 
-  // Absolute safety net — never hang beyond 6s
   useEffect(() => {
     const safety = setTimeout(() => setShowSplash(false), 6000);
     return () => clearTimeout(safety);
   }, []);
 
-  // Request push notification permission once logged in
   useEffect(() => {
-    if (user) requestNotificationPermission();
-  }, [user]);
+    if (authUser) requestNotificationPermission();
+  }, [authUser]);
 
-  // ─── ROLE-BASED ROUTING ──────────────────────────────────────────────────
   const getViewForRole = (r: UserProfile['role']): ViewState => {
     switch (r) {
-      case ROLES.ADMIN:   return 'ADMIN';
-      case ROLES.CASHIER: return 'CASHIER';
-      case ROLES.SERVER:  return 'KITCHEN';
-      default:            return 'STUDENT_HOME';
+      case 'ADMIN': return 'ADMIN';
+      case 'CASHIER': return 'CASHIER';
+      case 'SERVER': return 'KITCHEN';
+      case 'GUEST': 
+      case 'STUDENT': return 'STUDENT_HOME';
+      default: return 'WELCOME';
     }
   };
 
-  // Only runs after splash is gone AND auth is fully resolved (including profile).
   useEffect(() => {
-    if (authLoading || showSplash) return;
+    if (authLoading || showSplash || isInitializingGuest) return;
 
     if (!profile) {
       if (view !== 'WELCOME' && view !== 'STAFF_LOGIN') {
@@ -94,12 +102,11 @@ const App: React.FC = () => {
       return;
     }
 
-    if (role && (view === 'WELCOME' || view === 'STAFF_LOGIN')) {
-      setView(getViewForRole(role));
+    if (view === 'WELCOME' || view === 'STAFF_LOGIN') {
+        setView(getViewForRole(profile.role));
     }
-  }, [authLoading, showSplash, profile, role, view]);
+  }, [authLoading, showSplash, profile, view, isInitializingGuest]);
 
-  // ─── HANDLERS ────────────────────────────────────────────────────────────
   const navigateToStaffLogin = () => setView('STAFF_LOGIN');
 
   const handleGoogleLogin = async () => {
@@ -117,15 +124,13 @@ const App: React.FC = () => {
 
   const handleGuestLogin = async () => {
     if (guestLoading) return;
-    // ⚡ OPTIMISTIC UI: Immediately switch to STUDENT_HOME so FoodLoader shows
-    // instead of a white screen while the async import resolves.
     setGuestLoading(true);
-    setStudentSubView('HOME');
-    setView('STUDENT_HOME');
     try {
-      const { signInAsGuest } = await import('./services/auth');
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
+      localStorage.setItem('joe_guest_profile', JSON.stringify(gProfile));
+      setStudentSubView('HOME');
+      setView('STUDENT_HOME');
     } catch (error) {
       console.error('❌ Guest login error:', error);
       setView('WELCOME');
@@ -136,142 +141,147 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      const { signOut } = await import('./services/auth');
       await signOut();
     } catch (_) { /* ignore */ }
     setGuestProfile(null);
+    localStorage.removeItem('joe_guest_profile');
     setView('WELCOME');
     setStudentSubView('HOME');
     setActiveOrderId(null);
   };
 
-  // ─── RENDER ──────────────────────────────────────────────────────────────
-  if (showSplash || authLoading) {
+  if (authLoading || isInitializingGuest || showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
+  const renderView = () => {
+    switch (view) {
+      case 'WELCOME':
+        return (
+          <WelcomeView
+            onGoogleLogin={handleGoogleLogin}
+            onGuestLogin={handleGuestLogin}
+            onStaffLogin={navigateToStaffLogin}
+            googleLoading={googleSignInLoading}
+            guestLoading={guestLoading}
+          />
+        );
+      case 'STAFF_LOGIN':
+        return (
+          <LoginView
+            onBack={() => setView('WELCOME')}
+            onSuccess={(p) => setView(getViewForRole(p.role))}
+          />
+        );
+      case 'CASHIER':
+        return <CashierView profile={profile!} onLogout={handleLogout} />;
+      case 'ADMIN':
+        return (
+          <AdminDashboard
+            profile={profile!}
+            onLogout={handleLogout}
+            onOpenKitchen={() => setView('KITCHEN')}
+          />
+        );
+      case 'KITCHEN':
+      case 'SERVING_COUNTER':
+        return (
+          <UnifiedKitchenConsole
+            profile={profile!}
+            onLogout={handleLogout}
+            onBack={() => setView('ADMIN')}
+          />
+        );
+      case 'STUDENT_HOME':
+        return (
+          <div className="h-full w-full">
+            {(() => {
+              switch (studentSubView) {
+                case 'HOME':
+                  return (
+                    <React.Suspense fallback={<FoodLoader />}>
+                      <HomeView
+                        profile={profile!}
+                        onLogout={handleLogout}
+                        onProceed={() => setStudentSubView('PAYMENT')}
+                        onViewOrders={() => setStudentSubView('ORDERS')}
+                        onViewQR={(id) => {
+                          setActiveOrderId(id);
+                          setStudentSubView('QR');
+                        }}
+                      />
+                    </React.Suspense>
+                  );
+                case 'PAYMENT':
+                  return (
+                    <React.Suspense fallback={<FoodLoader />}>
+                      <PaymentView
+                        profile={profile!}
+                        onBack={() => setStudentSubView('HOME')}
+                        onSuccess={(id) => {
+                          setActiveOrderId(id);
+                          setStudentSubView('QR');
+                        }}
+                      />
+                    </React.Suspense>
+                  );
+                case 'ORDERS':
+                  return (
+                    <React.Suspense fallback={<FoodLoader />}>
+                      <OrdersView
+                        profile={profile!}
+                        onBack={() => setStudentSubView('HOME')}
+                        onQROpen={(id) => {
+                          setActiveOrderId(id);
+                          setStudentSubView('QR');
+                        }}
+                      />
+                    </React.Suspense>
+                  );
+                case 'QR':
+                  return (
+                    <React.Suspense fallback={<FoodLoader />}>
+                      <QRView
+                        orderId={activeOrderId!}
+                        onBack={() => setStudentSubView('HOME')}
+                        onViewOrders={() => setStudentSubView('ORDERS')}
+                      />
+                    </React.Suspense>
+                  );
+                default:
+                  return null;
+              }
+            })()}
+          </div>
+        );
+      default:
+        return <WelcomeView onGoogleLogin={handleGoogleLogin} onGuestLogin={handleGuestLogin} onStaffLogin={navigateToStaffLogin} googleLoading={googleSignInLoading} guestLoading={guestLoading} />;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-textMain overflow-x-hidden">
-      {(() => {
-        switch (view) {
-          case 'WELCOME':
-            return (
-              <WelcomeView
-                onGoogleLogin={handleGoogleLogin}
-                onGuestLogin={handleGuestLogin}
-                onStaffLogin={navigateToStaffLogin}
-                googleLoading={googleSignInLoading}
-                guestLoading={guestLoading}
-              />
-            );
-
-          case 'STAFF_LOGIN':
-            return (
-              <LoginView
-                onBack={() => setView('WELCOME')}
-                onSuccess={(p) => setView(getViewForRole(p.role))}
-              />
-            );
-
-          case 'CASHIER':
-            return <CashierView profile={profile!} onLogout={handleLogout} />;
-
-          case 'ADMIN':
-            return (
-              <AdminDashboard
-                profile={profile!}
-                onLogout={handleLogout}
-                onOpenKitchen={() => setView('KITCHEN')}
-              />
-            );
-
-          case 'KITCHEN':
-          case 'SERVING_COUNTER':
-            return (
-              <UnifiedKitchenConsole
-                profile={profile!}
-                onLogout={handleLogout}
-                onBack={() => setView('ADMIN')}
-              />
-            );
-
-          case 'STUDENT_HOME':
-            return (
-              <div className="h-full w-full">
-                {(() => {
-                  switch (studentSubView) {
-                    case 'HOME':
-                      return (
-                        <React.Suspense fallback={<FoodLoader />}>
-                          <HomeView
-                            profile={profile}
-                            onLogout={handleLogout}
-                            onProceed={() => setStudentSubView('PAYMENT')}
-                            onViewOrders={() => setStudentSubView('ORDERS')}
-                            onViewQR={(id) => {
-                              setActiveOrderId(id);
-                              setStudentSubView('QR');
-                            }}
-                          />
-                        </React.Suspense>
-                      );
-                    case 'PAYMENT':
-                      return (
-                        <React.Suspense fallback={<FoodLoader />}>
-                          <PaymentView
-                            profile={profile}
-                            onBack={() => setStudentSubView('HOME')}
-                            onSuccess={(id) => {
-                              setActiveOrderId(id);
-                              setStudentSubView('QR');
-                            }}
-                          />
-                        </React.Suspense>
-                      );
-                    case 'ORDERS':
-                      return (
-                        <React.Suspense fallback={<FoodLoader />}>
-                          <OrdersView
-                            profile={profile}
-                            onBack={() => setStudentSubView('HOME')}
-                            onQROpen={(id) => {
-                              setActiveOrderId(id);
-                              setStudentSubView('QR');
-                            }}
-                          />
-                        </React.Suspense>
-                      );
-                    case 'QR':
-                      return (
-                        <React.Suspense fallback={<FoodLoader />}>
-                          <QRView
-                            orderId={activeOrderId!}
-                            onBack={() => setStudentSubView('HOME')}
-                            onViewOrders={() => setStudentSubView('ORDERS')}
-                          />
-                        </React.Suspense>
-                      );
-                    default:
-                      setStudentSubView('HOME');
-                      return null;
-                  }
-                })()}
-              </div>
-            );
-
-          // STRICT: No student/default fallback that could mis-route
-          default:
-            return (
-              <WelcomeView
-                onGoogleLogin={handleGoogleLogin}
-                onGuestLogin={handleGuestLogin}
-                onStaffLogin={navigateToStaffLogin}
-                googleLoading={googleSignInLoading}
-                guestLoading={guestLoading}
-              />
-            );
-        }
-      })()}
+    <div className="min-h-screen bg-white text-slate-900 overflow-x-hidden relative">
+      {/* 📣 [MARKETING-PULSE] Swiggy-style notification card */}
+      {latestPulse && (
+        <div className="fixed top-8 left-4 right-4 z-[100] animate-in slide-in-from-top-4">
+          <div className="bg-rose-900 text-white rounded-[2rem] shadow-2xl p-6 border-b-4 border-rose-950 flex items-center gap-6 relative overflow-hidden group">
+            <div className="bg-white/20 p-4 rounded-[1.5rem] shrink-0">
+               <Bell className="w-8 h-8 text-rose-300 animate-bounce" />
+            </div>
+            <div className="flex-1 min-w-0 pr-4">
+               <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-300">New Promotion</span>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+               </div>
+               <p className="font-black text-lg leading-tight tracking-tight">{latestPulse.text}</p>
+            </div>
+            <button onClick={clearPulse} className="bg-white/10 hover:bg-white/20 p-2 rounded-xl">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+      {renderView()}
     </div>
   );
 };

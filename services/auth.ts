@@ -8,12 +8,10 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
-  createUserWithEmailAndPassword,
-  updateProfile,
   GoogleAuthProvider,
   signInWithRedirect,
-  signInWithPopup,
   getRedirectResult,
+  signInAnonymously,
   // Use Firebase default persistence (local) for web
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -84,7 +82,7 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
         // Not a valid staff role
         return null;
       }
-      
+
       return {
         uid: data.uid || uid,
         name: data.name || 'Student member',
@@ -108,47 +106,15 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
 export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile: UserProfile }> => {
   try {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
+    // 🛡️ [NO-POPUP-FIX] Use Redirect Flow to avoid browser blocking
+    await signInWithRedirect(auth, provider);
     
-    // Check if profile exists
-    let profile = await getUserProfile(user.uid);
-    
-    // CASE 1: NEW USER or MISSING PROFILE -> Auto-create as STUDENT
-    if (!profile) {
-      const now = Date.now();
-      const newProfile: UserProfile = {
-        uid: user.uid,
-        name: user.displayName || 'Student',
-        email: user.email || '',
-        role: 'STUDENT',
-        active: true,
-        createdAt: now,
-      };
-      
-      // Perform write but don't wait for it to return the profile again
-      // The onAuthStateChange listener will pick this up or we return it directly
-      await setDoc(doc(db, "users", user.uid), {
-        ...newProfile,
-        lastActive: serverTimestamp(),
-        createdAt: serverTimestamp()
-      }, { merge: true });
-      
-      profile = newProfile;
-    }
-    
-    if (!profile) {
-      throw new Error("FAILED_TO_CREATE_PROFILE");
-    }
-    
-    if (!profile.active) {
-      await firebaseSignOut(auth);
-      throw new Error("ACCOUNT_DEACTIVATED");
-    }
-
-    return { user, profile };
+    // Note: The execution will actually stop here as the page redirects.
+    // getRedirectResult will handle the completion on the next page load.
+    // Return a dummy promise that won't resolve to satisfy type check.
+    return new Promise(() => {});
   } catch (error: any) {
-    console.error('❌ signInWithGoogle failed:', error);
+    console.error("❌ signInWithGoogle initiation failed:", error);
     throw error;
   }
 };
@@ -206,23 +172,56 @@ export const signIn = async (email: string, password: string): Promise<{ user: F
 };
 
 /**
- * Guest Login - Creates a temporary session profile
+ * Guest Login - Creates a persistent anonymous session
+ * This ensures the session survives payment transitions and background syncs.
  */
-export const signInAsGuest = async (): Promise<{ user: null; profile: UserProfile }> => {
-  // We use a mock guest profile as we don't want to create Firebase Auth users for every guest
-  // unless the system actually needs a signed-in anonymous user. 
-  // For "limit access (ordering only)", a mock profile is faster.
-  const guestId = `guest_${Math.random().toString(36).substr(2, 9)}`;
-  const guestProfile: UserProfile = {
-    uid: guestId,
-    name: 'Guest User',
-    email: 'guest@joecafe.com',
-    role: 'GUEST',
-    active: true,
-    createdAt: Date.now()
-  };
-  
-  return { user: null, profile: guestProfile };
+export const signInAsGuest = async (): Promise<{ user: FirebaseUser | null; profile: UserProfile }> => {
+  try {
+    console.log('🛡️ Cloud-First: Attempting Firebase Anonymous Sign-in...');
+    const userCredential = await signInAnonymously(auth);
+    const user = userCredential.user;
+    
+    // Check for existing profile (in case of returning anonymous session)
+    let profile = await getUserProfile(user.uid);
+    
+    if (!profile) {
+      const now = Date.now();
+      profile = {
+          uid: user.uid,
+          name: 'Guest User',
+          email: 'guest@joecafe.com',
+          role: 'GUEST',
+          active: true,
+          createdAt: now,
+      };
+      
+      await setDoc(doc(db, "users", user.uid), {
+          ...profile,
+          lastActive: serverTimestamp(),
+          createdAt: serverTimestamp()
+      }, { merge: true }).catch(e => console.warn("Silent profile sync fail", e));
+    }
+    
+    return { user, profile };
+  } catch (err: any) {
+    if (err.code === 'auth/admin-restricted-operation') {
+        console.warn('⚠️ Console Settings Check: Anonymous Auth is RESTRICTED in Firebase Console.');
+    }
+    console.warn('⚡ Fallback: Generating High-Entropy Local ID...', err.code);
+    
+    const localId = `ls_guest_${Math.random().toString(36).substring(2, 15)}`;
+    const now = Date.now();
+    const gProfile: UserProfile = {
+        uid: localId,
+        name: 'Guest User',
+        email: 'guest@joecafe.local',
+        role: 'GUEST',
+        active: true,
+        createdAt: now
+    };
+    
+    return { user: null, profile: gProfile };
+  }
 };
 
 /**
@@ -291,7 +290,7 @@ export const onAuthStateChange = (
 
           const profile: UserProfile = {
             uid: data.uid || firebaseUser.uid,
-            name: data.name || firebaseUser.displayName || 'Staff Member',
+            name: data.name || firebaseUser.displayName || (currentRole === 'GUEST' ? 'Guest User' : 'Staff Member'),
             email: email,
             role: currentRole,
             active: data.active ?? true,
@@ -300,15 +299,16 @@ export const onAuthStateChange = (
           };
           callback(firebaseUser, profile);
         } else {
-          // PROFILE MISSING: Auto-provision based on email pattern
+          // PROFILE MISSING: Auto-provision based on email pattern or guest status
           const email = firebaseUser.email || '';
+          const isAnonymous = firebaseUser.isAnonymous;
           const now = Date.now();
-          const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT;
+          const inferredRole = isAnonymous ? 'GUEST' : (inferRoleFromEmail(email) || ROLES.STUDENT);
           
           const newProfile: UserProfile = {
             uid: firebaseUser.uid,
-            name: firebaseUser.displayName || email.split('@')[0] || 'User',
-            email: email,
+            name: isAnonymous ? 'Guest User' : (firebaseUser.displayName || email.split('@')[0] || 'User'),
+            email: isAnonymous ? 'guest@joecafe.com' : email,
             role: inferredRole,
             active: true,
             createdAt: now,

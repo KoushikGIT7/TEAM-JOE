@@ -120,5 +120,10 @@ service cloud.firestore {
     match /payments_ledger/{utrId} {
       allow read, write: if isStaff();
     }
+
+    match /system_messages/{msgId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
   }
 }
