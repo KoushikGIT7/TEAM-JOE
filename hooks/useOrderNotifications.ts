@@ -12,6 +12,8 @@ import { joeSounds } from '../utils/audio';
 export const useOrderNotifications = (userId: string | null) => {
     // track local state to avoid spam within the same session
     const activeListenerRef = useRef<Record<string, { status: string; flow: string }>>({});
+    // sessionDedupeRef tracks which combinations have already been announced to prevent repeats in current lifecycle
+    const sessionDedupeRef = useRef<Set<string>>(new Set());
     // track orders currently waiting for their "wave" delay
     const waveTimersRef = useRef<Record<string, boolean>>({});
 
@@ -71,12 +73,16 @@ export const useOrderNotifications = (userId: string | null) => {
                     const isFastItem = data.orderType === 'FAST_ITEM';
 
                     if (isFastItem) {
-                        joeSounds.playFoodReady(); // 🍱 Triumphant ding — food is ready!
-                        triggerLocalNotification(
-                            '🍽️ Order Ready!',
-                            `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
-                        );
-                        await markNotified(orderId);
+                        const dedupeKey = `${orderId}-READY`;
+                        if (!sessionDedupeRef.current.has(dedupeKey)) {
+                            sessionDedupeRef.current.add(dedupeKey);
+                            joeSounds.playFoodReady(); 
+                            triggerLocalNotification(
+                                '🍽️ Order Ready!',
+                                `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                            );
+                            await markNotified(orderId);
+                        }
                         return;
                     }
 
@@ -111,12 +117,16 @@ export const useOrderNotifications = (userId: string | null) => {
                             const freshSnap = await getDoc(doc(db, 'orders', orderId));
                             const freshData = freshSnap.data() as Order;
                             if (freshSnap.exists() && freshData.serveFlowStatus === 'READY' && !freshData.notifiedAt) {
-                                joeSounds.playFoodReady(); // 🍱 Wave delivery — food is ready!
-                                triggerLocalNotification(
-                                    '🍽️ Order Ready!',
-                                    `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
-                                );
-                                await markNotified(orderId);
+                                const dKey = `${orderId}-READY`;
+                                if (!sessionDedupeRef.current.has(dKey)) {
+                                    sessionDedupeRef.current.add(dKey);
+                                    joeSounds.playFoodReady(); 
+                                    triggerLocalNotification(
+                                        '🍽️ Order Ready!',
+                                        `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                                    );
+                                    await markNotified(orderId);
+                                }
                             }
                         } catch (e) {
                             console.error('Final trigger error:', e);

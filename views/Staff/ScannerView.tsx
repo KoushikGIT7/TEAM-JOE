@@ -60,42 +60,44 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
 
   const handleScan = useCallback(async (rawData: string) => {
     // 🛡️ [STABLE-SHIELD] Synchronous gate to prevent scan-storm
-    if (scanLockRef.current || terminalState !== 'IDLE') return;
+    if (scanLockRef.current || terminalState === 'SUCCESS') return;
     scanLockRef.current = true;
-
-    setTerminalState('SCANNING');
     setErrorMsg('');
 
     try {
       const data = rawData.trim();
-      
-      // 1. Parsing payload locally first (0ms cost)
       let targetId = data;
       const parsed = await parseQRPayload(data);
       if (parsed) targetId = parsed.orderId;
 
-      // Dedupe: Skip if we just scanned this 
       if (lastScannedIdRef.current === targetId) {
         scanLockRef.current = false;
-        setTerminalState('IDLE');
         return;
       }
       lastScannedIdRef.current = targetId;
 
-      // 2. [ROOT FIX] Look-up from local activeOrders cache (Zero Quota Usage!)
+      // 1. [HYPER-SPEED] Look-up from local activeOrders cache (Zero Latency)
       const localMatched = activePool.find(o => o.id === targetId || o.id.slice(-8) === targetId.slice(-8));
 
-      if (localMatched) {
-        setScannedOrder(localMatched);
-        setTerminalState('REVIEW');
-        scanLockRef.current = false;
-        return;
+      if (localMatched && (localMatched.qrRedeemable || localMatched.items.some(it => (it.remainingQty || 0) > 0))) {
+         setScannedOrder(localMatched);
+         setTerminalState('SUCCESS');
+         serveOrderItemsAtomic(localMatched.id, localMatched.items.filter(it => (it.remainingQty || 0) > 0).map(i => i.id), profile.uid).catch(_ => {});
+         scanLockRef.current = false;
+         return;
       }
 
-      // 3. Fallback: Direct DB validation only if item is NOT in active cache (unlikely)
-      const { order, result } = await validateQRForServing(data, profile.uid);
+      // 2. Fallback: Show Purple State ONLY for Fresh DB calls
+      setTerminalState('SCANNING');
+      const { order } = await validateQRForServing(data, profile.uid);
+      if (!order) throw new Error("Ticket not found.");
+
       setScannedOrder(order);
-      setTerminalState(result === 'CONSUMED' ? 'SUCCESS' : 'REVIEW');
+      const targetIds = order.items.filter(it => (it.remainingQty || 0) > 0).map(it => it.id);
+      
+      setTerminalState('SUCCESS');
+      serveOrderItemsAtomic(order.id, targetIds, profile.uid).catch(_ => {});
+
     } catch (err: any) {
       setErrorMsg(err.message || 'Verification Error');
       setTerminalState('ERROR');
@@ -104,16 +106,24 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     }
   }, [terminalState, profile.uid, activePool]);
 
+  // 🛡️ SONIC-RESUME: Hyper-fast turnaround for 100+ scans/min
+  React.useEffect(() => {
+    if (terminalState === 'SUCCESS' || terminalState === 'ERROR') {
+       const timer = setTimeout(resumeScannerSafely, terminalState === 'SUCCESS' ? 800 : 2000); 
+       return () => clearTimeout(timer);
+    }
+  }, [terminalState]);
+
   const handleServeAll = async () => {
     if (!scannedOrder || busy) return;
     setServing(true);
 
     try {
-      // [DYNAMIC FLOW FIX] Isolate only items that are physically ready to be dispensed right now
       const targetItemIds = scannedOrder.items
         .filter(it => {
            const remaining = it.remainingQty !== undefined ? it.remainingQty : it.quantity;
            if (remaining <= 0) return false;
+           
            const isFast = it.orderType === 'FAST_ITEM' || FAST_ITEM_CATEGORIES.includes(it.category);
            const isReady = it.status === 'READY' || isFast || scannedOrder.qrRedeemable;
            return isReady;
@@ -121,19 +131,12 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
         .map(it => it.id);
 
       if (targetItemIds.length === 0) {
-        const hasUnserved = scannedOrder.items.some(it => (it.remainingQty || 0) > 0);
-        if (hasUnserved) {
-           throw new Error("Target items are still preparing. Check Kitchen progress.");
-        } else {
-           throw new Error("All items in this ticket have already been dispensed.");
-        }
+        throw new Error("Kitchen is still preparing. Check the Cook Console.");
       }
 
-      // ATOMIC PARTIAL SERVE
       await serveOrderItemsAtomic(scannedOrder.id, targetItemIds, profile.uid);
       
       setTerminalState('SUCCESS');
-      setScannedOrder(null);
     } catch (err: any) {
       setErrorMsg(err.message || 'Action failed');
       setTerminalState('ERROR');
@@ -240,19 +243,31 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
           </div>
         )}
 
-        {/* 🔄 PROCESSING */}
+        {/* 🔄 PROCESSING (Purple Sonic State) */}
         {terminalState === 'SCANNING' && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-300">
-            <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm">
-              <RefreshCw className="w-8 h-8 text-slate-900 animate-spin" />
+          <div className="flex-1 flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-100">
+            <div className="w-32 h-32 rounded-[2.5rem] bg-indigo-600 flex items-center justify-center shadow-2xl shadow-indigo-900/40">
+              <RefreshCw className="w-16 h-16 text-white animate-spin" />
             </div>
-            <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Verifying DB Link…</p>
+            <p className="text-sm font-black uppercase tracking-[0.4em] text-indigo-400 mt-6 animate-pulse">VALIDATING...</p>
           </div>
         )}
 
         {/* 📋 REVIEW STATE */}
         {terminalState === 'REVIEW' && scannedOrder && (
           <div className="flex-1 flex flex-col space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+            {/* 🟢 SUCCESS FLASH OVERLAY (Rapid Feedback) */}
+            {/* Self-dismissing CSS overlay (pure visual flash) */}
+            <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center animate-out fade-out duration-1000 fill-mode-forwards pointer-events-none ${scannedOrder.qrRedeemable ? 'bg-green-600/95' : 'bg-slate-900/95'} backdrop-blur-md`}>
+               <div className="w-48 h-48 rounded-full bg-white flex items-center justify-center shadow-2xl mb-10">
+                  {scannedOrder.qrRedeemable ? <CheckCircle className="w-32 h-32 text-green-600" /> : <ShoppingBag className="w-32 h-32 text-slate-800" />}
+               </div>
+               <h2 className="text-6xl font-black text-white italic tracking-tighter uppercase text-center leading-none">
+                  {scannedOrder.qrRedeemable ? 'VALIDATED' : 'LOADED'}
+               </h2>
+               <p className="text-white/50 font-black mt-4 uppercase tracking-[0.5em] text-xs">Ready for Serve</p>
+            </div>
+
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Scanned ID</p>
@@ -339,17 +354,14 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
 
         {/* ✅ SUCCESS STATE */}
         {terminalState === 'SUCCESS' && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in-95 duration-300">
-            <div className="w-24 h-24 rounded-2xl bg-green-600 flex items-center justify-center shadow-lg shadow-green-900/10">
-              <CheckCircle className="w-12 h-12 text-white" />
+          <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in-95 duration-500">
+            <div className="w-48 h-48 rounded-[3rem] bg-green-600 flex items-center justify-center shadow-2xl shadow-green-900/20">
+              <CheckCircle className="w-24 h-24 text-white animate-bounce" />
             </div>
             <div className="text-center space-y-1">
-              <h2 className="text-4xl font-black tracking-tighter uppercase text-slate-900 italic">Verified</h2>
-              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Transaction log updated</p>
+              <h2 className="text-6xl font-black tracking-tighter uppercase text-slate-900 italic">SERVED</h2>
+              <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.4em] mt-3">Ready for next Scan</p>
             </div>
-            <button onClick={resumeScannerSafely} className="w-full mt-6 bg-slate-900 text-white py-6 rounded-2xl font-bold uppercase tracking-widest active:scale-95 transition-all shadow-xl">
-              Next Customer Scan
-            </button>
           </div>
         )}
 

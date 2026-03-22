@@ -362,8 +362,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                  <div className="flex justify-between items-start mb-8">
                     <div>
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                         <span className="text-[10px] font-black bg-slate-900 text-white px-2.5 py-1 rounded-lg uppercase tracking-wider italic shadow-sm">
-                           #{order.id.slice(-4).toUpperCase()}
+                         <span className="text-[14px] font-black bg-slate-900 text-white px-4 py-1.5 rounded-xl uppercase tracking-widest italic shadow-lg animate-in zoom-in border border-white/10">
+                            #{order.id.slice(-4).toUpperCase()}
                          </span>
                          {isAutoVerified && (
                             <span className="text-[9px] font-black bg-emerald-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 animate-pulse">
@@ -473,6 +473,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                 <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
                    <th className="px-10 py-5">Order Reference</th>
                    <th className="px-10 py-5">Operator / User</th>
+                   <th className="px-10 py-5 uppercase tracking-widest">Ref / UTR</th>
                    <th className="px-10 py-5">Method</th>
                    <th className="px-10 py-5">Status</th>
                    <th className="px-10 py-5 text-right">Settlement</th>
@@ -485,6 +486,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                     <td className="px-10 py-6">
                        <p className="text-sm font-black text-slate-800 leading-none">{order.userName}</p>
                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">{formatTime(order.createdAt)}</p>
+                    </td>
+                    <td className="px-10 py-6">
+                       <span className="text-sm font-mono font-black text-slate-900 tracking-widest">
+                         {order.utr || order.id.slice(-4).toUpperCase()}
+                       </span>
                     </td>
                     <td className="px-10 py-6">
                        <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${order.paymentType === 'CASH' ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-blue-100 text-blue-600 border border-blue-200'}`}>

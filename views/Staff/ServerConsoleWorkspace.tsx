@@ -47,96 +47,111 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   isProcessing,
 }) => {
   const [filter, setFilter] = useState('');
+  const [recentlyServed, setRecentlyServed] = useState<Set<string>>(new Set());
 
-  // 🛡️ [Principal Architect] Flattened Operational Manifest
-  // We extract every item from every scanned order into a linear "Sonic Stack"
-  const flattenedQueue = useMemo(() => {
-    const items: (CartItem & { parentOrderId: string })[] = [];
-    scanQueue.forEach(orderId => {
-       const order = activeOrders.find(o => o.id === orderId);
-       if (order) {
-          order.items.forEach(it => {
-             // [ARCHITECT-FIX] Strictly exclude Lunch items from manual manifest – they are auto-delivered on scan.
-             if (it.category === 'Lunch') return;
+    // 🛡️ [Principal Architect] Flattened Operational Manifest
+    const flattenedQueue = useMemo(() => {
+        const items: (CartItem & { parentOrderId: string })[] = [];
+        scanQueue.forEach(orderId => {
+            const order = activeOrders.find(o => o.id === orderId);
+            if (order) {
+                order.items.forEach(it => {
+                    const uniqueKey = `${order.id}-${it.id}`;
+                    if (it.category === 'Lunch') return;
 
-             // [ARCHITECT-FIX] If item is already served, remove from the live manifest immediately
-             const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
-             if (rem <= 0 || it.status === 'SERVED' || it.status === 'COMPLETED') return;
-             
-             if (filter && !it.name.toLowerCase().includes(filter.toLowerCase())) return;
-             items.push({ ...it, parentOrderId: order.id });
-          });
-       }
-    });
-    // Sort items so Ready/Stale are at the top, Served at the bottom
-    return items.sort((a, b) => {
-       const aMeta = getItemMetadata(a);
-       const bMeta = getItemMetadata(b);
-       const score = (f: string) => (f === 'READY' ? 0 : f === 'STALE' ? 1 : f === 'WAITING' ? 2 : 3);
-       return score(aMeta.flavor) - score(bMeta.flavor);
-    });
-  }, [scanQueue, activeOrders, filter]);
+                    const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
+                    
+                    // If served recently, keep it in manifest with the 'SERVED' flavor 
+                    // otherwise remove it immediately to keep queue clean.
+                    const isStillServing = recentlyServed.has(uniqueKey);
+                    if (!isStillServing && (rem <= 0 || it.status === 'SERVED' || it.status === 'COMPLETED')) return;
 
-  return (
-    <div className="flex-1 flex flex-col h-full bg-slate-100/30 relative overflow-hidden font-sans">
-       
-       {/* 🧩 MANIFEST CONTROL BAR */}
-       <div className="px-8 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white shadow-sm z-20">
-          <div className="flex items-center gap-8">
-             <div className="flex flex-col">
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Operational Manifest</span>
-                <div className="flex items-center gap-2.5">
-                   <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" />
-                   <h2 className="text-sm font-black text-slate-900 tracking-tight uppercase italic">{flattenedQueue.length} Active Food Items</h2>
+                    if (filter && !it.name.toLowerCase().includes(filter.toLowerCase())) return;
+                    items.push({ ...it, parentOrderId: order.id });
+                });
+            }
+        });
+        return items.sort((a, b) => {
+            const aMeta = getItemMetadata(a);
+            const bMeta = getItemMetadata(b);
+            const score = (f: string) => (f === 'READY' ? 0 : f === 'STALE' ? 1 : f === 'WAITING' ? 2 : 3);
+            return score(aMeta.flavor) - score(bMeta.flavor);
+        });
+    }, [scanQueue, activeOrders, filter, recentlyServed]);
+
+    const enhancedHandleServe = async (orderId: string, itemId: string, qty: number) => {
+        const key = `${orderId}-${itemId}`;
+        setRecentlyServed(prev => new Set(prev).add(key));
+        
+        handleServeItem(orderId, itemId, qty);
+
+        // Auto-remove from list after 2 seconds
+        setTimeout(() => {
+            setRecentlyServed(prev => {
+                const next = new Set(prev);
+                next.delete(key);
+                return next;
+            });
+        }, 2000);
+    };
+
+    return (
+        <div className="flex-1 flex flex-col h-full bg-slate-100/30 relative overflow-hidden font-sans">
+            
+            {/* 🧩 MANIFEST CONTROL BAR */}
+            <div className="px-8 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white shadow-sm z-20">
+                <div className="flex items-center gap-8">
+                    <div className="flex flex-col">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Operational Manifest</span>
+                        <div className="flex items-center gap-2.5" >
+                            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" />
+                            <h2 className="text-sm font-black text-slate-900 tracking-tight uppercase italic">{flattenedQueue.length} Active Food Items</h2>
+                        </div>
+                    </div>
                 </div>
-             </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-             <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                <input 
-                  type="text" 
-                  placeholder="Find product..." 
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  className="bg-slate-50 border border-slate-100 px-12 py-2.5 rounded-2xl text-xs font-black focus:outline-none focus:ring-4 focus:ring-slate-400/5 transition-all w-48 focus:w-64"
-                />
-             </div>
-             
-             {/* CLEAR STACK OPTION */}
-             <button 
-               onClick={() => setScanQueue?.(() => [])}
-               className="h-11 px-6 rounded-2xl border-2 border-slate-900 text-slate-900 font-black text-[9px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all active:scale-95"
-             >
-                Reset Intake
-             </button>
+                
+                <div className="flex items-center gap-4">
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                        <input 
+                            type="text" 
+                            placeholder="Find product..." 
+                            value={filter}
+                            onChange={(e) => setFilter(e.target.value)}
+                            className="bg-slate-50 border border-slate-100 px-12 py-2.5 rounded-2xl text-xs font-black focus:outline-none focus:ring-4 focus:ring-slate-400/5 transition-all w-48 focus:w-64"
+                        />
+                    </div>
+                    
+                    <button 
+                        onClick={() => setScanQueue?.(() => [])}
+                        className="h-11 px-6 rounded-2xl border-2 border-slate-900 text-slate-900 font-black text-[9px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all active:scale-95"
+                    >
+                        Reset Intake
+                    </button>
 
-             <button 
-               onClick={() => setIsCameraOpen(true)}
-               className="h-11 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] active:scale-90 transition-all shadow-2xl shadow-slate-900/20 flex items-center gap-3"
-             >
-               <Camera className="w-5 h-5" /> Start Scan
-             </button>
-          </div>
-       </div>
+                    <button 
+                        onClick={() => setIsCameraOpen(true)}
+                        className="h-11 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] active:scale-90 transition-all shadow-2xl shadow-slate-900/20 flex items-center gap-3"
+                    >
+                        <Camera className="w-5 h-5" /> Start Scan
+                    </button>
+                </div>
+            </div>
 
-       {/* 🗂️ THE SONIC STACK (Item Feed) */}
-       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/10">
-          {flattenedQueue.length > 0 ? (
-            <div className="max-w-7xl mx-auto space-y-3">
-               {flattenedQueue.map((item) => (
-                  <IntakeItemCard 
-                    key={`${item.parentOrderId}-${item.id}`}
-                    item={item}
-                    isProcessing={isProcessing}
-                    onServe={() => handleServeItem(item.parentOrderId, item.id, item.remainingQty ?? (item.quantity - (item.servedQty || 0)))}
-                    onReject={() => {
-                       handleAbandonItem(item.parentOrderId, item.id);
-                    }}
-                    onOverride={() => handleForceReady(item.parentOrderId)}
-                  />
-               ))}
+            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/10">
+                {flattenedQueue.length > 0 ? (
+                    <div className="max-w-7xl mx-auto space-y-3">
+                        {flattenedQueue.map((item) => (
+                            <IntakeItemCard 
+                                key={`${item.parentOrderId}-${item.id}`}
+                                item={item}
+                                isProcessing={isProcessing}
+                                isRecentlyServed={recentlyServed.has(`${item.parentOrderId}-${item.id}`)}
+                                onServe={() => enhancedHandleServe(item.parentOrderId, item.id, item.remainingQty ?? (item.quantity - (item.servedQty || 0)))}
+                                onReject={() => handleAbandonItem(item.parentOrderId, item.id)}
+                                onOverride={() => handleForceReady(item.parentOrderId)}
+                            />
+                        ))}
                
                {/* 🏁 END OF STACK INDICATOR */}
                <div className="py-12 flex flex-col items-center justify-center opacity-20 select-none">
@@ -159,14 +174,14 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   );
 };
 
-/** 🏷️ INTAKE ITEM CARD (Production Grade) */
 const IntakeItemCard: React.FC<{
   item: CartItem & { parentOrderId: string };
   isProcessing: boolean;
+  isRecentlyServed?: boolean;
   onServe: () => void;
   onReject: () => void;
   onOverride: () => void;
-}> = ({ item, isProcessing, onServe, onReject, onOverride }) => {
+}> = ({ item, isProcessing, isRecentlyServed, onServe, onReject, onOverride }) => {
   const meta = getItemMetadata(item);
   const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
   
@@ -229,25 +244,33 @@ const IntakeItemCard: React.FC<{
               </div>
            )}
 
-          {meta.flavor !== 'SERVED' ? (
+          {meta.flavor !== 'SERVED' || isRecentlyServed ? (
              <div className="flex items-center gap-3">
-                <button 
-                   onClick={onReject}
-                   className="h-11 px-5 border-2 border-slate-100 text-slate-300 rounded-2xl font-black text-[9px] uppercase tracking-widest hover:border-slate-300 hover:text-slate-900 transition-all"
-                >
-                   Release
-                </button>
-                <button 
-                   disabled={meta.flavor === 'WAITING' || isProcessing}
-                   onClick={onServe}
-                   className={`h-11 px-10 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${
-                      (meta.flavor === 'READY' || meta.flavor === 'STALE') && !isProcessing
-                      ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-900/20'
-                      : 'bg-slate-50 text-slate-300 pointer-events-none'
-                   }`}
-                >
-                   {isProcessing ? '..' : 'SERVE FOOD'}
-                </button>
+                {isRecentlyServed ? (
+                   <div className="h-11 px-10 rounded-2xl bg-green-600 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 animate-in zoom-in">
+                      <CheckCircle className="w-4 h-4" /> Fulfilled
+                   </div>
+                ) : (
+                   <>
+                    <button 
+                       onClick={onReject}
+                       className="h-11 px-5 border-2 border-slate-100 text-slate-300 rounded-2xl font-black text-[9px] uppercase tracking-widest hover:border-slate-300 hover:text-slate-900 transition-all"
+                    >
+                       Release
+                    </button>
+                    <button 
+                       disabled={meta.flavor === 'WAITING' || isProcessing}
+                       onClick={onServe}
+                       className={`h-11 px-10 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${
+                          (meta.flavor === 'READY' || meta.flavor === 'STALE') && !isProcessing
+                          ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-900/20'
+                          : 'bg-slate-50 text-slate-300 pointer-events-none'
+                       }`}
+                    >
+                       {isProcessing ? '..' : 'SERVE FOOD'}
+                    </button>
+                   </>
+                )}
              </div>
           ) : (
              <div className="w-11 h-11 rounded-full bg-green-50 border-2 border-green-100 flex items-center justify-center text-green-500">

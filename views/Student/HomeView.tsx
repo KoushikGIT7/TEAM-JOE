@@ -99,37 +99,19 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         const sorted = [...orders].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setMyOrders(sorted);
 
-        // ─── Audio Lifecycle Engine ───────────────────────────────────
+        // ─── Order Sync ───────────────────────────────────────────────
         orders.forEach(order => {
           const prev = prevOrderStatuses.current[order.id];
           const currPayment = order.paymentStatus;
           const currOrder   = order.orderStatus;
 
           if (!prev) {
-            // First time seeing this order — no sound (avoid mount noise)
             prevOrderStatuses.current[order.id] = { payment: currPayment, order: currOrder };
             return;
           }
 
-          // 💳 Cashier just CONFIRMED payment
-          if (prev.payment !== 'SUCCESS' && currPayment === 'SUCCESS') {
-            joeSounds.playPaymentConfirmed();
-          }
-
-          // 🍱 Food is READY / SERVED at counter
-          if (prev.order !== 'SERVED' && currOrder === 'SERVED') {
-            joeSounds.playFoodReady();
-          }
-          if (prev.order !== 'COMPLETED' && currOrder === 'COMPLETED') {
-            joeSounds.playFoodReady();
-          }
-
-          // ❌ Order REJECTED or CANCELLED
-          if (
-            (prev.payment !== 'REJECTED' && currPayment === 'REJECTED') ||
-            (prev.order   !== 'CANCELLED' && currOrder  === 'CANCELLED')
-          ) {
-            joeSounds.playRejected();
+          // Show rejection notice (Visual only, Audio handled by App hook)
+          if ((prev.payment !== 'REJECTED' && currPayment === 'REJECTED') || (prev.order !== 'CANCELLED' && currOrder === 'CANCELLED')) {
             setShowRejectNotice(true);
             setTimeout(() => setShowRejectNotice(false), 5000);
           }
