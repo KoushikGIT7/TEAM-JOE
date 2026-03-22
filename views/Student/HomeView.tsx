@@ -297,9 +297,23 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <h2 className="text-lg font-black text-textMain tracking-tighter truncate max-w-[120px]">{profile?.name || 'Explorer'}</h2>
             </div>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-primary/5 text-primary rounded-full border border-primary/10">
-             <MapPin className="w-3 h-3" />
-             <span className="text-[9px] font-black uppercase tracking-tighter">Main Node</span>
+          <div className="flex items-center gap-2">
+            {/* 📣 [ONESIGNAL-INDUSTRIAL-HANDSHAKE] "Subscribe for Big Deals" Strike */}
+            <button 
+              onClick={async () => {
+                const oneSignal = (window as any).OneSignal;
+                if (oneSignal) {
+                  oneSignal.push(() => {
+                    oneSignal.Notifications.requestPermission();
+                  });
+                }
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-2xl active:scale-95 transition-all shadow-lg shadow-indigo-200 hover:bg-indigo-700 group ring-4 ring-indigo-50"
+              title="Subscribe for Big Deals"
+            >
+               <Sparkles className="w-4 h-4 group-hover:animate-spin" />
+               <span className="text-[10px] font-black uppercase tracking-widest">Big Deals</span>
+            </button>
           </div>
         </div>
 
