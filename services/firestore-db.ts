@@ -1110,8 +1110,8 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
             }
             await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
 
-            // 🍱 Real-time Batching Injection
-            const { createBatchFromOrder } = await import('./cook-workflow');
+            // 🍱 Real-time Batching Injection (Transactional Root)
+            // Using internal function to guarantee ordering atomicity
             const itemsToBatch = itemsWithResolvedType.filter(it => it.orderType === 'PREPARATION_ITEM');
             const batchPromises = itemsToBatch.map(it => createBatchFromOrder(id, it, targetSlot));
             await Promise.all(batchPromises);
@@ -2457,8 +2457,11 @@ export const getPopularMenuItems = async (limitOrders: number = 500): Promise<{ 
 // 7. BATCH PREPARATION SYSTEM (Smart Queue)
 // ============================================================================
 
-/** Internal helper for Re-batching */
-const internalCreateBatchFromOrder = async (orderId: string, item: CartItem, slot: number): Promise<void> => {
+/** 
+ * [SONIC-BATCH] Smart Batch Creation Engine 
+ * Creates or appends orders to a 5-minute production bucket atomically.
+ */
+export const createBatchFromOrder = async (orderId: string, item: CartItem, slot: number): Promise<void> => {
     const batchId = `batch_${slot}_${item.id}`;
     const batchRef = doc(db, "prepBatches", batchId);
     
@@ -2543,7 +2546,15 @@ export const startBatchPreparation = async (batchId: string): Promise<void> => {
       tx.update(batchRef, { status: 'PREPARING', updatedAt: serverTimestamp() });
       orderSnaps.forEach((snap, i) => {
         if (snap.exists()) {
-          tx.update(orderRefs[i], { serveFlowStatus: 'PREPARING' });
+          const oData = snap.data() as Order;
+          tx.update(orderRefs[i], { 
+            serveFlowStatus: 'PREPARING',
+            items: (oData.items || []).map(it => {
+               if (it.id === data.itemId && it.status !== 'SERVED') return { ...it, status: 'PREPARING' as any };
+               return it;
+            }),
+            updatedAt: serverTimestamp()
+          });
         }
       });
     });
@@ -2572,7 +2583,15 @@ export const markBatchAlmostReady = async (batchId: string): Promise<void> => {
       });
       orderSnaps.forEach((snap, i) => {
         if (snap.exists()) {
-          tx.update(orderRefs[i], { serveFlowStatus: 'ALMOST_READY' });
+          const oData = snap.data() as Order;
+          tx.update(orderRefs[i], { 
+            serveFlowStatus: 'ALMOST_READY',
+            items: (oData.items || []).map(it => {
+              if (it.id === data.itemId && it.status !== 'SERVED') return { ...it, status: 'ALMOST_READY' as any };
+              return it;
+            }),
+            updatedAt: serverTimestamp()
+          });
         }
       });
     });
@@ -2582,7 +2601,7 @@ export const markBatchAlmostReady = async (batchId: string): Promise<void> => {
   }
 };
 
-export const markBatchReady = async (batchId: string): Promise<void> => {
+export const markBatchReady = async (batchId: string, limitCount?: number): Promise<void> => {
   const batchRef = doc(db, "prepBatches", batchId);
   try {
     const now = Date.now();
@@ -2596,20 +2615,46 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
       // Double action protection
       if (bData.status === 'READY') return;
 
+      // 1. Identify active unfulfilled orders (ignoring already READY/SERVED)
       const orderRefs = (bData.orderIds || []).map(oid => doc(db, "orders", oid));
       const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
 
+      let pendingOrders: { ref: any, data: Order }[] = [];
+      orderSnaps.forEach((snap, i) => {
+          if (!snap.exists()) return;
+          const oData = snap.data() as Order;
+          const targetItem = oData.items?.find(it => it.id === bData.itemId);
+          if (targetItem && (targetItem.status === 'PENDING' || targetItem.status === 'PREPARING')) {
+              pendingOrders.push({ ref: orderRefs[i], data: oData });
+          }
+      });
+
+      // 2. Slice based on limitCount for fractional release
+      if (limitCount && pendingOrders.length > limitCount) {
+          pendingOrders = pendingOrders.slice(0, limitCount);
+      }
+
+      if (pendingOrders.length === 0) return;
+
+      // 3. Determine if batch is fully done
+      const remainingUnfulfilled = (bData.quantity || 0) - pendingOrders.length;
+      const isPartial = remainingUnfulfilled > 0;
+
       // PHASE 2: WRITE
       tx.update(batchRef, { 
-        status: 'READY', 
+        status: isPartial ? 'PREPARING' : 'READY', 
         readyAt: now, 
+        quantity: Math.max(0, remainingUnfulfilled),
         updatedAt: serverTimestamp() 
       });
       
-      orderSnaps.forEach((snap, i) => {
-        if (snap.exists()) {
-          tx.update(orderRefs[i], { 
+      pendingOrders.forEach(({ ref, data }) => {
+          tx.update(ref, { 
             serveFlowStatus: 'READY',
+            items: (data.items || []).map(it => {
+               if (it.id === bData.itemId && it.status !== 'SERVED') return { ...it, status: 'READY' as any };
+               return it;
+            }),
             pickupWindow: {
               startTime: now,
               endTime: now + PICKUP_WINDOW_DURATION_MS,
@@ -2617,7 +2662,6 @@ export const markBatchReady = async (batchId: string): Promise<void> => {
               status: 'COLLECTING'
             }
           });
-        }
       });
     });
   } catch (err) {
