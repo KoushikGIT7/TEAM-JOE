@@ -16,6 +16,7 @@ import MotivationalHeadline from '../../components/MotivationalHeadline';
 import { onSnapshot, collection, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import Logo from '../../components/Logo';
+import { joeSounds } from '../../utils/audio';
 
 interface HomeViewProps {
   profile: UserProfile | null;
@@ -89,27 +90,67 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     return () => clearInterval(t);
   }, []);
 
+  // 🔊 [AUDIO-TRACKER] Track previous order states to detect real transitions
+  const prevOrderStatuses = React.useRef<Record<string, { payment: string; order: string }>>({});
+
   useEffect(() => {
     if (profile?.uid) {
       const unsubMain = listenToUserOrders(profile.uid, (orders) => {
         const sorted = [...orders].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setMyOrders(sorted);
 
-        // Show reject banner only for NEW rejections (not yet notified)
-        const hasRejected = orders.some(o => 
-          (o.paymentStatus === 'REJECTED' || o.orderStatus === 'CANCELLED') && 
+        // ─── Audio Lifecycle Engine ───────────────────────────────────
+        orders.forEach(order => {
+          const prev = prevOrderStatuses.current[order.id];
+          const currPayment = order.paymentStatus;
+          const currOrder   = order.orderStatus;
+
+          if (!prev) {
+            // First time seeing this order — no sound (avoid mount noise)
+            prevOrderStatuses.current[order.id] = { payment: currPayment, order: currOrder };
+            return;
+          }
+
+          // 💳 Cashier just CONFIRMED payment
+          if (prev.payment !== 'SUCCESS' && currPayment === 'SUCCESS') {
+            joeSounds.playPaymentConfirmed();
+          }
+
+          // 🍱 Food is READY / SERVED at counter
+          if (prev.order !== 'SERVED' && currOrder === 'SERVED') {
+            joeSounds.playFoodReady();
+          }
+          if (prev.order !== 'COMPLETED' && currOrder === 'COMPLETED') {
+            joeSounds.playFoodReady();
+          }
+
+          // ❌ Order REJECTED or CANCELLED
+          if (
+            (prev.payment !== 'REJECTED' && currPayment === 'REJECTED') ||
+            (prev.order   !== 'CANCELLED' && currOrder  === 'CANCELLED')
+          ) {
+            joeSounds.playRejected();
+            setShowRejectNotice(true);
+            setTimeout(() => setShowRejectNotice(false), 5000);
+          }
+
+          // Update tracker
+          prevOrderStatuses.current[order.id] = { payment: currPayment, order: currOrder };
+        });
+        // ─────────────────────────────────────────────────────────────
+
+        // Legacy reject banner fallback
+        const hasRejected = orders.some(o =>
+          (o.paymentStatus === 'REJECTED' || o.orderStatus === 'CANCELLED') &&
           !o.notifiedAt
         );
-        if (hasRejected) {
+        if (hasRejected && !orders.some(o => prevOrderStatuses.current[o.id])) {
           setShowRejectNotice(true);
-          // Banner stays for 5s then hides
           setTimeout(() => setShowRejectNotice(false), 5000);
         }
       });
 
-      return () => {
-        unsubMain();
-      };
+      return () => { unsubMain(); };
     }
   }, [profile?.uid]);
 
@@ -213,10 +254,35 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         }
       } else {
         let newQty = newCart[item.id].quantity + delta;
+
+        // 🛑 MORNING DOSA LIMIT (Max 2 per student)
+        const currentHour = new Date().getHours();
+        const isMorning = currentHour >= 7 && currentHour <= 9;
+        const isDosa = item.name.toLowerCase().includes('dosa');
+        if (isMorning && isDosa) {
+           if (newQty > 2) {
+             alert("Maximum 2 Dosas allowed per student during morning rush.");
+             newQty = 2; // Strict limit 2 per person
+           }
+        }
+
+        // 🛑 MEAL LIMIT (Max 1 per student)
+        if (item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) {
+           if (newQty > 1) {
+             alert("Only 1 meal can be ordered at a time per order. Please complete this order and place a new one if you need another.");
+             newQty = 1; // Strict limit 1 for meals
+           }
+        }
+
         const maxAllowed = stockByItemId[item.id]?.available ?? 999;
         if (newQty > maxAllowed) newQty = maxAllowed;
-        newCart[item.id].quantity = newQty;
-        if (newCart[item.id].quantity <= 0) delete newCart[item.id];
+        
+        // Fix StrictMode double increment by avoiding direct object mutation
+        if (newQty <= 0) {
+          delete newCart[item.id];
+        } else {
+          newCart[item.id] = { ...newCart[item.id], quantity: newQty };
+        }
       }
       const cartArray = Object.values(newCart);
       localStorage.setItem('joe_cart', JSON.stringify(cartArray));

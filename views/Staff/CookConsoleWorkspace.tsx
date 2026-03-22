@@ -1,7 +1,8 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { Timer, Flame, CheckCircle, ChefHat, Clock, Play, Check } from 'lucide-react';
+import { Timer, Flame, CheckCircle, ChefHat, Clock, Play, Check, AlertTriangle } from 'lucide-react';
 import { PrepBatch } from '../../types';
 import { startBatchPreparation, markBatchReady } from '../../services/cook-workflow';
+import { addGlobalDelay } from '../../services/firestore-db';
 
 interface CookConsoleWorkspaceProps {
   batches: PrepBatch[];
@@ -76,23 +77,28 @@ const BatchItemCard = ({ batch }: { batch: PrepBatch }) => {
                     {isProcessing ? <Timer className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />} Start Preparing
                  </button>
               ) : (
-                 <div className="flex gap-3">
-                    <button 
-                      disabled={isProcessing}
-                      onClick={() => onRelease(1)}
-                      className="flex-1 border-2 border-orange-500 text-orange-600 rounded-2xl py-4 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all hover:bg-orange-50 disabled:opacity-50"
-                    >
-                      Release 1
-                    </button>
+                 <div className="flex flex-col gap-2">
+                    <div className="flex gap-2 w-full">
+                       {[1, 2, 3, 4].filter(num => num < batch.quantity).map(num => (
+                          <button 
+                            key={num}
+                            disabled={isProcessing}
+                            onClick={() => onRelease(num)}
+                            className="flex-1 border-2 border-orange-500 text-orange-600 rounded-2xl py-3.5 font-black tracking-tighter text-sm active:scale-95 transition-all hover:bg-orange-50 disabled:opacity-50 bg-white shadow-sm"
+                          >
+                            +{num}
+                          </button>
+                       ))}
+                    </div>
                     <button 
                       disabled={isProcessing}
                       onClick={() => onRelease()}
-                      className="flex-[2] bg-orange-500 text-white rounded-2xl py-4 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all shadow-xl shadow-orange-500/20 hover:bg-orange-600 flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="w-full bg-orange-500 text-white rounded-2xl py-4 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all shadow-xl shadow-orange-500/20 hover:bg-orange-600 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      <Check className="w-5 h-5" /> Push All
+                      <Check className="w-5 h-5" /> Push All ({batch.quantity})
                     </button>
                  </div>
-              )}
+               )}
           </div>
       </div>
    );
@@ -147,9 +153,22 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) 
        
       {/* LEFT: MAIN ACTIVE BOARD */}
       <div className="flex-[3] overflow-y-auto custom-scrollbar p-8 border-r border-slate-200">
-         <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-6 flex items-center gap-2">
-            <Flame className="w-4 h-4 text-orange-500" /> Current Target Slot
-         </h3>
+         <div className="flex items-center justify-between mb-6">
+           <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+              <Flame className="w-4 h-4 text-orange-500" /> Current Target Slot
+           </h3>
+           <button 
+             onClick={async () => {
+               if (window.confirm('Add +5 Mins delay to all incoming orders? This alerts all waiting students.')) {
+                 try { await addGlobalDelay(5); alert("Global Kitchen Delay Activated (+5 Mins)"); } 
+                 catch(e) { console.error(e); alert("Failed to add delay"); }
+               }
+             }}
+             className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all hover:bg-red-100 shadow-sm"
+           >
+             <AlertTriangle className="w-4 h-4" /> Panic: +5 Mins
+           </button>
+         </div>
 
          {activeBatchSlot ? (
             <div>

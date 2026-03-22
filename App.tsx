@@ -49,10 +49,10 @@ const App: React.FC = () => {
   // 📣 [ONESIGNAL-HANDSHAKE] Automated enrollment once identity is established
   useOneSignal(profile?.uid || null);
 
-  // 🔊 [SONIC-UNLOCK] Globally unblock audio on first user interaction
+  // 🔊 [SONIC-UNLOCK] Silently wake AudioContext on first interaction (no audible sound)
   useEffect(() => {
     const unlock = () => {
-      joeSounds.playSuccess(); // Initial ping to wake up hardware
+      joeSounds.init(); // Wake the engine without playing anything
       window.removeEventListener('click', unlock);
       window.removeEventListener('touchstart', unlock);
     };
@@ -132,10 +132,7 @@ const App: React.FC = () => {
   const handleGoogleLogin = async () => {
     if (googleSignInLoading) return;
     setGoogleSignInLoading(true);
-    
-    // 🔊 [SONIC-UNLOCK] Handshake the browser audio on user gesture
-    joeSounds.playSuccess();
-
+    joeSounds.init(); // Silent wake — no sound on sign-in
     try {
       const { profile: newProfile } = await signInWithGoogle();
       setView(getViewForRole(newProfile.role));
@@ -149,10 +146,7 @@ const App: React.FC = () => {
   const handleGuestLogin = async () => {
     if (guestLoading) return;
     setGuestLoading(true);
-
-    // 🔊 [SONIC-UNLOCK] Handshake the browser audio on user gesture
-    joeSounds.playSuccess();
-
+    joeSounds.init(); // Silent wake — no sound on sign-in
     try {
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
@@ -289,22 +283,26 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 overflow-x-hidden relative">
-      {/* 📣 [MARKETING-PULSE] Swiggy-style notification card */}
+      {/* 📣 [MARKETING-PULSE] Clean professional notification bar */}
       {latestPulse && (
-        <div className="fixed top-4 left-0 right-0 z-[100] flex justify-center px-4 animate-in slide-in-from-top-2 duration-300">
-          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-full shadow-xl px-4 py-2.5 flex items-center gap-3 border border-white/10 max-w-md w-full sm:w-auto">
-            <div className="bg-indigo-500/20 p-1.5 rounded-full ring-1 ring-indigo-500/30">
-               <Bell className="w-4 h-4 text-indigo-400" />
+        <div className="fixed top-3 left-0 right-0 z-[100] flex justify-center px-4 animate-in slide-in-from-top-2 duration-300 ease-out">
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-md shadow-black/5 px-3.5 py-2.5 flex items-center gap-3 max-w-[340px] w-full">
+
+            {/* Accent dot */}
+            <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <span className="text-[9px] font-black uppercase tracking-widest text-gray-300 block leading-none mb-0.5">JOE Pulse</span>
+              <p className="text-[11px] font-semibold text-gray-700 leading-tight truncate">{latestPulse.text}</p>
             </div>
-            <div className="flex-1 min-w-0 pr-2">
-               <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Joe Pulse</span>
-                  <div className="w-1 h-1 rounded-full bg-indigo-400 animate-pulse" />
-               </div>
-               <p className="text-sm font-medium leading-none truncate opacity-90">{latestPulse.text}</p>
-            </div>
-            <button onClick={clearPulse} className="hover:bg-white/10 p-1.5 rounded-full transition-colors">
-              <X className="w-4 h-4 opacity-50" />
+
+            {/* Dismiss */}
+            <button
+              onClick={clearPulse}
+              className="flex-shrink-0 p-1.5 rounded-lg text-gray-300 hover:text-gray-500 hover:bg-gray-50 transition-all"
+            >
+              <X className="w-3 h-3" strokeWidth={2.5} />
             </button>
           </div>
         </div>

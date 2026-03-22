@@ -149,6 +149,8 @@ export interface SystemSettings {
   qrExpiryMinutes?: number;
   /** Max volume per arrival slot across all items. Default 200. */
   maxItemsPerSlot?: number;
+  /** Kitchen Panic Button Delay (in minutes) */
+  globalDelayMins?: number;
 }
 
 export interface OverrideLog {

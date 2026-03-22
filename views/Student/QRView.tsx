@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap, Check, Banknote } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { listenToOrder } from '../../services/firestore-db';
+import { listenToOrder, listenToSystemSettings } from '../../services/firestore-db';
 import { Order } from '../../types';
 import { shouldShowQR, getOrderUIState } from '../../utils/orderLifecycle';
 import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
@@ -40,6 +40,14 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   // 🛡️ TERMINAL LATCH: Once we reach a served/terminal state, never go backwards
   // This prevents Firestore multi-write race conditions from causing status flashes
   const terminalLatch = useRef(false);
+
+  const [globalDelayMins, setGlobalDelayMins] = useState(0);
+
+  useEffect(() => {
+    return listenToSystemSettings((settings) => {
+      setGlobalDelayMins(settings.globalDelayMins || 0);
+    });
+  }, []);
 
   // 🛡️ Top-level ticker: ensures isTimeExpired recalcs even if Firestore is quiet
   useEffect(() => {
@@ -236,9 +244,22 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
             )}
             {!isReady && order.arrivalTime && (
               <div className="text-right">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Arrival Time</p>
-                <p className="text-sm font-black text-gray-900 uppercase">
-                  {(order.arrivalTime.toString().padStart(4, '0').slice(0, 2))}:{(order.arrivalTime.toString().padStart(4, '0').slice(2))} PM
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center justify-end gap-1">
+                  Time Slot {globalDelayMins > 0 && <span className="text-red-500 animate-pulse">(Delayed)</span>}
+                </p>
+                <p className={`text-sm font-black uppercase flex items-center justify-end gap-1 ${globalDelayMins > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                  {(() => {
+                    let h = Math.floor(order.arrivalTime / 100);
+                    let m = (order.arrivalTime % 100) + globalDelayMins;
+                    
+                    h += Math.floor(m / 60);
+                    h = h % 24;
+                    m = m % 60;
+
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    const h12 = h % 12 || 12;
+                    return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+                  })()}
                 </p>
               </div>
             )}

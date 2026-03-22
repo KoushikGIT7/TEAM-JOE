@@ -43,7 +43,6 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   const [orderStatus, setOrderStatus] = useState<'PENDING' | 'APPROVED' | null>(null);
   const [rejectionMessage, setRejectionMessage] = useState<string>('');
   const [orderingDisabled, setOrderingDisabled] = useState<boolean>(false);
-  const [arrivalTime, setArrivalTime] = useState<number | null>(null);
   const [utr, setUtr] = useState<string>('');
   const [isSubmittingUtr, setIsSubmittingUtr] = useState<boolean>(false);
   const [payStatus, setPayStatus] = useState<string>('INITIATED');
@@ -81,7 +80,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           setPayStatus(order.paymentStatus);
           if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
             setOrderStatus('APPROVED');
-            joeSounds.playSuccess();
+            joeSounds.playPaymentConfirmed(); // 💳 Cashier confirmed — bright C-major success chord
           } else if (order.paymentStatus === 'UTR_SUBMITTED' || order.paymentStatus === 'PENDING') {
             setOrderStatus('PENDING');
           }
@@ -124,24 +123,6 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const isDynamic = cart.some(it => it.orderType === 'PREPARATION_ITEM');
 
-  const slots = useMemo(() => {
-    const s = [];
-    const now = new Date();
-    let current = new Date(now);
-    current.setMinutes(Math.ceil(current.getMinutes() / 5) * 5, 0, 0);
-    current.setMinutes(current.getMinutes() + 5);
-
-    for (let i = 0; i < 20; i++) {
-      const h = current.getHours();
-      const m = current.getMinutes();
-      const label = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-      const value = h * 100 + m;
-      s.push({ label, value });
-      current.setMinutes(current.getMinutes() + 5);
-    }
-    return s;
-  }, []);
-
   // 🛡️ RE-ORDERING ROOT FIX:
   // We use a state-locked attempt key. It stays the same during a single 'Processing' 
   // attempt to block double-clicks, but it is guaranteed to be unique for every 
@@ -183,7 +164,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         totalAmount: total,
         paymentType: selectedMethod as any,
         paymentStatus: 'PENDING',
-        arrivalTime: isDynamic ? (arrivalTime ?? undefined) : undefined,
+        arrivalTime: undefined, // Let the backend auto-assign the 5-minute Micro-Slot
         orderStatus: 'PENDING',
         qrStatus: 'PENDING_PAYMENT',     // Correct type: waiting for cashier/UPISync
         cafeteriaId: 'MAIN_CAFE',
@@ -192,8 +173,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
 
       setOrderId(newOrderId);
       localStorage.removeItem('joe_cart');
-
-      // Move to the waiting/sync screen to allow real payment
+      joeSounds.playOrderPlaced(); // 🛒 Order submitted — warm ascending tone
       setState('CASH_WAITING');
       return;
 
@@ -426,29 +406,6 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-32">
-        {isDynamic && (
-          <div className="bg-white border border-black/5 rounded-3xl p-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-black text-textMain">Arrival Time</h2>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {slots.map(slot => (
-                <button
-                  key={slot.value}
-                  onClick={() => setArrivalTime(slot.value)}
-                  className={`py-2 rounded-xl text-xs font-black border-2 transition-all ${arrivalTime === slot.value
-                      ? 'bg-primary border-primary text-white shadow-lg'
-                      : 'bg-gray-50 border-transparent text-textSecondary hover:bg-gray-100'
-                    }`}
-                >
-                  {slot.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="bg-white border border-black/5 rounded-3xl p-6 shadow-sm">
           <h3 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-4">Payment Method</h3>
           <div className="space-y-3">
@@ -478,7 +435,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           <span className="text-2xl font-black text-textMain">₹{total}</span>
         </div>
         <button
-          disabled={state === 'PROCESSING' || (isDynamic && !arrivalTime)}
+          disabled={state === 'PROCESSING'}
           onClick={handlePayment}
           className="w-full h-16 bg-textMain text-white rounded-2xl font-black flex items-center justify-between px-8 shadow-xl active:scale-95 transition-all disabled:opacity-50"
         >

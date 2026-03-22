@@ -985,15 +985,11 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     // [ROOT-FIX] Separate writes for atomicity without transaction locking
     const idempotencyKey = orderData.idempotencyKey;
     const idempRef = idempotencyKey ? doc(db, "idempotency_keys", idempotencyKey) : null;
-    const slot = orderData.arrivalTime || 0;
-    const prepItems = orderData.items.filter(it => it.orderType === 'PREPARATION_ITEM');
-    let targetSlot = slot;
-    const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
-
+    
     // Resolve item types
     const itemsWithResolvedType = itemsWithQty.map(it => {
         const hasStation = !!STATION_ID_BY_ITEM_ID[it.id];
-        const resolvedOrderType = it.orderType ||
+        const resolvedOrderType = it.orderType || 
           (hasStation ? 'PREPARATION_ITEM' : (FAST_ITEM_CATEGORIES.includes(it.category || '') ? 'FAST_ITEM' : 'PREPARATION_ITEM'));
 
         return {
@@ -1003,7 +999,73 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         };
     });
 
-    const isDynamic = itemsWithResolvedType.some(it => it.orderType === 'PREPARATION_ITEM');
+    const prepItems = itemsWithResolvedType.filter(it => it.orderType === 'PREPARATION_ITEM');
+    const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
+    const isDynamic = requestedQty > 0;
+
+    // Build per-station requested quantities
+    const qtyByStation: Record<string, number> = {};
+    prepItems.forEach(it => {
+        const station = STATION_ID_BY_ITEM_ID[it.id] || 'kitchen'; // fallback to kitchen
+        qtyByStation[station] = (qtyByStation[station] || 0) + it.quantity;
+    });
+
+    // ⏲️ THE 5-MINUTE SLOT RESERVATION LOGIC (Station-Based Soft-Cap Packing)
+    // Avoids the "Shared Capacity" and "Slot Splitting" flaws.
+    let targetSlot = orderData.arrivalTime || 0;
+    
+    if (isDynamic && targetSlot === 0) {
+        // Read the panic button delay so new orders are naturally staggered
+        let currentGlobalDelay = 0;
+        try {
+           const sysSnap = await getDoc(doc(db, "system_settings", "main"));
+           if (sysSnap.exists()) currentGlobalDelay = sysSnap.data().globalDelayMins || 0;
+        } catch(e) {}
+
+        const targetMins = (new Date().getHours() * 60) + new Date().getMinutes() + 5 + currentGlobalDelay;
+        let testMins = Math.ceil(targetMins / 5) * 5; 
+        let foundSlot = false;
+        
+        for (let i = 0; i < 20; i++) {
+           const h = Math.floor(testMins / 60) % 24;
+           const slotTest = h * 100 + (testMins % 60);
+           
+           try {
+              const snap = await getDoc(doc(db, "slot_stats", slotTest.toString()));
+              const statData = snap.exists() ? snap.data() : {};
+              
+              // 🛠️ SOFT-CAP PACKING: If current volume is < 10, we can add to it even if it pushes slightly over (e.g., 8 + 4 = 12).
+              let allStationsFit = true;
+              for (const [station] of Object.entries(qtyByStation)) {
+                 const currentVol = statData[station] || 0;
+                 if (currentVol >= 10) { // If it's already full, we can't pack more. Move to next slot.
+                    allStationsFit = false;
+                    break;
+                 }
+              }
+              
+              if (allStationsFit) {
+                 targetSlot = slotTest;
+                 foundSlot = true;
+                 break;
+              }
+           } catch { break; } 
+           
+           testMins += 5;
+        }
+        
+        if (!foundSlot) targetSlot = (Math.floor(testMins / 60) % 24) * 100 + (testMins % 60);
+
+        // 🛑 Hard Morning Capacity Block (Max 25 mins of continuous Dosa: 8:40 to 9:05)
+        const now = new Date();
+        const currentTimeInt = now.getHours() * 100 + now.getMinutes();
+        const isMorningRush = currentTimeInt >= 700 && currentTimeInt <= 905;
+        const hasDosa = orderData.items.some(i => i.name.toLowerCase().includes('dosa'));
+
+        if (isMorningRush && hasDosa && targetSlot > 905) {
+            throw new Error("Morning Dosa capacity is completely full! Kitchen is maxed out. Walk-in orders available after 9:05 AM.");
+        }
+    }
     const finalizedBatchIds: string[] = [];
 
     // Build final order object
@@ -1036,13 +1098,17 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     console.log("🍱 [ROOT-FIX] Order successfully committed:", id);
 
     // 2. SECONDARY TRACKING (Pulse Counters) — Separated for permission resiliency
-    if (isDynamic && requestedQty > 0) {
+    if (isDynamic) {
         try {
-            const slotRef = doc(db, "slot_stats", targetSlot.toString());
-            await setDoc(slotRef, {
-                totalVolume: increment(requestedQty),
-                updatedAt: serverTimestamp()
-            }, { merge: true });
+            const incrementPayload: any = { 
+                totalVolume: increment(requestedQty), 
+                updatedAt: serverTimestamp() 
+            };
+            for (const [station, qty] of Object.entries(qtyByStation)) {
+                incrementPayload[station] = increment(qty);
+            }
+            
+            await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
         } catch (e) {
             console.warn("⚠️ Slot stats write blocked. Skipping...", e);
         }
@@ -1452,6 +1518,29 @@ export const rejectCashPayment = async (orderId: string, _cashierUid: string): P
 // ============================================================================
 // 5. SERVING SYSTEM
 // ============================================================================
+// ─── SYSTEM SETTINGS ───────────────────────────────────────────────────────
+
+export const addGlobalDelay = async (minutes: number): Promise<void> => {
+  const settingsRef = doc(db, "system_settings", "main");
+  await setDoc(settingsRef, {
+    globalDelayMins: increment(minutes),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+};
+
+export const listenToSystemSettings = (callback: (settings: Partial<SystemSettings>) => void): (() => void) => {
+  const settingsRef = doc(db, "system_settings", "main");
+  return onSnapshot(settingsRef, (snapshot) => {
+    if (snapshot.exists()) {
+      callback({ globalDelayMins: snapshot.data().globalDelayMins || 0 });
+    } else {
+      callback({ globalDelayMins: 0 });
+    }
+  }, (error) => {
+    console.error("Error listening to system settings:", error);
+    callback({ globalDelayMins: 0 }); 
+  });
+};
 
 export interface PendingItem {
   orderId: string;
@@ -1472,18 +1561,22 @@ export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() =
   return onSnapshot(
     query(
       collection(db, "orders"),
-      where("paymentStatus", "==", "SUCCESS"),
-      limit(200)
+      orderBy("createdAt", "desc"),
+      limit(300)
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      // [SONIC-SYNC] Client-side filter for active workflow statuses (Pending/Processing/Ready)
-      // This bypasses the need for a complex composite index on (paymentStatus + orderStatus)
-      const activeStats = ["PAID", "PROCESSING", "PENDING", "SERVED"];
-      const filtered = orders.filter(o => activeStats.includes(o.orderStatus));
       
-      // Sort client-side by createdAt to ensure stable FIFO ordering
-      const sorted = filtered.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      // 🛡️ [KITCHEN-GATE] JS Filter to bypass composite indexes.
+      // We pull the absolute latest 300 orders and then quickly filter for active, successful ones.
+      const activeStats = ["PAID", "PROCESSING", "PENDING", "SERVED", "ACTIVE"];
+      const filtered = orders.filter(o => 
+         o.paymentStatus === "SUCCESS" && 
+         activeStats.includes(o.orderStatus)
+      );
+      
+      // Provide stable FIFO ordering to the UI
+      const sorted = filtered.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       callback(sorted);
     },
     (error) => {
@@ -2391,10 +2484,14 @@ const internalCreateBatchFromOrder = async (orderId: string, item: CartItem, slo
 };
 
 export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
-  // 🛡️ [KITCHEN-ZERO-INDEX] Bypassing the need for a composite index (status + updatedAt)
-  // We fetch the raw most-recent batches and perform filtering/sorting in the chef's device
+  // 🛡️ [KITCHEN-ZERO-INDEX] Solved: we use a single-field 'in' query to bypass composite index requirements
+  // but guarantee we only pull actually active orders, avoiding historical limit(100) truncation.
   return onSnapshot(
-    query(collection(db, "prepBatches"), limit(100)),
+    query(
+       collection(db, "prepBatches"), 
+       where("status", "in", ["QUEUED", "PREPARING", "ALMOST_READY", "READY"]),
+       limit(300)
+    ),
     (snapshot) => {
       const allBatches = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -2406,10 +2503,7 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
         } as PrepBatch;
       });
 
-      // Filter in JS: Only keep active production batches
-      const activeBatches = allBatches.filter(b => 
-        ["QUEUED", "PREPARING", "ALMOST_READY", "READY"].includes(b.status)
-      );
+      const activeBatches = allBatches;
 
       // Sort by slot time for the display logic
       const sorted = activeBatches.sort((a, b) => (a.arrivalTimeSlot || 0) - (b.arrivalTimeSlot || 0));

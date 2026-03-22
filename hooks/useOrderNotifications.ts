@@ -58,6 +58,7 @@ export const useOrderNotifications = (userId: string | null) => {
 
                 // 1. REJECTED: Immediate notification (no waves)
                 if ((!prev || prev.status !== 'REJECTED') && currentStatus === 'REJECTED' && !data.notifiedAt) {
+                    joeSounds.playRejected(); // ❌ Gentle descending tone — professional, not harsh
                     triggerLocalNotification(
                         '⚠️ Order Issue',
                         `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
@@ -70,6 +71,7 @@ export const useOrderNotifications = (userId: string | null) => {
                     const isFastItem = data.orderType === 'FAST_ITEM';
 
                     if (isFastItem) {
+                        joeSounds.playFoodReady(); // 🍱 Triumphant ding — food is ready!
                         triggerLocalNotification(
                             '🍽️ Order Ready!',
                             `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
@@ -109,6 +111,7 @@ export const useOrderNotifications = (userId: string | null) => {
                             const freshSnap = await getDoc(doc(db, 'orders', orderId));
                             const freshData = freshSnap.data() as Order;
                             if (freshSnap.exists() && freshData.serveFlowStatus === 'READY' && !freshData.notifiedAt) {
+                                joeSounds.playFoodReady(); // 🍱 Wave delivery — food is ready!
                                 triggerLocalNotification(
                                     '🍽️ Order Ready!',
                                     `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
@@ -132,9 +135,7 @@ export const useOrderNotifications = (userId: string | null) => {
 };
 
 const triggerLocalNotification = (title: string, body: string) => {
-    // 🔊 AUDIO FEEDBACK INSTANTLY
-    joeSounds.playAlert();
-    
+    // Audio is now handled at the call site with the correct specific sound
     if (!('Notification' in window)) return;
     
     if (Notification.permission === 'granted') {
