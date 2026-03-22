@@ -9,34 +9,6 @@
   <link rel="preload" as="image" href="/JeoLogoFinal.png" fetchpriority="high">
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  
-  <!-- 📣 [ONESIGNAL-INDUSTRIAL-PUSH] -->
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "10fbd2bc-87d8-46b9-80c8-c26384195535",
-        safari_web_id: "web.onesignal.auto.017f9378-7499-4b97-8d47-e55f2bb151c0",
-        notifyButton: {
-          enable: false,
-        },
-        allowLocalhostAsSecureOrigin: true
-      });
-
-      // 🔥 [UNIVERSAL-HANDSHAKE] Display the professional Slidedown on the very first touch
-      const strikePrompt = () => {
-        // OneSignal.Slidedown.show() provides a more professional 'Push' than the native browser box
-        OneSignal.Slidedown.show({
-          force: true // Force prompt if not already subscribed
-        });
-        window.removeEventListener('click', strikePrompt);
-        window.removeEventListener('touchstart', strikePrompt);
-      };
-      window.addEventListener('click', strikePrompt);
-      window.addEventListener('touchstart', strikePrompt);
-    });
-  </script>
 </head>
 <body class="overflow-x-hidden">
   <div id="root"></div>
