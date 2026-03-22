@@ -995,7 +995,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         return {
           ...it,
           orderType: resolvedOrderType,
-          status: resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING'
+          status: (resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING') as any
         };
     });
 
@@ -1097,9 +1097,10 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     });
     console.log("🍱 [ROOT-FIX] Order successfully committed:", id);
 
-    // 2. SECONDARY TRACKING (Pulse Counters) — Separated for permission resiliency
+    // 2. SECONDARY TRACKING (Pulse Counters & Batching)
     if (isDynamic) {
         try {
+            // Pulse Slot Stats
             const incrementPayload: any = { 
                 totalVolume: increment(requestedQty), 
                 updatedAt: serverTimestamp() 
@@ -1107,10 +1108,16 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
             for (const [station, qty] of Object.entries(qtyByStation)) {
                 incrementPayload[station] = increment(qty);
             }
-            
             await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
+
+            // 🍱 Real-time Batching Injection
+            const { createBatchFromOrder } = await import('./cook-workflow');
+            const itemsToBatch = itemsWithResolvedType.filter(it => it.orderType === 'PREPARATION_ITEM');
+            const batchPromises = itemsToBatch.map(it => createBatchFromOrder(id, it, targetSlot));
+            await Promise.all(batchPromises);
+
         } catch (e) {
-            console.warn("⚠️ Slot stats write blocked. Skipping...", e);
+            console.warn("⚠️ Slot stats or batching write blocked. Skipping...", e);
         }
     }
 
@@ -2503,7 +2510,10 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
         } as PrepBatch;
       });
 
-      const activeBatches = allBatches;
+      // Filter in JS: Only keep active production batches
+      const activeBatches = allBatches.filter(b => 
+        ["QUEUED", "PREPARING", "ALMOST_READY", "READY"].includes(b.status)
+      );
 
       // Sort by slot time for the display logic
       const sorted = activeBatches.sort((a, b) => (a.arrivalTimeSlot || 0) - (b.arrivalTimeSlot || 0));
