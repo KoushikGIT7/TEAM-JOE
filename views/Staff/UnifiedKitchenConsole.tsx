@@ -180,7 +180,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     }
     
     if (status !== 'SUCCESS' || !persistent) {
-        setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 700 : 2500);
+        // Reduced to 700ms for rapid-fire validation but kept Error at 2.5s for readability
+        setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 1200 : 2500);
     }
   };
 
@@ -205,40 +206,42 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
   const handleQRScan = async (rawData: string) => {
     if (!rawData?.trim() || scanLockRef.current) return;
+    
+    // 🛡️ [HARD-LOCK] Kill scanner & gate immediately
     scanLockRef.current = true;
-
-    const now = Date.now();
-    const lastScan = scanHistoryRef.current[rawData] || 0;
-    if (now - lastScan < 3000) {
-       setTimeout(() => { scanLockRef.current = false; }, 500);
-       return;
-    }
-
+    setIsCameraOpen(false); 
+    
     const intake = parseServingQR(rawData.trim());
     if (intake.orderId) {
-       triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
+       // 1. Initial State: Validating (Pulse Stability - let the user see it for at least 300ms)
+       triggerSonicPulse('SUCCESS', 'VALIDATING...', `#${intake.orderId.slice(-4).toUpperCase()}`, true);
     }
 
-    setIsCameraOpen(false);
-
     try {
+        const startTimestamp = Date.now();
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
+        
+        // 🛡️ [STABILITY-GUARD] Don't flick to results too fast
+        const elapsed = Date.now() - startTimestamp;
+        if (elapsed < 300) await new Promise(r => setTimeout(r, 300 - elapsed));
+
         setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
         
         if (result === 'AWAITING_PAYMENT') {
            triggerSonicPulse('SUCCESS', 'AWAITING CASH', `#${order.id.slice(-4).toUpperCase()} – Unpaid.`, true);
         } else if (result === 'CONSUMED') {
-           triggerSonicPulse('SUCCESS', 'VALID: PASS', `#${order.id.slice(-4).toUpperCase()} – Served.`, false);
+           triggerSonicPulse('SUCCESS', 'VALID: CONFIRMED', 'PASS TO SERVER', false);
            setLocalScanBuffer(prev => prev.filter(id => id !== order.id));
         } else if (result === 'MANIFESTED' || result === 'ALREADY_MANIFESTED') {
-           triggerSonicPulse('SUCCESS', 'MEAL VERIFIED', `#${order.id.slice(-4).toUpperCase()} – TAP TO SERVE`, true);
+           // 2. Meal Verified: Waiting for Serve click (Indigo State)
+           triggerSonicPulse('SUCCESS', 'VERIFIED', `#${order.id.slice(-4).toUpperCase()} – TAP TO CONFIRM`, true);
         }
-        
-        setTimeout(() => { scanLockRef.current = false; }, 1200);
     } catch (err: any) {
         const msg = err?.message || String(err);
         triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
-        setTimeout(() => { scanLockRef.current = false; }, 1200);
+    } finally {
+        // Unlock scanner after 2-second cooldown to avoid rapid-fire accidents
+        setTimeout(() => { scanLockRef.current = false; }, 2000);
     }
   };
 
@@ -261,7 +264,9 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     try {
       await serveFullOrder(orderId, profile.uid);
       setLocalScanBuffer(prev => prev.filter(id => id !== orderId)); 
-      triggerSonicPulse('SUCCESS', 'ORDER COMPLETED', 'All items fulfilled.');
+      
+      // 3. Final State: Order Confirmed (Green flash + Auto-dismiss)
+      triggerSonicPulse('SUCCESS', 'ORDER CONFIRMED', 'COLLECTION COMPLETE', false);
     } catch (err: any) {
       console.error("Serve all failed:", err);
     } finally {
@@ -322,7 +327,9 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
           {sonicMode.status !== 'IDLE' && (
             <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
-                sonicMode.status === 'SUCCESS' ? 'bg-emerald-600' : 'bg-rose-600'
+                sonicMode.status === 'ERROR' ? 'bg-rose-600' :
+                (sonicMode.title === 'ORDER CONFIRMED' || sonicMode.title.includes('CONFIRMED')) ? 'bg-emerald-600' :
+                'bg-indigo-600'
             }`}>
                <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
                   {sonicMode.status === 'SUCCESS' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}

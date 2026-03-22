@@ -12,7 +12,7 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signInAnonymously,
-  // Use Firebase default persistence (local) for web
+  signInWithPopup,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -101,20 +101,51 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
 };
 
 /**
- * Google Sign-In - FOR STAFF ONLY
+ * Google Sign-In - UNIVERSAL (Staff & Students)
+ * Faster Popup Flow for mobile web
  */
 export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile: UserProfile }> => {
   try {
     const provider = new GoogleAuthProvider();
-    // 🛡️ [NO-POPUP-FIX] Use Redirect Flow to avoid browser blocking
-    await signInWithRedirect(auth, provider);
+    provider.setCustomParameters({ prompt: 'select_account' });
     
-    // Note: The execution will actually stop here as the page redirects.
-    // getRedirectResult will handle the completion on the next page load.
-    // Return a dummy promise that won't resolve to satisfy type check.
-    return new Promise(() => {});
+    // 🛡️ [INSTANT-HANDSHAKE] Try Popup flow first for best UX
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    
+    // Check for existing profile (will be auto-provisioned by listener if missing)
+    let profile = await getUserProfile(user.uid);
+    
+    // If profile is missing (brand new user), we define it here for the immediate return
+    if (!profile) {
+        const email = user.email || '';
+        const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT; // Default to Student for all new Google logins
+        
+        profile = {
+          uid: user.uid,
+          name: user.displayName || email.split('@')[0] || 'User',
+          email: email,
+          role: inferredRole,
+          active: true,
+          createdAt: Date.now(),
+        };
+
+        // Fire & Forget: Let the background process handle the DB write
+        setDoc(doc(db, "users", user.uid), {
+           ...profile,
+           lastActive: serverTimestamp(),
+           createdAt: serverTimestamp()
+        }, { merge: true }).catch(e => console.warn("Background provision fail", e));
+    }
+    
+    return { user, profile };
   } catch (error: any) {
-    console.error("❌ signInWithGoogle initiation failed:", error);
+    if (error.code === 'auth/popup-blocked') {
+        // Fallback to Redirect if popup is blocked by browser
+        await signInWithRedirect(auth, new GoogleAuthProvider());
+        return new Promise(() => {}); 
+    }
+    console.error("❌ Universal Google Login failed:", error);
     throw error;
   }
 };
