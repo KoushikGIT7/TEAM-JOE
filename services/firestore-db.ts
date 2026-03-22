@@ -1891,7 +1891,13 @@ export const serveOrderItemsAtomic = async (orderId: string, itemIds: string[], 
       const orderData = snap.data();
       const now = Date.now();
       
-      const updatedItems = (orderData.items || []).map((it: any) => {
+      // OPTIMIZATION: Ensure we don't carry heavy base64 images in order updates
+      const safeItems = (orderData.items || []).map((it: any) => {
+         const { imageUrl, ...rest } = it;
+         return rest;
+      });
+
+      const updatedItems = safeItems.map((it: any) => {
         if (itemIds.includes(it.id)) {
           const qty = it.remainingQty !== undefined ? it.remainingQty : it.quantity;
           if (qty > 0) {
@@ -2231,123 +2237,98 @@ export const rejectOrderFromCounter = async (orderId: string, rejectedBy: string
   }
 };
 
-export const scanAndServeOrder = async (qrDataRaw: string, scannedBy: string = 'server_01') => {
-  const scanTime = Date.now();
-  let logEntry: ScanLog | null = null;
+/**
+ * 🍱 [SONIC-POS] ATOMIC VALIDATE & RELEASE ENGINE
+ * The core logic for the 100+ scans/min high-velocity cafeteria flow.
+ * Strictly adheres to 1% senior engineer design patterns.
+ */
+export const atomicValidateAndRelease = async (qrPayload: string, staffId: string) => {
+   const now = Date.now();
+   let orderId: string;
+   let secureHash: string = '';
+   let expiresAt: number | undefined;
 
-  try {
-    // Parse payload or handle plain ID
-    let orderId: string;
-    let secureHash: string;
-    let payloadExpiresAt: number | undefined;
-
-    if (qrDataRaw.startsWith('order_')) {
-      orderId = qrDataRaw;
+   // 1. SILENT DECODE
+   if (qrPayload.startsWith('order_')) {
+      orderId = qrPayload;
       secureHash = 'MANUAL_OVERRIDE';
-    } else {
-      const payload = await parseQRPayload(qrDataRaw);
-      if (!payload) throw new Error("Invalid Token Format");
-      orderId = payload.orderId;
-      secureHash = payload.secureHash;
-      payloadExpiresAt = payload.expiresAt;
-    }
+   } else {
+      const parsed = await parseQRPayload(qrPayload);
+      if (!parsed) throw new Error("INVALID_TOKEN_FORMAT");
+      orderId = parsed.orderId;
+      secureHash = parsed.secureHash;
+      expiresAt = parsed.expiresAt;
+   }
 
-    const orderDoc = await getDoc(doc(db, "orders", orderId));
-    if (!orderDoc.exists()) {
-      throw new Error("Order not found");
-    }
+   const orderRef = doc(db, "orders", orderId);
+   
+   return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(orderRef);
+      if (!snap.exists()) throw new Error("ORDER_NOT_FOUND");
+      const order = firestoreToOrder(snap.id, snap.data());
 
-    const order = firestoreToOrder(orderDoc.id, orderDoc.data());
-
-    if (secureHash !== 'MANUAL_OVERRIDE') {
-      const verifCreatedAt = order.createdAt;
-      const verifExpiresAt = payloadExpiresAt || (verifCreatedAt + QR_EXPIRY_MS);
-      const isValid = await verifySecureHash(orderId, order.userId, order.cafeteriaId, order.createdAt, verifExpiresAt, secureHash);
-      if (!isValid) {
-        throw new Error("Invalid Token Signature");
+      // 2. SECURITY & STATE FILTERS
+      if (secureHash !== 'MANUAL_OVERRIDE') {
+         const verifExpiresAt = expiresAt || (order.createdAt + QR_EXPIRY_MS);
+         const isValid = await verifySecureHash(orderId, order.userId, order.cafeteriaId, order.createdAt, verifExpiresAt, secureHash);
+         if (!isValid) throw new Error("INVALID_SIGNATURE");
       }
-    }
 
-    if (order.paymentStatus !== 'SUCCESS') {
-      throw new Error("PAYMENT_NOT_VERIFIED");
-    }
+      if (order.paymentStatus !== 'SUCCESS') throw new Error("PAYMENT_PENDING");
+      if (order.qrStatus === 'DESTROYED')     throw new Error("ALREADY_COMPLETED");
+      if (order.qrStatus !== 'ACTIVE')        throw new Error("QR_INACTIVE");
 
-    if (order.qrStatus === 'USED' || order.qrStatus === 'DESTROYED') {
-      throw new Error("TOKEN_ALREADY_USED");
-    }
+      // 3. ITEM DISPOSITION (Mixed Flow)
+      // Automatically serve all Static (LUNCH/FAST) and keep Preparation (DYNAMIC) items
+      const updatedItems = (order.items || []).map(it => {
+         const isStatic = it.orderType !== 'PREPARATION_ITEM';
+         const isUnserved = (it.remainingQty !== undefined ? it.remainingQty : it.quantity) > 0;
+         
+         if (isStatic && isUnserved) {
+            const qty = it.remainingQty !== undefined ? it.remainingQty : it.quantity;
+            return { 
+               ...it, 
+               status: 'SERVED' as const, 
+               remainingQty: 0, 
+               servedQty: (it.servedQty || 0) + qty, 
+               servedAt: now, 
+               servedBy: staffId 
+            };
+         }
+         return it;
+      });
 
-    if (order.qrStatus !== 'ACTIVE') {
-      throw new Error("QR_NOT_ACTIVE");
-    }
+      // 4. COMPLETION RULES
+      const stillHasDynamic = updatedItems.some(it => {
+         const isPrep = it.orderType === 'PREPARATION_ITEM' || it.category === 'Breakfast' || it.category === 'Snacks' || it.category === 'Beverages';
+         const rem = it.remainingQty !== undefined ? it.remainingQty : (it.quantity - (it.servedQty || 0));
+         return isPrep && rem > 0;
+      });
 
-    // Update order
-    await updateDoc(doc(db, "orders", orderId), {
-      orderStatus: 'SERVED',
-      qrStatus: 'DESTROYED',
-      qrState: 'SERVED',
-      servedAt: serverTimestamp()
-    });
+      // Transition to IN_PROGRESS if dynamic items are pending
+      const nextStatus: OrderStatus = stillHasDynamic ? 'IN_PROGRESS' : 'SERVED';
 
-    // Log successful scan
-    logEntry = {
-      id: 'log_' + Date.now(),
-      orderId,
-      userId: order.userId,
-      userName: order.userName,
-      scannedBy,
-      scanTime,
-      scanResult: 'SUCCESS',
-      totalAmount: order.totalAmount
-    };
+      // 5. ATOMIC COMMIT (No Base64 images allowed in updates)
+      tx.update(orderRef, {
+         items: updatedItems.map(({ imageUrl, ...rest }) => ({ ...rest })), 
+         orderStatus: (nextStatus === 'SERVED') ? 'COMPLETED' : nextStatus,
+         qrStatus: stillHasDynamic ? 'ACTIVE' : 'DESTROYED',
+         qrState: (nextStatus === 'SERVED') ? 'SERVED' : nextStatus,
+         updatedAt: serverTimestamp(),
+         servedAt: !stillHasDynamic ? serverTimestamp() : null
+      });
 
-    await setDoc(doc(collection(db, "scanLogs")), {
-      orderId: logEntry.orderId,
-      userId: logEntry.userId,
-      userName: logEntry.userName,
-      scannedBy: logEntry.scannedBy,
-      scanTime: serverTimestamp(),
-      scanResult: logEntry.scanResult,
-      totalAmount: logEntry.totalAmount
-    });
+      // Audit Log
+      tx.set(doc(collection(db, "scanLogs")), {
+         orderId,
+         scannedBy: staffId,
+         scanTime: serverTimestamp(),
+         result: 'SUCCESS',
+         disposition: stillHasDynamic ? 'PARTIAL_KITCHEN' : 'FULL_RELEASE'
+      });
 
-    // Update inventory
-    for (const item of order.items) {
-      await updateInventory(item.id, item.quantity);
-    }
-
-    return {
-      success: true,
-      message: 'TOKEN VALIDATED',
-      order: { userName: order.userName, items: order.items }
-    };
-  } catch (err: any) {
-    if (!logEntry) {
-      logEntry = {
-        id: 'log_' + Date.now(),
-        orderId: 'UNKNOWN',
-        userId: 'UNKNOWN',
-        userName: 'UNKNOWN',
-        scannedBy,
-        scanTime,
-        scanResult: 'FAILURE',
-        totalAmount: 0,
-        failureReason: err.message || 'Unknown error'
-      };
-    }
-
-    await setDoc(doc(collection(db, "scanLogs")), {
-      orderId: logEntry.orderId,
-      userId: logEntry.userId,
-      userName: logEntry.userName,
-      scannedBy: logEntry.scannedBy,
-      scanTime: serverTimestamp(),
-      scanResult: logEntry.scanResult,
-      totalAmount: logEntry.totalAmount,
-      failureReason: logEntry.failureReason
-    });
-
-    throw err;
-  }
+      return { success: true, disposition: stillHasDynamic ? 'IN_PROGRESS' : 'SERVED' };
+   });
 };
 
 // ============================================================================
@@ -2632,7 +2613,12 @@ export const markBatchReady = async (batchId: string, limitCount?: number): Prom
       if (bData.status === 'READY') return;
 
       // 1. Identify active unfulfilled orders (ignoring already READY/SERVED)
-      const orderRefs = (bData.orderIds || []).map(oid => doc(db, "orders", oid));
+      const allOrderIds = bData.orderIds || [];
+      
+      // 🛡️ [SURGICAL-FIX] If limitCount is small (e.g. +1, +2), don't read the whole universe.
+      // We probe up to [limitCount * 2 + 10] orders first. If that fails, we expand.
+      const probeSize = limitCount ? Math.min(allOrderIds.length, limitCount * 2 + 10) : allOrderIds.length;
+      const orderRefs = allOrderIds.slice(0, probeSize).map(oid => doc(db, "orders", oid));
       const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
 
       let pendingOrders: { ref: any, data: Order }[] = [];
@@ -2645,20 +2631,40 @@ export const markBatchReady = async (batchId: string, limitCount?: number): Prom
           }
       });
 
+      // 🛡️ [FALLBACK] If heuristic failed to find enough pending orders, read the rest (Non-optimal but safe)
+      if (limitCount && pendingOrders.length < limitCount && probeSize < allOrderIds.length) {
+         const remainingRefs = allOrderIds.slice(probeSize).map(oid => doc(db, "orders", oid));
+         const remainingSnaps = await Promise.all(remainingRefs.map(r => tx.get(r)));
+         remainingSnaps.forEach((snap, i) => {
+            if (!snap.exists()) return;
+            const oData = snap.data() as Order;
+            const targetItem = oData.items?.find(it => it.id === bData.itemId);
+            if (targetItem && (targetItem.status === 'PENDING' || targetItem.status === 'PREPARING')) {
+                pendingOrders.push({ ref: remainingRefs[i], data: oData });
+            }
+         });
+      }
+
       // 2. Slice based on limitCount for fractional release
       if (limitCount && pendingOrders.length > limitCount) {
           pendingOrders = pendingOrders.slice(0, limitCount);
       }
 
-      if (pendingOrders.length === 0) return;
-
-      // 3. Determine if batch is fully done
+      // 3. Determine if batch is fully done or orphaned
       const remainingUnfulfilled = (bData.quantity || 0) - pendingOrders.length;
-      const isPartial = remainingUnfulfilled > 0;
+      
+      // 🛡️ [GHOST-BATCH-FIX] If 'Push All' is called and no orders are found, 
+      // it's an orphaned batch. Clear it immediately.
+      const isOrphaned = !limitCount && pendingOrders.length === 0;
+      const isPartial  = !isOrphaned && (remainingUnfulfilled > 0);
+
+      // If no orders are pending and it's not an orphaned batch, then nothing to do.
+      // Orphaned batches are handled by setting status to 'READY' and quantity to 0.
+      if (pendingOrders.length === 0 && !isOrphaned) return;
 
       // PHASE 2: WRITE
       tx.update(batchRef, { 
-        status: isPartial ? 'PREPARING' : 'READY', 
+        status: isOrphaned ? 'READY' : (isPartial ? 'PREPARING' : 'READY'), 
         readyAt: now, 
         quantity: Math.max(0, remainingUnfulfilled),
         updatedAt: serverTimestamp() 
@@ -2668,7 +2674,11 @@ export const markBatchReady = async (batchId: string, limitCount?: number): Prom
           tx.update(ref, { 
             serveFlowStatus: 'READY',
             items: (data.items || []).map(it => {
-               if (it.id === bData.itemId && it.status !== 'SERVED') return { ...it, status: 'READY' as any };
+               // 🛡️ [Strict Readiness] Match by itemId and ensure terminal statuses (SERVED/READY) are respected
+               const isTarget = it.id === bData.itemId;
+               if (isTarget && it.status !== 'SERVED' && it.status !== 'READY') {
+                  return { ...it, status: 'READY' as any };
+               }
                return it;
             }),
             pickupWindow: {

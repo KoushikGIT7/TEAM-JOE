@@ -11,6 +11,7 @@ import {
   listenToAllOrders, listenToMenu, registerBankDeposit 
 } from '../../services/firestore-db';
 import Logo from '../../components/Logo';
+import { joeSounds } from '../../utils/audio';
 import { offlineDetector } from '../../utils/offlineDetector';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
@@ -33,6 +34,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reportData, setReportData] = useState<any>(null);
+  const [optimisticClearedIds, setOptimisticClearedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncInput, setSyncInput] = useState('');
@@ -118,16 +120,23 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   }, [allOrders, activeTab]);
 
   // --- ⚙️ HANDLERS ---
-  const handleConfirm = async (orderId: string) => {
-    setConfirming(orderId);
-    try {
-      await confirmCashPayment(orderId, profile.uid);
-      offlineDetector.recordPing();
-    } catch (err: any) {
-      alert(err.message || 'Failed to approve');
-    } finally {
-      setConfirming(null);
-    }
+  const handleConfirm = (orderId: string) => {
+    // ⚡ OPTIMISTIC STROKE: Clear from UI in <50ms
+    setOptimisticClearedIds(prev => new Set(prev).add(orderId));
+    joeSounds.playPaymentConfirmed(); 
+
+    // Background Execution (Silent)
+    confirmCashPayment(orderId, profile.uid).catch((err: any) => {
+       // Rollback only on hard failure
+       setOptimisticClearedIds(prev => {
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+       });
+       alert(err.message || 'Failed to approve. Reverting...');
+    });
+    
+    offlineDetector.recordPing();
   };
 
   const handleReject = async (orderId: string) => {
@@ -348,7 +357,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
        </div>
 
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {pendingOrders.map(order => {
+          {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).map(order => {
              const hasConflict = conflictMap[order.totalAmount] > 1;
              const isAutoVerified = order.paymentStatus === 'SUCCESS';
              const isUtrSubmitted = order.paymentStatus === 'UTR_SUBMITTED';
@@ -441,7 +450,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                </div>
              );
           })}
-          {pendingOrders.length === 0 && (
+          {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).length === 0 && (
             <div className="md:col-span-2 py-32 text-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
                <ShieldCheck className="w-20 h-20 text-slate-100 mb-6" />
                <p className="text-2xl font-black text-slate-900">Terminals Cleared</p>

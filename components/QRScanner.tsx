@@ -1,22 +1,22 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { X, Camera, AlertTriangle, RefreshCw, Zap } from 'lucide-react';
 
 interface QRScannerProps {
-  onScan: (data: string, resumeScanner: () => void) => void;
+  onScan: (data: string) => void; 
   onClose: () => void;
-  isScanning?: boolean;
 }
 
-const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) => {
+/** 
+ * [HARDWARE-GRADE] QR Intake Controller
+ * Enforces a strict one-scan-per-session rule.
+ * The camera is stopped IMMEDIATELY after a successful decode.
+ */
+const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
   const [error, setError]             = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [detected, setDetected]       = useState(false);
   const qrRef                         = useRef<Html5Qrcode | null>(null);
-  const scanHistoryRef                = useRef<Record<string, number>>({}); // prevent duplicate spam
-  const inFlightRef                   = useRef<string | null>(null); // SYNCHRONOUS gate to prevent identical frame processing
   const regionId                      = 'qr-reader-region';
-
 
   const stopCamera = useCallback(async () => {
     try {
@@ -28,13 +28,13 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
   }, []);
 
   useEffect(() => {
-    // Security context check
+    // Security Context Enforcement
     if (
       !window.isSecureContext &&
       window.location.hostname !== 'localhost' &&
       window.location.hostname !== '127.0.0.1'
     ) {
-      setError('Camera requires HTTPS. Use localhost or configure HTTPS.');
+      setError('Camera requires HTTPS. Please configure your environment.');
       setIsInitializing(false);
       return;
     }
@@ -48,178 +48,81 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, isScanning }) =>
         await scanner.start(
           { facingMode: 'environment' },
           {
-            fps: 10,
-            qrbox: { width: 300, height: 300 },
+            fps: 15, // Higher FPS for responsive capture
+            qrbox: { width: 320, height: 320 },
             disableFlip: false,
           },
-
           async (decodedText) => {
-            // 🛡️ [HARDWARE-LOCK] Synchronous gate to stop frame duplications
-            if (inFlightRef.current !== null || isScanning || detected) return;
-
-            const now = Date.now();
-            const lastScan = scanHistoryRef.current[decodedText] || 0;
+            // 🛑 [HARD-LOCK] STOP CAMERA IMMEDIATELY 
+            // This prevents the loop and repetitive validation cycles.
+            await stopCamera();
             
-            // 🛡️ [STABLE-SHIELD] 2000ms Normalised Cooldown for same token
-            if (now - lastScan < 2000) return;
-            scanHistoryRef.current[decodedText] = now;
-
-            // 🛑 LOCK IMMEDIATELY
-            inFlightRef.current = decodedText;
-
-            // Instant haptic
-            if ('vibrate' in navigator) navigator.vibrate(80);
+            // Haptic feedback
+            if ('vibrate' in navigator) navigator.vibrate(100);
             
-            // ✅ SUCCESS FEEDBACK (Wait for parent to release)
-            setDetected(true);
-
-            // Emit data to parent & provide resume callback
-            onScan(decodedText, () => {
-               inFlightRef.current = null;
-               setDetected(false);
-            });
+            // Handover to parent
+            onScan(decodedText);
           },
-          () => {
-            // Noise - ignore
-          }
+          () => { /* Search noise */ }
         );
 
         setIsInitializing(false);
       } catch (err: any) {
-        setError(err?.message || 'Camera permission denied or camera in use.');
+        setError(err?.message || 'Camera access failure.');
         setIsInitializing(false);
       }
     };
 
     start();
     return () => { stopCamera(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleClose = async () => {
-    await stopCamera();
-    onClose();
-  };
+  }, [onScan, stopCamera]);
 
   return (
-    <div className="fixed inset-0 z-[210] flex flex-col bg-black animate-in fade-in duration-200">
-
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 pt-8 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center">
-            <Camera className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-black text-white tracking-tight">QR Scanner</p>
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Camera Active</p>
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={handleClose}
-          className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all active:scale-90"
-        >
-          <X className="w-5 h-5 text-white" />
-        </button>
-      </div>
-
-      {/* ── Scanner Area (Sonic Center) ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8">
-        <div className="w-full max-w-sm aspect-square relative shadow-2xl rounded-3xl overflow-hidden">
-
-          {/* Global Strike Zone (Principal Principal) */}
-          {(['tl','tr','bl','br'] as const).map(pos => (
-            <div
-              key={pos}
-              className="absolute w-12 h-12 pointer-events-none z-10"
-              style={{
-                top:    pos.startsWith('t') ? 24 : undefined,
-                bottom: pos.startsWith('b') ? 24 : undefined,
-                left:   pos.endsWith('l')   ? 24 : undefined,
-                right:  pos.endsWith('r')   ? 24 : undefined,
-                borderTop:    pos.startsWith('t') ? '2.5px solid #f97316' : undefined,
-                borderBottom: pos.startsWith('b') ? '2.5px solid #f97316' : undefined,
-                borderLeft:   pos.endsWith('l')   ? '2.5px solid #f97316' : undefined,
-                borderRight:  pos.endsWith('r')   ? '2.5px solid #f97316' : undefined,
-                borderRadius: pos === 'tl' ? '8px 0 0 0' : pos === 'tr' ? '0 8px 0 0' : pos === 'bl' ? '0 0 0 8px' : '0 0 8px 0',
-              }}
-            />
-          ))}
-
-          {/* Camera feed */}
-          <div
-            id={regionId}
-            className="w-full h-full rounded-2xl overflow-hidden bg-black"
-            style={{ border: detected ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.06)', transition: 'border-color 0.2s' }}
-          />
-
-          {/* Laser scan line */}
-          {!detected && !error && (
-            <div className="absolute left-0 right-0 h-px bg-primary/70 pointer-events-none animate-laser" />
-          )}
-
-          {/* Initializing overlay */}
-          {isInitializing && (
-            <div className="absolute inset-0 bg-black/80 flex items-center justify-center rounded-2xl">
-              <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-            </div>
-          )}
-
-          {/* Detected flash */}
-          {detected && (
-            <div className="absolute inset-0 bg-green-500/20 rounded-2xl flex items-center justify-center">
-              <Zap className="w-16 h-16 text-green-400 fill-current" />
-            </div>
-          )}
-
-          {/* Processing overlay */}
-          {isScanning && !detected && (
-            <div className="absolute inset-0 bg-black/70 rounded-2xl flex items-center justify-center">
-              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-
-          {/* Error overlay */}
-          {error && (
-            <div className="absolute inset-0 bg-red-950/90 rounded-2xl flex flex-col items-center justify-center gap-4 p-6 text-center">
-              <AlertTriangle className="w-10 h-10 text-red-400" />
-              <p className="text-sm text-red-200 font-bold leading-relaxed">{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="flex items-center gap-2 bg-red-600 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
-              >
-                <RefreshCw className="w-4 h-4" /> Retry
-              </button>
-            </div>
-          )}
+    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-3xl animate-in fade-in duration-300">
+      <div className="w-full max-w-lg p-8">
+        <div className="flex items-center justify-between mb-8">
+           <div className="flex items-center gap-4">
+              <div className="bg-white/10 p-3 rounded-2xl">
+                 <Camera className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">Intake Scanner</h2>
+           </div>
+           <button onClick={onClose} className="p-4 bg-white/10 hover:bg-rose-600 rounded-2xl text-white transition-all active:scale-90">
+              <X className="w-6 h-6" />
+           </button>
         </div>
 
-        {/* Instruction */}
-        <p className="mt-6 text-[11px] font-black uppercase tracking-[0.35em] text-center text-white/25">
-          Point camera at the student QR code
-        </p>
-      </div>
+        <div className="relative aspect-square w-full bg-black rounded-[4rem] overflow-hidden border-8 border-white/10 shadow-huge group">
+           <div id={regionId} className="w-full h-full" />
+           {isInitializing && (
+             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 gap-4">
+                <RefreshCw className="w-10 h-10 text-white animate-spin" />
+                <p className="text-[10px] font-black text-white uppercase tracking-[0.4em]">Initializing Glass...</p>
+             </div>
+           )}
+           
+           {/* Visual Guide Overlay */}
+           <div className="absolute inset-0 border-[40px] border-black/40 pointer-events-none" />
+           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 border-2 border-white/50 rounded-[2rem] pointer-events-none shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+              <div className="absolute -top-1 -left-1 w-12 h-12 border-t-8 border-l-8 border-emerald-500 rounded-tl-3xl opacity-100" />
+              <div className="absolute -top-1 -right-1 w-12 h-12 border-t-8 border-r-8 border-emerald-500 rounded-tr-3xl" />
+              <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-8 border-l-8 border-emerald-500 rounded-bl-3xl" />
+              <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-8 border-r-8 border-emerald-500 rounded-br-3xl" />
+           </div>
+        </div>
 
-      <style>{`
-        @keyframes laser {
-          0%   { top: 8%;  opacity: 0; }
-          5%   { opacity: 0.8; }
-          95%  { opacity: 0.8; }
-          100% { top: 92%; opacity: 0; }
-        }
-        .animate-laser { animation: laser 1.4s ease-in-out infinite; position: absolute; }
-        #qr-reader-region video {
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: cover !important;
-        }
-        /* Remove library's default UI chrome */
-        #qr-reader-region img,
-        #qr-reader-region > div:not(:has(video)) { display: none !important; }
-      `}</style>
+        {error && (
+           <div className="mt-8 p-6 bg-rose-500/20 border border-rose-500/50 rounded-3xl flex items-center gap-4 animate-in slide-in-from-bottom duration-500">
+              <AlertTriangle className="w-8 h-8 text-rose-500 shrink-0" />
+              <p className="text-sm font-black text-white">{error}</p>
+           </div>
+        )}
+
+        <div className="mt-12 flex flex-col items-center gap-4 text-center opacity-40">
+           <Zap className="w-6 h-6 text-white mb-2" />
+           <p className="text-[10px] font-black text-white uppercase tracking-[0.4em]">Optimized for Fast-Capture</p>
+        </div>
+      </div>
     </div>
   );
 };

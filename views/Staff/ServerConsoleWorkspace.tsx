@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { 
-  Camera, Check, CheckCircle, X, ChevronRight, Search, 
-  CookingPot, PackageCheck, Zap, ShieldCheck, RefreshCcw, ShieldAlert 
+  Camera, Check, CheckCircle, Search, 
+  PackageCheck, Zap, ShieldCheck, Clock, User 
 } from 'lucide-react';
 import { Order, CartItem } from '../../types';
 import SmoothImage from '../../components/SmoothImage';
@@ -14,25 +14,25 @@ interface ServerConsoleWorkspaceProps {
   setIsCameraOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleQRScan: (data: string) => void;
   handleServeItem: (orderId: string, itemId: string, qty: number) => void;
-  handleServeAll: (orderId: string) => void;
-  handleForceReady: (orderId: string) => void;
-  handleAbandonItem: (orderId: string, itemId: string) => void;
   isProcessing: boolean;
 }
 
 /** 
- * Sonic Display Logic 
- * Determines if an item can be served, and its visual 'flavor' 
+ * [SONIC-LOGIC] Hardware Status Interpreter
+ * Decodes Firestore status into rapid UI feedback tiers.
  */
 const getItemMetadata = (item: CartItem) => {
   const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
   const s = item.status;
   
-  if (rem <= 0) return { text: 'Done', flavor: 'SERVED' };
-  if (s === 'READY' || s === 'COLLECTING' || item.orderType === 'FAST_ITEM') return { text: 'Ready', flavor: 'READY' };
-  if (s === 'MISSED' || s === 'MISSED_PREVIOUS') return { text: 'Missed', flavor: 'STALE' };
-  if (s === 'ABANDONED') return { text: 'Void', flavor: 'SERVED' };
-  return { text: 'Prep', flavor: 'WAITING' };
+  if (rem <= 0 || s === 'SERVED' || s === 'COMPLETED') return { text: 'Served ✅', flavor: 'SERVED' };
+  
+  // 🛡️ [Principal Architect] Servability Gate
+  // If Kitchen has marked it READY, or if it's a zero-wait Static item, it's READY.
+  const isReady = s === 'READY' || s === 'COLLECTING' || s === 'READY_SERVED' || item.orderType === 'FAST_ITEM';
+  
+  if (isReady) return { text: 'Serve Now', flavor: 'READY' };
+  return { text: 'Cooking...', flavor: 'WAITING' };
 };
 
 const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
@@ -41,243 +41,205 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   setScanQueue,
   setIsCameraOpen,
   handleServeItem,
-  handleServeAll,
-  handleForceReady,
-  handleAbandonItem,
-  isProcessing,
 }) => {
   const [filter, setFilter] = useState('');
   const [recentlyServed, setRecentlyServed] = useState<Set<string>>(new Set());
+  const [fullyServedOrders, setFullyServedOrders] = useState<Set<string>>(new Set());
 
-    // 🛡️ [Principal Architect] Flattened Operational Manifest
-    const flattenedQueue = useMemo(() => {
-        const items: (CartItem & { parentOrderId: string })[] = [];
-        scanQueue.forEach(orderId => {
-            const order = activeOrders.find(o => o.id === orderId);
-            if (order) {
-                order.items.forEach(it => {
-                    const uniqueKey = `${order.id}-${it.id}`;
-                    if (it.category === 'Lunch') return;
+  // 🛡️ [Principal Architect] Order-Centric Manifest
+  const groupedOrders = useMemo(() => {
+     return scanQueue.map(orderId => {
+        const order = activeOrders.find(o => o.id === orderId);
+        if (!order) return null;
 
-                    const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
-                    
-                    // If served recently, keep it in manifest with the 'SERVED' flavor 
-                    // otherwise remove it immediately to keep queue clean.
-                    const isStillServing = recentlyServed.has(uniqueKey);
-                    if (!isStillServing && (rem <= 0 || it.status === 'SERVED' || it.status === 'COMPLETED')) return;
-
-                    if (filter && !it.name.toLowerCase().includes(filter.toLowerCase())) return;
-                    items.push({ ...it, parentOrderId: order.id });
-                });
-            }
-        });
-        return items.sort((a, b) => {
-            const aMeta = getItemMetadata(a);
-            const bMeta = getItemMetadata(b);
-            const score = (f: string) => (f === 'READY' ? 0 : f === 'STALE' ? 1 : f === 'WAITING' ? 2 : 3);
-            return score(aMeta.flavor) - score(bMeta.flavor);
-        });
-    }, [scanQueue, activeOrders, filter, recentlyServed]);
-
-    const enhancedHandleServe = async (orderId: string, itemId: string, qty: number) => {
-        const key = `${orderId}-${itemId}`;
-        setRecentlyServed(prev => new Set(prev).add(key));
-        
-        handleServeItem(orderId, itemId, qty);
-
-        // Auto-remove from list after 2 seconds
-        setTimeout(() => {
-            setRecentlyServed(prev => {
-                const next = new Set(prev);
-                next.delete(key);
-                return next;
-            });
-        }, 2000);
-    };
-
-    return (
-        <div className="flex-1 flex flex-col h-full bg-slate-100/30 relative overflow-hidden font-sans">
+        const items = order.items.filter(it => {
+            const uniqueKey = `${order.id}-${it.id}`;
+            const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
             
-            {/* 🧩 MANIFEST CONTROL BAR */}
-            <div className="px-8 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white shadow-sm z-20">
-                <div className="flex items-center gap-8">
-                    <div className="flex flex-col">
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Operational Manifest</span>
-                        <div className="flex items-center gap-2.5" >
-                            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" />
-                            <h2 className="text-sm font-black text-slate-900 tracking-tight uppercase italic">{flattenedQueue.length} Active Food Items</h2>
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="flex items-center gap-4">
-                    <div className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                        <input 
-                            type="text" 
-                            placeholder="Find product..." 
-                            value={filter}
-                            onChange={(e) => setFilter(e.target.value)}
-                            className="bg-slate-50 border border-slate-100 px-12 py-2.5 rounded-2xl text-xs font-black focus:outline-none focus:ring-4 focus:ring-slate-400/5 transition-all w-48 focus:w-64"
-                        />
-                    </div>
-                    
-                    <button 
-                        onClick={() => setScanQueue?.(() => [])}
-                        className="h-11 px-6 rounded-2xl border-2 border-slate-900 text-slate-900 font-black text-[9px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all active:scale-95"
-                    >
-                        Reset Intake
-                    </button>
+            // Filter out auto-served lunch items unless recently served for feedback
+            if (it.category === 'Lunch' && it.status === 'SERVED' && !recentlyServed.has(uniqueKey)) return false;
+            
+            // Hide already served items after they time out
+            if (rem <= 0 && !recentlyServed.has(uniqueKey)) return false;
 
-                    <button 
-                        onClick={() => setIsCameraOpen(true)}
-                        className="h-11 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] active:scale-90 transition-all shadow-2xl shadow-slate-900/20 flex items-center gap-3"
-                    >
-                        <Camera className="w-5 h-5" /> Start Scan
-                    </button>
-                </div>
-            </div>
+            if (filter && !it.name.toLowerCase().includes(filter.toLowerCase())) return false;
+            return true;
+        });
 
-            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/10">
-                {flattenedQueue.length > 0 ? (
-                    <div className="max-w-7xl mx-auto space-y-3">
-                        {flattenedQueue.map((item) => (
-                            <IntakeItemCard 
-                                key={`${item.parentOrderId}-${item.id}`}
-                                item={item}
-                                isProcessing={isProcessing}
-                                isRecentlyServed={recentlyServed.has(`${item.parentOrderId}-${item.id}`)}
-                                onServe={() => enhancedHandleServe(item.parentOrderId, item.id, item.remainingQty ?? (item.quantity - (item.servedQty || 0)))}
-                                onReject={() => handleAbandonItem(item.parentOrderId, item.id)}
-                                onOverride={() => handleForceReady(item.parentOrderId)}
-                            />
-                        ))}
-               
-               {/* 🏁 END OF STACK INDICATOR */}
-               <div className="py-12 flex flex-col items-center justify-center opacity-20 select-none">
-                  <PackageCheck className="w-8 h-8 text-slate-400 mb-3" />
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">End of Current Queue</p>
-               </div>
-            </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center py-40 select-none">
-               <div className="w-40 h-40 bg-white rounded-[4rem] shadow-2xl flex items-center justify-center border-8 border-slate-50 mb-10 group relative overflow-hidden transition-all duration-700 hover:rotate-12 hover:scale-110">
-                  <Zap className="w-16 h-16 text-slate-100 group-hover:text-amber-500 transition-colors duration-500 z-10" />
-                  <div className="absolute inset-0 bg-slate-50 opacity-0 group-hover:opacity-100 transition-opacity" />
-               </div>
-               <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic mb-4">Intake Waiting</h3>
-               <p className="text-xs font-black text-slate-400 uppercase tracking-[0.5em] text-center max-w-[300px] leading-relaxed">Scan QR codes to stack your manifest</p>
-            </div>
-          )}
-       </div>
+        if (items.length === 0 && !fullyServedOrders.has(orderId)) return null;
+        return { ...order, items };
+     }).filter(Boolean) as Order[];
+  }, [scanQueue, activeOrders, filter, recentlyServed, fullyServedOrders]);
+
+  const enhancedHandleServe = (orderId: string, itemId: string, qty: number) => {
+    const key = `${orderId}-${itemId}`;
+    
+    // ⚡ [SONIC-STROKE] Instant UI Flip
+    setRecentlyServed(prev => new Set(prev).add(key));
+    
+    // Silent background handover
+    handleServeItem(orderId, itemId, qty);
+
+    setTimeout(() => {
+        setRecentlyServed(prev => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+        });
+    }, 4000);
+  };
+
+  // Reconcile automatic cleanup
+  useEffect(() => {
+     groupedOrders.forEach(order => {
+        const allItemsDone = order.items.every(it => {
+           const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
+           const isOptimistic = recentlyServed.has(`${order.id}-${it.id}`);
+           return rem <= 0 || it.status === 'SERVED' || isOptimistic;
+        });
+
+        if (allItemsDone && order.items.length > 0 && !fullyServedOrders.has(order.id)) {
+           setFullyServedOrders(prev => new Set(prev).add(order.id));
+           setTimeout(() => {
+              setScanQueue?.(prev => prev.filter(id => id !== order.id));
+              setFullyServedOrders(prev => {
+                 const next = new Set(prev);
+                 next.delete(order.id);
+                 return next;
+              });
+           }, 4000);
+        }
+     });
+  }, [groupedOrders, recentlyServed]);
+
+  return (
+    <div className="flex-1 flex flex-col h-full bg-slate-50 relative overflow-hidden font-sans">
+      <div className="px-8 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white shadow-sm z-20">
+        <div className="flex flex-col">
+          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Kitchen Handover</span>
+          <div className="flex items-center gap-2.5">
+             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+             <h2 className="text-sm font-black text-slate-900 tracking-tight uppercase italic">{groupedOrders.length} Active Trays</h2>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+            <input 
+              type="text" 
+              placeholder="Find student tray..." 
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="bg-slate-50 border border-slate-100 px-12 py-2.5 rounded-2xl text-xs font-black focus:outline-none focus:ring-4 focus:ring-slate-400/5 transition-all w-48 focus:w-64"
+            />
+          </div>
+          <button 
+            onClick={() => setIsCameraOpen(true)}
+            className="h-11 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl flex items-center gap-3 active:scale-95 transition-all"
+          >
+            <Camera className="w-5 h-5" /> Scan Intake
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-8 space-y-10">
+        {groupedOrders.length > 0 ? (
+          <div className="max-w-5xl mx-auto space-y-8">
+            {groupedOrders.map((order) => (
+              <OrderCard 
+                key={order.id}
+                order={order}
+                isFullyDone={fullyServedOrders.has(order.id)}
+                recentlyServed={recentlyServed}
+                onServeItem={enhancedHandleServe}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center py-40">
+             <div className="w-40 h-40 bg-white rounded-[4rem] shadow-2xl flex items-center justify-center border-8 border-slate-100 mb-10 group overflow-hidden">
+                <Zap className="w-16 h-16 text-slate-200 group-hover:text-amber-500 transition-all duration-500" />
+             </div>
+             <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic mb-4">Pipeline Clear</h3>
+             <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] text-center max-w-[300px]">Waiting for next intake intake</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
-const IntakeItemCard: React.FC<{
-  item: CartItem & { parentOrderId: string };
-  isProcessing: boolean;
-  isRecentlyServed?: boolean;
-  onServe: () => void;
-  onReject: () => void;
-  onOverride: () => void;
-}> = ({ item, isProcessing, isRecentlyServed, onServe, onReject, onOverride }) => {
-  const meta = getItemMetadata(item);
-  const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
-  
+const OrderCard: React.FC<{
+  order: Order;
+  isFullyDone: boolean;
+  recentlyServed: Set<string>;
+  onServeItem: (orderId: string, itemId: string, qty: number) => void;
+}> = ({ order, isFullyDone, recentlyServed, onServeItem }) => {
   return (
-    <div className={`group flex items-center p-5 bg-white rounded-[2.5rem] border-2 transition-all hover:scale-[1.01] hover:shadow-2xl ${
-       meta.flavor === 'READY' ? 'border-green-200 shadow-xl shadow-green-900/5' :
-       meta.flavor === 'STALE' ? 'border-amber-400 bg-amber-50/30' : 
-       meta.flavor === 'SERVED' ? 'opacity-40 border-slate-100 bg-slate-50/50' : 'border-slate-100 shadow-sm'
+    <div className={`rounded-[3rem] border-2 transition-all duration-500 ${
+      isFullyDone ? 'border-emerald-500 bg-emerald-50 shadow-2xl scale-[1.02]' : 'border-slate-100 bg-white shadow-xl'
     }`}>
-       
-       {/* 1. PRODUCT VISUAL */}
-       <div className="w-20 h-20 rounded-[2rem] overflow-hidden bg-slate-100 border-4 border-white shadow-xl flex-shrink-0 relative group-hover:rotate-3 transition-transform">
-          <SmoothImage 
-            src={item.imageUrl} 
-            alt={item.name} 
-            className="w-full h-full object-cover" 
-            containerClassName="w-20 h-20"
-            quality={100} 
-          />
-          {meta.flavor === 'READY' && (
-             <div className="absolute inset-0 bg-green-500/10 border-4 border-green-500 rounded-[2rem] animate-pulse" />
-          )}
-          {meta.flavor === 'STALE' && (
-             <div className="absolute inset-0 bg-amber-500/10 border-4 border-amber-500 rounded-[2rem]" />
-          )}
-       </div>
-
-       {/* 2. PRODUCT INTEL */}
-       <div className="flex-1 ml-6 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-             <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter leading-none">{item.name}</h3>
-             <span className="text-[10px] font-mono text-slate-300 font-bold uppercase tracking-widest">#{item.parentOrderId.slice(-6).toUpperCase()}</span>
-          </div>
-          <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${
-             meta.flavor === 'READY' ? 'text-green-600' :
-             meta.flavor === 'STALE' ? 'text-amber-700' : 'text-slate-400'
-          }`}>
-             {item.category || 'Special Order'} • {meta.text} • {rem > 0 ? `${rem}x Pending` : 'Fulfilled'}
-          </p>
-       </div>
-
-        {/* 3. SONIC ACTIONS */}
-        <div className="flex items-center gap-4 ml-6">
-           {meta.flavor === 'WAITING' && (
-              <div className="flex items-center gap-2">
-                 <button 
-                   onClick={onOverride}
-                   title="Force READY"
-                   className="w-11 h-11 rounded-2xl bg-amber-50 border-2 border-amber-200 text-amber-600 flex items-center justify-center hover:bg-amber-100 transition-all active:scale-90"
-                 >
-                    <Zap className="w-5 h-5" />
-                 </button>
-                 <button 
-                   onClick={onServe}
-                   title="FORCE SERVE"
-                   className="w-11 h-11 rounded-2xl bg-red-50 border-2 border-red-200 text-red-600 flex items-center justify-center hover:bg-red-100 transition-all active:scale-90"
-                 >
-                    <ShieldAlert className="w-5 h-5" />
-                 </button>
+      <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-6">
+           <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${isFullyDone ? 'bg-emerald-500' : 'bg-slate-900'} shadow-lg transition-colors`}>
+              {isFullyDone ? <CheckCircle className="w-8 h-8 text-white animate-in zoom-in" /> : <User className="w-8 h-8 text-white" />}
+           </div>
+           <div>
+              <div className="flex items-center gap-3">
+                 <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none italic">Order #{order.id.slice(-6).toUpperCase()}</h2>
+                 {isFullyDone && <span className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md">Fulfillment Finalized</span>}
               </div>
-           )}
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">{order.items.length} Remaining Items • Preparing Tray</p>
+           </div>
+        </div>
+      </div>
 
-          {meta.flavor !== 'SERVED' || isRecentlyServed ? (
-             <div className="flex items-center gap-3">
-                {isRecentlyServed ? (
-                   <div className="h-11 px-10 rounded-2xl bg-green-600 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-2 animate-in zoom-in">
-                      <CheckCircle className="w-4 h-4" /> Fulfilled
-                   </div>
-                ) : (
-                   <>
-                    <button 
-                       onClick={onReject}
-                       className="h-11 px-5 border-2 border-slate-100 text-slate-300 rounded-2xl font-black text-[9px] uppercase tracking-widest hover:border-slate-300 hover:text-slate-900 transition-all"
-                    >
-                       Release
-                    </button>
-                    <button 
-                       disabled={meta.flavor === 'WAITING' || isProcessing}
-                       onClick={onServe}
-                       className={`h-11 px-10 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${
-                          (meta.flavor === 'READY' || meta.flavor === 'STALE') && !isProcessing
-                          ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-900/20'
-                          : 'bg-slate-50 text-slate-300 pointer-events-none'
-                       }`}
-                    >
-                       {isProcessing ? '..' : 'SERVE FOOD'}
-                    </button>
-                   </>
-                )}
-             </div>
-          ) : (
-             <div className="w-11 h-11 rounded-full bg-green-50 border-2 border-green-100 flex items-center justify-center text-green-500">
-                <CheckCircle className="w-6 h-6" />
-             </div>
-          )}
-       </div>
+      <div className="p-4 space-y-2">
+        {order.items.map(item => {
+           const uniqueKey = `${order.id}-${item.id}`;
+           const meta = getItemMetadata(item);
+           const isPushed = recentlyServed.has(uniqueKey) || meta.flavor === 'SERVED';
+           const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
+
+           return (
+              <div key={item.id} className={`flex items-center p-4 rounded-[2.2rem] transition-all ${isPushed ? 'bg-emerald-50/50 opacity-60' : 'hover:bg-slate-50'}`}>
+                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-50 border-2 border-white shadow-sm flex-shrink-0">
+                    <SmoothImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                 </div>
+                 <div className="flex-1 ml-5">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight leading-none mb-1">{item.name}</h4>
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${
+                       isPushed ? 'text-emerald-600' : 
+                       meta.flavor === 'READY' ? 'text-amber-600' : 'text-slate-400'
+                    }`}>
+                       {meta.flavor === 'WAITING' ? (item.status === 'PREPARING' ? 'Kitchen Preparing' : 'Awaiting Kitchen') : (isPushed ? 'Fulfilled ✅' : 'Pick Up Ready')} • {isPushed ? '0' : rem}x
+                    </p>
+                 </div>
+
+                 <div className="ml-4">
+                    {isPushed ? (
+                       <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600">
+                          <CheckCircle className="w-6 h-6" />
+                       </div>
+                    ) : meta.flavor === 'WAITING' ? (
+                       <div className="px-5 py-3 rounded-2xl bg-rose-50 text-rose-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 italic">
+                          <Clock className="w-4 h-4 text-rose-400" />
+                          Wait
+                       </div>
+                    ) : (
+                       <button 
+                          onClick={() => onServeItem(order.id, item.id, rem)}
+                          className="h-12 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-2 hover:bg-black"
+                       >
+                          <Check className="w-4 h-4" /> Serve
+                       </button>
+                    )}
+                 </div>
+              </div>
+           );
+        })}
+      </div>
     </div>
   );
 };

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 import {
   CheckCircle, AlertCircle, Scan, Search, LogOut, RefreshCw,
-  Gamepad2, Zap, Camera, ChevronRight, X, ShoppingBag, User, XCircle
+  Gamepad2, Zap, Camera, ChevronRight, X, ShoppingBag, User, XCircle, ShieldCheck
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
 import {
@@ -147,31 +147,10 @@ const ScanReviewModal: React.FC<ScanReviewModalProps> = ({
 
         {/* Global Action Footer */}
         <div className="px-8 pb-10 pt-4 flex gap-4">
-          <button
-            onClick={onReject}
-            disabled={busy}
-            className="flex-1 h-20 rounded-3xl bg-red-600/5 hover:bg-red-600/10 border border-red-600/20 font-black uppercase tracking-widest text-[10px] text-red-500/60 hover:text-red-500 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-30"
-          >
-            {rejecting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <XCircle className="w-5 h-5 opacity-40" />}
-            {rejecting ? 'Terminating...' : 'Reject Token'}
-          </button>
-          
-          <button
-            onClick={onServeAll}
-            disabled={busy}
-            className="flex-[2.5] h-20 rounded-[2rem] bg-white text-black hover:bg-white/90 font-black uppercase tracking-[0.3em] text-sm flex items-center justify-center gap-4 shadow-[0_0_80px_rgba(255,255,255,0.15)] transition-all active:scale-95 disabled:opacity-50"
-          >
-            {serving ? <RefreshCw className="w-6 h-6 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
-            {serving ? 'Processing...' : 'Complete Fulfillment'}
-          </button>
-          
-          <button
-            onClick={onDismiss}
-            disabled={busy}
-            className="w-20 h-20 rounded-[2rem] bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center transition-all active:scale-95 disabled:opacity-30"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex-1 h-20 rounded-3xl bg-white/5 border border-white/10 font-black uppercase tracking-widest text-[10px] text-white/20 flex items-center justify-center gap-3">
+             <ShieldCheck className="w-5 h-5 opacity-40" />
+             Active Manifest
+          </div>
         </div>
       </div>
     </div>
@@ -436,9 +415,13 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
   };
 
   const handleModalDismiss = () => {
-    setScannedOrder(null);
-    setScanRawData('');
-    refocusScanner();
+    // Check if everything is served to auto-close
+    const allDone = scannedOrder?.items.every(i => (i.remainingQty ?? (i.quantity - (i.servedQty || 0))) <= 0);
+    if (allDone) {
+       setScannedOrder(null);
+       setScanRawData('');
+       refocusScanner();
+    }
   };
 
   // ── Ready-Item Actions (from left panel, post-scan queue) ────────────────

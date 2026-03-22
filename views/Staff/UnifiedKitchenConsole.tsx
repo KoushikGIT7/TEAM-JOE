@@ -15,11 +15,12 @@ import {
   ShieldCheck,
   LayoutDashboard,
   LogOut,
-  X
+  X,
+  Flame
 } from 'lucide-react';
 import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { PrepBatch, Order, UserProfile } from '../../types';
+import { PrepBatch, Order, UserProfile, OrderStatus } from '../../types';
 import { 
   listenToBatches, 
   listenToActiveOrders, 
@@ -41,7 +42,6 @@ import { initializeScanner } from '../../services/scanner';
 import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
 import QRScanner from '../../components/QRScanner';
-import { joeSounds } from '../../utils/audio'; // 🔊 Sound Engine Admission
 
 interface UnifiedKitchenConsoleProps {
   profile: UserProfile;
@@ -78,18 +78,10 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
             <button 
               onClick={() => setActiveWorkspace('SERVER')}
               className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all ${
-                activeWorkspace === 'SERVER' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white/50 text-indigo-900 border border-indigo-100 hover:bg-white'
+                activeWorkspace === 'SERVER' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              Server Console
-            </button>
-            <button 
-              onClick={() => setActiveWorkspace('MARKETING')}
-              className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${
-                activeWorkspace === 'MARKETING' ? 'bg-rose-600 text-white shadow-lg' : 'bg-white/50 text-rose-900 border border-rose-100 hover:bg-white'
-              }`}
-            >
-              📣 Marketing Hub <div className="bg-white/20 px-2 py-0.5 rounded-md text-[10px]">NEW</div>
+              Server Center
             </button>
          </div>
       </div>
@@ -133,38 +125,8 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [optimisticOrders, setOptimisticOrders] = useState<Record<string, Order>>({});
-  const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [localScanBuffer, setLocalScanBuffer] = useState<string[]>([]);
-
-  const scanQueue = useMemo(() => {
-    const merged = [...activeOrders];
-    Object.values(optimisticOrders).forEach(oo => {
-        if (!merged.find(m => m.id === oo.id)) merged.push(oo);
-    });
-
-    const firestoreQueue = merged
-      .filter(o => {
-        const realStatus = optimisticOrders[o.id]?.orderStatus || o.orderStatus;
-        return (o.qrState === 'SCANNED' || o.qrStatus === 'SCANNED' || o.orderStatus === 'MISSED') && 
-        realStatus !== 'SERVED' && 
-        realStatus !== 'COMPLETED';
-      })
-      .sort((a, b) => (a.scannedAt || a.createdAt || 0) - (b.scannedAt || b.createdAt || 0))
-      .map(o => o.id);
-      
-    return Array.from(new Set([...localScanBuffer, ...firestoreQueue]));
-  }, [activeOrders, localScanBuffer, optimisticOrders]);
-
-  const mergedActiveOrders = useMemo(() => {
-    const merged = [...activeOrders];
-    Object.values(optimisticOrders).forEach(oo => {
-      const idx = merged.findIndex(m => m.id === oo.id);
-      if (idx === -1) merged.push(oo);
-      else merged[idx] = oo;
-    });
-    return merged;
-  }, [activeOrders, optimisticOrders]);
 
   const [sonicMode, setSonicMode] = useState<{
     status: 'SUCCESS' | 'ERROR' | 'IDLE';
@@ -173,21 +135,23 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     icon: 'CHECK' | 'X' | 'CLOCK';
   }>({ status: 'IDLE', title: '', sub: '', icon: 'CHECK' });
 
-  const triggerSonicPulse = (status: 'SUCCESS' | 'ERROR', title: string, sub: string, persistent = false) => {
+  const triggerSonicPulse = (status: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
     setSonicMode({ status, title, sub, icon: status === 'SUCCESS' ? 'CHECK' : 'X' });
     if ('vibrate' in navigator) {
       if (status === 'SUCCESS') navigator.vibrate(100);
       else navigator.vibrate([200, 100, 200]);
     }
     
-    if (status !== 'SUCCESS' || !persistent) {
-        // Reduced to 700ms for rapid-fire validation but kept Error at 2.5s for readability
-        setTimeout(() => setSonicMode(prev => ({ ...prev, status: 'IDLE' })), status === 'SUCCESS' ? 1200 : 2500);
-    }
+    // Fast Dismiss
+    setTimeout(() => {
+       setSonicMode(prev => {
+          if (prev.status === 'IDLE') return prev;
+          return { ...prev, status: 'IDLE' };
+       });
+    }, 1200);
   };
 
   const scanLockRef = useRef(false);
-  const scanHistoryRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     const maintenanceLoop = setInterval(async () => {
@@ -208,41 +172,41 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   const handleQRScan = async (rawData: string) => {
     if (!rawData?.trim() || scanLockRef.current) return;
     
-    // 🛡️ [HARD-LOCK] Kill scanner & gate immediately
+    // 🛑 [HARDWARE-GATE] Lockdown immediately 
     scanLockRef.current = true;
     setIsCameraOpen(false); 
     
     const intake = parseServingQR(rawData.trim());
-    if (intake.orderId) {
-       // 1. Initial State: Validating (Pulse Stability - let the user see it for at least 300ms)
-       triggerSonicPulse('SUCCESS', 'VALIDATING...', `#${intake.orderId.slice(-4).toUpperCase()}`, true);
+    if (!intake.orderId) {
+        triggerSonicPulse('ERROR', 'INVALID CODE', 'Protocol mismatch');
+        scanLockRef.current = false;
+        return;
     }
 
+    // 🏎️ [OPTIMISTIC-VERIFY] Instant feedback before backend
+    triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
+
     try {
-        const startTimestamp = Date.now();
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
         
-        // 🛡️ [STABILITY-GUARD] Don't flick to results too fast
-        const elapsed = Date.now() - startTimestamp;
-        if (elapsed < 300) await new Promise(r => setTimeout(r, 300 - elapsed));
+        if (result as any === 'ALREADY_MANIFESTED' || result as any === 'ALREADY_CONSUMED') {
+            return;
+        }
 
         setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
         
         if (result === 'AWAITING_PAYMENT') {
-           triggerSonicPulse('SUCCESS', 'AWAITING CASH', `#${order.id.slice(-4).toUpperCase()} – Unpaid.`, true);
+           triggerSonicPulse('SUCCESS', 'UNPAID TOKEN', 'Please direct student to cashier.');
         } else if (result === 'CONSUMED') {
-           triggerSonicPulse('SUCCESS', 'VALID: CONFIRMED', 'PASS TO SERVER', false);
-           setLocalScanBuffer(prev => prev.filter(id => id !== order.id));
-        } else if (result === 'MANIFESTED' || result === 'ALREADY_MANIFESTED') {
-           // 2. Meal Verified: Waiting for Serve click (Indigo State)
-           triggerSonicPulse('SUCCESS', 'VERIFIED', `#${order.id.slice(-4).toUpperCase()} – TAP TO CONFIRM`, true);
+           triggerSonicPulse('SUCCESS', 'VERIFIED ✅', 'COLLECT YOUR MEAL');
+           setLocalScanBuffer(prev => Array.from(new Set([...prev, order.id])));
+        } else if (result === 'MANIFESTED') {
+           triggerSonicPulse('SUCCESS', 'CONFIRMED ✅', 'MANIFEST CREATED IN KITCHEN');
         }
     } catch (err: any) {
-        const msg = err?.message || String(err);
-        triggerSonicPulse('ERROR', 'SCAN ERROR', msg.slice(0, 30));
+        triggerSonicPulse('ERROR', 'SCAN ERROR', (err?.message || 'Transaction failed').toUpperCase());
     } finally {
-        // Unlock scanner after 2-second cooldown to avoid rapid-fire accidents
-        setTimeout(() => { scanLockRef.current = false; }, 2000);
+        setTimeout(() => { scanLockRef.current = false; }, 1000);
     }
   };
 
@@ -251,7 +215,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     setIsProcessing(true);
     try {
       await serveItemBatch(orderId, itemId, qty, profile.uid);
-      triggerSonicPulse('SUCCESS', 'ITEM SERVED', 'Manual Confirmation.');
+      triggerSonicPulse('SUCCESS', 'ITEM SERVED ✅', 'Confirmation Recorded.');
     } catch (err: any) {
       console.error("Manual serve failed:", err);
     } finally {
@@ -259,41 +223,12 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     }
   };
 
-  const handleServeFullOrder = async (orderId: string) => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-    try {
-      await serveFullOrder(orderId, profile.uid);
-      setLocalScanBuffer(prev => prev.filter(id => id !== orderId)); 
-      
-      // 3. Final State: Order Confirmed (Green flash + Auto-dismiss)
-      triggerSonicPulse('SUCCESS', 'ORDER CONFIRMED', 'COLLECTION COMPLETE', false);
-    } catch (err: any) {
-      console.error("Serve all failed:", err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleForceReady = async (orderId: string) => {
-     try {
-       await forceReadyOrder(orderId, profile.uid);
-     } catch (err) {
-       console.error("Force ready error:", err);
-     }
-  };
-
-  const handleAbandonItem = async (orderId: string, itemId: string) => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-    try {
-      await abandonItem(orderId, itemId);
-    } catch (err: any) {
-      setError(err.message || "Abandon failed");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const scanQueue = useMemo(() => {
+    const list = activeOrders
+      .filter(o => (o.qrState === 'SCANNED' || localScanBuffer.includes(o.id)) && o.orderStatus !== 'COMPLETED' && o.orderStatus !== 'SERVED')
+      .map(o => o.id);
+    return Array.from(new Set([...localScanBuffer, ...list]));
+  }, [activeOrders, localScanBuffer]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans select-none">
@@ -301,180 +236,51 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         <UnifiedHeader 
           profile={profile} 
           onLogout={onLogout} 
-          currentTime={currentTime} 
-          onBack={onBack}
+          onBack={onBack} 
+          currentTime={currentTime}
           activeWorkspace={activeWorkspace}
           setActiveWorkspace={setActiveWorkspace}
         />
-
+        
         <main className="flex-1 overflow-hidden relative">
           {activeWorkspace === 'COOK' && <CookConsoleWorkspace batches={batches} />}
           {activeWorkspace === 'SERVER' && (
              <ServerConsoleWorkspace 
-                activeOrders={mergedActiveOrders}
+                activeOrders={activeOrders}
                 scanQueue={scanQueue}
                 setScanQueue={setLocalScanBuffer}
                 isCameraOpen={isCameraOpen}
                 setIsCameraOpen={setIsCameraOpen}
                 handleQRScan={handleQRScan}
                 handleServeItem={handleServeItem}
-                handleServeAll={handleServeFullOrder}
-                handleForceReady={handleForceReady}
-                handleAbandonItem={handleAbandonItem}
                 isProcessing={isProcessing}
              />
           )}
-          {activeWorkspace === 'MARKETING' && <MarketingHub />}
 
           {sonicMode.status !== 'IDLE' && (
             <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
-                sonicMode.status === 'ERROR' ? 'bg-rose-600' :
-                (sonicMode.title === 'ORDER CONFIRMED' || sonicMode.title.includes('CONFIRMED')) ? 'bg-emerald-600' :
-                'bg-indigo-600'
+                sonicMode.status === 'ERROR' ? 'bg-rose-600' : 'bg-emerald-600'
             }`}>
                <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
                   {sonicMode.status === 'SUCCESS' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
                </div>
                <h1 className="text-6xl font-black text-white uppercase tracking-tighter italic mb-4 drop-shadow-2xl">{sonicMode.title}</h1>
-               <p className="text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono mb-12">{sonicMode.sub}</p>
-
-               {sonicMode.status === 'SUCCESS' && (
-                 <div className="w-full max-w-lg space-y-4 px-8">
-                   <button 
-                     onClick={() => {
-                        const idMatch = sonicMode.sub.match(/#([A-Z0-9]{4})/);
-                        if (idMatch) {
-                           const targetOrder = mergedActiveOrders.find(o => o.id.toLowerCase().endsWith(idMatch[1].toLowerCase()));
-                           if (targetOrder) handleServeFullOrder(targetOrder.id);
-                        }
-                        setSonicMode(prev => ({ ...prev, status: 'IDLE' }));
-                     }}
-                     className="w-full bg-white text-emerald-600 h-24 rounded-[2rem] font-black text-2xl uppercase tracking-[0.2em] shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-4"
-                   >
-                     Complete & Serve All <Zap className="w-8 h-8" />
-                   </button>
-                   <button 
-                     onClick={() => setSonicMode(prev => ({ ...prev, status: 'IDLE' }))}
-                     className="w-full bg-emerald-700/50 text-white/80 h-16 rounded-[1.5rem] font-black text-sm uppercase tracking-widest active:scale-95 transition-all"
-                   >
-                     Dismiss
-                   </button>
-                 </div>
-               )}
+               <p className="text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono">{sonicMode.sub}</p>
             </div>
           )}
 
           {isCameraOpen && (
-            <QRScanner 
-               onScan={(data) => handleQRScan(data)}
-               onClose={() => setIsCameraOpen(false)}
+            <QRScanner
+              onScan={(data) => { 
+                 handleQRScan(data);
+              }}
+              onClose={() => setIsCameraOpen(false)}
             />
           )}
         </main>
-
-        {error && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4">
-            <AlertTriangle className="w-6 h-6" />
-            <span className="font-black uppercase tracking-widest text-sm">{error}</span>
-            <button onClick={() => setError(null)} className="ml-4 bg-white/20 p-1 rounded-lg">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
-};
-
-const MarketingHub = () => {
-    const [msg, setMsg] = useState('');
-    const [status, setStatus] = useState<'IDLE' | 'SENDING' | 'SENT'>('IDLE');
-
-    const templates = [
-        { label: "🍱 Lunch Rush", text: "JOE: Lunch is served! 🥘 Avoid the massive queue—book your 1:00 PM Pulse now and walk straight to the counter! 🚀" },
-        { label: "🥐 Breakfast Hub", text: "JOE: Rise and grind! ☕ Your Masala Dosa is waiting. Catch the 8:45 hot window before it fills up! 🍱" },
-        { label: "🍵 Tea Break", text: "JOE: Chai + Samosa o'clock! ☕ Enjoy your perfect 5-min break. Slots for 5:30 PM are opening now! ✨" }
-    ];
-
-    const pushMessage = async () => {
-        if (!msg) return;
-        setStatus('SENDING');
-        
-        // 🔊 [SONIC-UNLOCK] Handshake the browser audio on your physical click
-        joeSounds.playAlert(); 
-
-        try {
-            await broadcastSystemMessage(msg);
-            setStatus('SENT');
-            setTimeout(() => setStatus('IDLE'), 3000);
-            setMsg('');
-        } catch (e) {
-            setStatus('IDLE');
-        }
-    };
-
-    return (
-        <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500 overflow-y-auto h-full pb-32">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white rounded-[2.5rem] shadow-xl border border-rose-100 p-8">
-                    <div className="flex items-center gap-4 mb-8">
-                        <div className="bg-rose-100 p-4 rounded-[1.5rem]">
-                            <Zap className="w-8 h-8 text-rose-600" />
-                        </div>
-                        <div>
-                            <h2 className="text-2xl font-black text-rose-900">Digital Marketing Hub</h2>
-                            <p className="text-sm font-bold text-rose-400">Target All 400 Students Instantly</p>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4 mb-8">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Message Campaign</label>
-                        <textarea 
-                            value={msg}
-                            onChange={(e) => setMsg(e.target.value)}
-                            placeholder="Type your Swiggy-style notification here..."
-                            className="w-full h-40 bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-6 font-bold text-slate-700 focus:border-rose-300 focus:ring-0 transition-all placeholder:text-slate-300 outline-none"
-                        />
-                    </div>
-
-                    <button 
-                        onClick={pushMessage}
-                        disabled={status === 'SENDING' || !msg}
-                        className={`w-full h-20 rounded-[1.5rem] font-black uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-4 ${
-                            status === 'SENT' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-                        }`}
-                    >
-                        {status === 'SENDING' ? 'Broadcasting...' : status === 'SENT' ? 'Campaign Fired! 🚀' : 'Fire Pulse Campaign 📢'}
-                        <Send className="w-5 h-5" />
-                    </button>
-                </div>
-
-                <div className="space-y-6">
-                    <div className="bg-rose-900 rounded-[2.5rem] p-8 text-white shadow-xl">
-                        <h3 className="text-xl font-black mb-6 flex items-center gap-3">
-                            <Sparkles className="w-6 h-6" /> Best-Selling Templates
-                        </h3>
-                        <div className="space-y-4">
-                            {templates.map(t => (
-                                <button 
-                                    key={t.label}
-                                    onClick={() => setMsg(t.text)}
-                                    className="w-full bg-white/10 hover:bg-white/20 border border-white/10 rounded-[1.5rem] p-5 text-left transition-all group active:scale-[0.98]"
-                                >
-                                    <div className="text-[10px] font-black uppercase tracking-widest text-rose-300 mb-2">{t.label}</div>
-                                    <div className="text-xs font-bold text-white/80 group-hover:text-white leading-relaxed">{t.text}</div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-[2rem] p-8 border border-slate-100 italic font-bold text-slate-400 text-sm leading-relaxed">
-                        "Pro Tip: Sending a notification 15 minutes before the lunch rush increases 'Pulse Bookings' by up to 40%."
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
 };
 
 export default UnifiedKitchenConsole;
