@@ -19,10 +19,12 @@
         appId: "10fbd2bc-87d8-46b9-80c8-c26384195535",
         safari_web_id: "web.onesignal.auto.017f9378-7499-4b97-8d47-e55f2bb151c0",
         notifyButton: {
-          enable: true,
+          enable: false, // 🛡️ [UI-CLEAN] No more subscribe icons
         },
         allowLocalhostAsSecureOrigin: true
       });
+      // 🔥 [DIRECT-STRIKE] Prompt for permission immediately on landing
+      OneSignal.Notifications.requestPermission();
     });
   </script>
 </head>
