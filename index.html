@@ -9,6 +9,31 @@
   <link rel="preload" as="image" href="/JeoLogoFinal.png" fetchpriority="high">
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "c7140793-2586-4d5c-9f38-b6fb98815c3b",
+        safari_web_id: "web.onesignal.auto.61cc1b76-79db-483e-a0b9-263210abb193",
+        serviceWorkerPath: 'OneSignalSDKWorker.js', // 🛡️ [GHOST-PATH] Absolute reliability
+        notifyButton: {
+          enable: false,
+        },
+        allowLocalhostAsSecureOrigin: true
+      });
+
+      // 🔥 [DIRECT-STRIKE] Trigger on the absolute first interaction of the site
+      const strikePrompt = () => {
+        OneSignal.Notifications.requestPermission();
+        window.removeEventListener('click', strikePrompt);
+        window.removeEventListener('touchstart', strikePrompt);
+      };
+      window.addEventListener('click', strikePrompt);
+      window.addEventListener('touchstart', strikePrompt);
+    });
+  </script>
 </head>
 <body class="overflow-x-hidden">
   <div id="root"></div>
