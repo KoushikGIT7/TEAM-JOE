@@ -13,25 +13,28 @@
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
+    
+    // 🔥 [GLOBAL-SUBSCRIBE] Clean entry point called by the 'Big Deals' button
+    window.joeSubscribe = function() {
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        try {
+          const permission = await OneSignal.Notifications.requestPermission();
+          console.log('[JOE] Notification permission:', permission);
+        } catch(e) {
+          console.warn('[JOE] Permission request failed:', e);
+        }
+      });
+    };
+
     OneSignalDeferred.push(async function(OneSignal) {
       await OneSignal.init({
         appId: "c7140793-2586-4d5c-9f38-b6fb98815c3b",
         safari_web_id: "web.onesignal.auto.61cc1b76-79db-483e-a0b9-263210abb193",
-        serviceWorkerPath: 'OneSignalSDKWorker.js', // 🛡️ [GHOST-PATH] Absolute reliability
-        notifyButton: {
-          enable: false,
-        },
+        serviceWorkerPath: 'OneSignalSDKWorker.js',
+        notifyButton: { enable: false },
         allowLocalhostAsSecureOrigin: true
       });
-
-      // 🔥 [DIRECT-STRIKE] Trigger on the absolute first interaction of the site
-      const strikePrompt = () => {
-        OneSignal.Notifications.requestPermission();
-        window.removeEventListener('click', strikePrompt);
-        window.removeEventListener('touchstart', strikePrompt);
-      };
-      window.addEventListener('click', strikePrompt);
-      window.addEventListener('touchstart', strikePrompt);
+      console.log('[JOE] OneSignal ready. Click Big Deals to subscribe.');
     });
   </script>
 </head>

@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LogOut, ShoppingBag, Plus, Minus, Search, Loader2, 
   Menu, X as CloseIcon, User, Clock, ShieldCheck, 
-  ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
+  ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon,
+  Bell, BellRing, Check
 } from 'lucide-react';
 import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
@@ -34,7 +35,38 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   const [showRejectNotice, setShowRejectNotice] = useState(false);
   const [queueEstimate, setQueueEstimate] = useState<{ minutes: number; pendingCount: number } | null>(null);
+  const [notifSubscribed, setNotifSubscribed] = useState(false);
+  const [notifRinging, setNotifRinging] = useState(false);
+  const [showPulsePopup, setShowPulsePopup] = useState(false);
   const { stockByItemId, isOutOfStock, canAddToCart } = useInventory();
+
+  // 🔔 [FIRST-VISIT-POPUP] Show once per device
+  useEffect(() => {
+    const alreadySeen = localStorage.getItem('joe_pulse_seen');
+    const alreadyGranted = Notification.permission === 'granted';
+    if (!alreadySeen && !alreadyGranted) {
+      // Show after a small delay so the page renders first
+      const t = setTimeout(() => setShowPulsePopup(true), 800);
+      return () => clearTimeout(t);
+    } else if (alreadyGranted) {
+      setNotifSubscribed(true);
+    }
+  }, []);
+
+  // 🔔 [BELL-RING] Auto-ring bell every 8s to attract attention
+  useEffect(() => {
+    if (notifSubscribed) return;
+    const interval = setInterval(() => {
+      setNotifRinging(true);
+      setTimeout(() => setNotifRinging(false), 1000);
+    }, 8000);
+    // Ring immediately on mount after 2s
+    const initial = setTimeout(() => {
+      setNotifRinging(true);
+      setTimeout(() => setNotifRinging(false), 1000);
+    }, 2000);
+    return () => { clearInterval(interval); clearTimeout(initial); };
+  }, [notifSubscribed]);
 
   useEffect(() => {
     const loadMenu = async () => {
@@ -200,6 +232,79 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   return (
     <div className="min-h-screen bg-background pb-32 max-w-md mx-auto relative overflow-x-hidden">
+
+      {/* 🔔 [PULSE-POPUP] First-visit notification opt-in overlay */}
+      {showPulsePopup && (
+        <div className="fixed inset-0 z-[200] flex items-end justify-center p-4 animate-in fade-in duration-300">
+          {/* Blurred backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+
+          {/* Card */}
+          <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-8 duration-500">
+            
+            {/* Top gradient band */}
+            <div className="bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 px-8 pt-10 pb-16 text-center relative overflow-hidden">
+              {/* Decorative rings */}
+              <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/10" />
+              <div className="absolute -bottom-4 -left-4 w-28 h-28 rounded-full bg-white/10" />
+
+              {/* Animated Bell */}
+              <div className="relative inline-flex items-center justify-center w-20 h-20 bg-white/20 rounded-3xl backdrop-blur-sm mb-4 ring-4 ring-white/30">
+                <span className="absolute inset-0 rounded-3xl bg-white/20 animate-ping" />
+                <BellRing className="w-10 h-10 text-white animate-bounce" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-400 rounded-full border-2 border-white animate-pulse" />
+              </div>
+
+              <h2 className="text-white font-black text-2xl tracking-tight mb-1">Get Exclusive Deals!</h2>
+              <p className="text-white/80 text-sm font-medium">Be first to know about special offers,<br/>flash deals & meal combos 🎉</p>
+            </div>
+
+            {/* Perks list overlapping the band */}
+            <div className="relative -mt-8 mx-6 bg-white rounded-2xl shadow-lg border border-gray-100 p-5 space-y-3">
+              {[
+                { emoji: '⚡', text: 'Flash sale alerts before anyone else' },
+                { emoji: '🍱', text: 'Daily meal combo notifications' },
+                { emoji: '🎁', text: 'Surprise reward drops just for you' },
+              ].map(({ emoji, text }) => (
+                <div key={text} className="flex items-center gap-3">
+                  <span className="text-xl">{emoji}</span>
+                  <span className="text-sm font-bold text-gray-700">{text}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* CTAs */}
+            <div className="px-6 py-6 space-y-3">
+              <button
+                onClick={async () => {
+                  localStorage.setItem('joe_pulse_seen', 'true');
+                  setShowPulsePopup(false);
+                  const joeSubscribe = (window as any).joeSubscribe;
+                  if (typeof joeSubscribe === 'function') {
+                    joeSubscribe();
+                    setTimeout(() => {
+                      if (Notification.permission === 'granted') setNotifSubscribed(true);
+                    }, 1500);
+                  }
+                }}
+                className="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-sm rounded-2xl shadow-lg shadow-indigo-200 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Bell className="w-4 h-4" />
+                Enable Deal Alerts
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.setItem('joe_pulse_seen', 'true');
+                  setShowPulsePopup(false);
+                }}
+                className="w-full py-3 text-gray-400 font-bold text-xs tracking-widest uppercase active:scale-95 transition-all"
+              >
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Profile Drawer Overlay */}
       {isDrawerOpen && (
         <div 
@@ -298,21 +403,48 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* 📣 [ONESIGNAL-INDUSTRIAL-HANDSHAKE] "Subscribe for Big Deals" Strike */}
-            <button 
+            {/* 📣 [ANIMATED-BELL] Premium Notification Subscribe Icon */}
+            <button
               onClick={async () => {
-                const oneSignal = (window as any).OneSignal;
-                if (oneSignal) {
-                  oneSignal.push(() => {
-                    oneSignal.Notifications.requestPermission();
-                  });
+                const joeSubscribe = (window as any).joeSubscribe;
+                if (typeof joeSubscribe === 'function') {
+                  joeSubscribe();
+                  // Check permission after a short delay
+                  setTimeout(() => {
+                    if (Notification.permission === 'granted') {
+                      setNotifSubscribed(true);
+                    }
+                  }, 1500);
                 }
               }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-2xl active:scale-95 transition-all shadow-lg shadow-indigo-200 hover:bg-indigo-700 group ring-4 ring-indigo-50"
-              title="Subscribe for Big Deals"
+              title={notifSubscribed ? 'Subscribed to Deals!' : 'Tap to get Exclusive Deals!'}
+              className={`relative flex items-center justify-center transition-all duration-500 active:scale-90
+                ${ notifSubscribed
+                  ? 'w-11 h-11 rounded-2xl bg-emerald-500 shadow-lg shadow-emerald-200 ring-4 ring-emerald-100'
+                  : 'w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-300 ring-4 ring-indigo-100 hover:shadow-indigo-400'
+                }`}
             >
-               <Sparkles className="w-4 h-4 group-hover:animate-spin" />
-               <span className="text-[10px] font-black uppercase tracking-widest">Big Deals</span>
+              {/* Pulse ring animation when not subscribed */}
+              {!notifSubscribed && (
+                <>
+                  <span className="absolute inset-0 rounded-2xl bg-indigo-400 animate-ping opacity-30" />
+                  <span className="absolute inset-0 rounded-2xl bg-violet-400 animate-pulse opacity-20" />
+                </>
+              )}
+
+              {/* Icon swap: Bell → Check */}
+              {notifSubscribed ? (
+                <Check className="w-5 h-5 text-white drop-shadow" strokeWidth={3} />
+              ) : notifRinging ? (
+                <BellRing className="w-5 h-5 text-white drop-shadow animate-bounce" />
+              ) : (
+                <Bell className="w-5 h-5 text-white drop-shadow" />
+              )}
+
+              {/* Red dot if not subscribed */}
+              {!notifSubscribed && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
+              )}
             </button>
           </div>
         </div>
