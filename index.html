@@ -19,12 +19,19 @@
         appId: "10fbd2bc-87d8-46b9-80c8-c26384195535",
         safari_web_id: "web.onesignal.auto.017f9378-7499-4b97-8d47-e55f2bb151c0",
         notifyButton: {
-          enable: false, // 🛡️ [UI-CLEAN] No more subscribe icons
+          enable: false,
         },
         allowLocalhostAsSecureOrigin: true
       });
-      // 🔥 [DIRECT-STRIKE] Prompt for permission immediately on landing
-      OneSignal.Notifications.requestPermission();
+
+      // 🔥 [GESTURE-HANDSHAKE] Ensure the prompt fires on the very first student interaction
+      const promptOnGesture = () => {
+        OneSignal.Notifications.requestPermission();
+        window.removeEventListener('click', promptOnGesture);
+        window.removeEventListener('touchstart', promptOnGesture);
+      };
+      window.addEventListener('click', promptOnGesture);
+      window.addEventListener('touchstart', promptOnGesture);
     });
   </script>
 </head>
