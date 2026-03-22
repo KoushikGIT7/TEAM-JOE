@@ -24,14 +24,17 @@
         allowLocalhostAsSecureOrigin: true
       });
 
-      // 🔥 [GESTURE-HANDSHAKE] Ensure the prompt fires on the very first student interaction
-      const promptOnGesture = () => {
-        OneSignal.Notifications.requestPermission();
-        window.removeEventListener('click', promptOnGesture);
-        window.removeEventListener('touchstart', promptOnGesture);
+      // 🔥 [UNIVERSAL-HANDSHAKE] Display the professional Slidedown on the very first touch
+      const strikePrompt = () => {
+        // OneSignal.Slidedown.show() provides a more professional 'Push' than the native browser box
+        OneSignal.Slidedown.show({
+          force: true // Force prompt if not already subscribed
+        });
+        window.removeEventListener('click', strikePrompt);
+        window.removeEventListener('touchstart', strikePrompt);
       };
-      window.addEventListener('click', promptOnGesture);
-      window.addEventListener('touchstart', promptOnGesture);
+      window.addEventListener('click', strikePrompt);
+      window.addEventListener('touchstart', strikePrompt);
     });
   </script>
 </head>

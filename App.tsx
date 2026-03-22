@@ -8,6 +8,7 @@ import { requestNotificationPermission } from './services/notificationService';
 import { UserProfile } from './types';
 import { Bell, X } from 'lucide-react';
 import { joeSounds } from './utils/audio';
+import { useOneSignal } from './services/onesignal-push';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -44,6 +45,9 @@ const App: React.FC = () => {
   const profile = authProfile || guestProfile;
   const { latestPulse, clearPulse } = useMarketingPulses(profile?.role || null);
   const [isInitializingGuest, setIsInitializingGuest] = useState(true);
+
+  // 📣 [ONESIGNAL-HANDSHAKE] Automated enrollment once identity is established
+  useOneSignal(profile?.uid || null);
 
   // 🔊 [SONIC-UNLOCK] Globally unblock audio on first user interaction
   useEffect(() => {
