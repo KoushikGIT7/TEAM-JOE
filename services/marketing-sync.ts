@@ -1,43 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { joeSounds } from '../utils/audio';
 
 /**
  * 📣 [MARKETING-SYNC] Listen for real-time promotion pulses and alerts
- * This hook catches 'Marketing Hub' messages and triggers local chimes/vibrations.
- * Optimized for ZERO-INDEXING (no manual Firestore indices required).
  */
 export const useMarketingPulses = (role: string | null) => {
     const [latestPulse, setLatestPulse] = useState<{ id: string, text: string } | null>(null);
+    const announcedRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
-        // 🛡️ SECURITY: Only listen if user is a Student or Guest.
-        // We silence the Marketing Hub for Staff/Admins to prevent work distractions.
-        const isStudent = role === 'STUDENT' || role === 'GUEST';
-        if (!isStudent && role !== null) return; // Allow listening for null (unauthed landing) but block Staff
-        
-        // 🔥 [SONIC-SYNC] We only use WHERE filter to avoid the need for composite indices.
+        // 🔥 [SYNC-UNBLOCKED] Open for all roles for testing and immediate validation.
         const q = query(
             collection(db, "system_messages"),
-            where("type", "==", "PROMOTION"),
-            limit(10)
+            limit(20)
         );
 
         const unsub = onSnapshot(q, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
-                if (change.type === "added") {
-                    const data = change.doc.data();
-                    const created = data.createdAt?.toMillis?.() || data.createdAt || 0;
+                const data = change.doc.data();
+                
+                // Only process PROMOTION type messages that are newly added to the snapshot
+                if (data.type === 'PROMOTION' && change.type === "added") {
                     
-                    // 🛡️ SECURITY: Only show pulses created in the last 5 minutes (freshness guard)
-                    if (Date.now() - created < 300000) {
+                    // 🛡️ [SYNC-SENSE] 
+                    const createdMillis = data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : 0);
+                    
+                    // 1. !createdMillis -> Means it's a locally-pushed message (null server timestamp). MUST fire.
+                    // 2. Freshness -> Last 5 minutes.
+                    // 3. MemoryLock -> only fire once.
+                    const isFresh = (createdMillis === 0) || (Date.now() - createdMillis < 300000);
+
+                    if (isFresh && !announcedRef.current.has(change.doc.id)) {
+                        announcedRef.current.add(change.doc.id);
                         setLatestPulse({ id: change.doc.id, text: data.text });
                         
-                        // 🔊 [SONIC-BRANDING] Trigger the JOE Signature Chime
+                        // 🔊 [HALLMARK-TRADEMARK] Trigger the Signature "JOOOOOOH-EE"
                         joeSounds.playAlert(); 
                         
-                        // ⚡ Haptic feedback for mobile
                         if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
                     }
                 }
@@ -45,7 +46,7 @@ export const useMarketingPulses = (role: string | null) => {
         });
 
         return () => unsub();
-    }, []);
+    }, []); 
 
     return { latestPulse, clearPulse: () => setLatestPulse(null) };
 };

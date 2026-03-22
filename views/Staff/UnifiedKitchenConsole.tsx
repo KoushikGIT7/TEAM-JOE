@@ -41,6 +41,7 @@ import { initializeScanner } from '../../services/scanner';
 import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
 import QRScanner from '../../components/QRScanner';
+import { joeSounds } from '../../utils/audio'; // 🔊 Sound Engine Admission
 
 interface UnifiedKitchenConsoleProps {
   profile: UserProfile;
@@ -398,6 +399,10 @@ const MarketingHub = () => {
     const pushMessage = async () => {
         if (!msg) return;
         setStatus('SENDING');
+        
+        // 🔊 [SONIC-UNLOCK] Handshake the browser audio on your physical click
+        joeSounds.playAlert(); 
+
         try {
             await broadcastSystemMessage(msg);
             setStatus('SENT');

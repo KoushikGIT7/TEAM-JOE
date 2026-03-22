@@ -7,6 +7,7 @@ import { signInWithGoogle, signInAsGuest, signOut } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
 import { UserProfile } from './types';
 import { Bell, X } from 'lucide-react';
+import { joeSounds } from './utils/audio';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -43,6 +44,21 @@ const App: React.FC = () => {
   const profile = authProfile || guestProfile;
   const { latestPulse, clearPulse } = useMarketingPulses(profile?.role || null);
   const [isInitializingGuest, setIsInitializingGuest] = useState(true);
+
+  // 🔊 [SONIC-UNLOCK] Globally unblock audio on first user interaction
+  useEffect(() => {
+    const unlock = () => {
+      joeSounds.playSuccess(); // Initial ping to wake up hardware
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+    window.addEventListener('click', unlock);
+    window.addEventListener('touchstart', unlock);
+    return () => {
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+  }, []);
 
   // Restore Guest identity from Long-term Storage
   useEffect(() => {
@@ -112,6 +128,10 @@ const App: React.FC = () => {
   const handleGoogleLogin = async () => {
     if (googleSignInLoading) return;
     setGoogleSignInLoading(true);
+    
+    // 🔊 [SONIC-UNLOCK] Handshake the browser audio on user gesture
+    joeSounds.playSuccess();
+
     try {
       const { profile: newProfile } = await signInWithGoogle();
       setView(getViewForRole(newProfile.role));
@@ -125,6 +145,10 @@ const App: React.FC = () => {
   const handleGuestLogin = async () => {
     if (guestLoading) return;
     setGuestLoading(true);
+
+    // 🔊 [SONIC-UNLOCK] Handshake the browser audio on user gesture
+    joeSounds.playSuccess();
+
     try {
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
@@ -263,20 +287,20 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-white text-slate-900 overflow-x-hidden relative">
       {/* 📣 [MARKETING-PULSE] Swiggy-style notification card */}
       {latestPulse && (
-        <div className="fixed top-8 left-4 right-4 z-[100] animate-in slide-in-from-top-4">
-          <div className="bg-rose-900 text-white rounded-[2rem] shadow-2xl p-6 border-b-4 border-rose-950 flex items-center gap-6 relative overflow-hidden group">
-            <div className="bg-white/20 p-4 rounded-[1.5rem] shrink-0">
-               <Bell className="w-8 h-8 text-rose-300 animate-bounce" />
+        <div className="fixed top-4 left-0 right-0 z-[100] flex justify-center px-4 animate-in slide-in-from-top-2 duration-300">
+          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-full shadow-xl px-4 py-2.5 flex items-center gap-3 border border-white/10 max-w-md w-full sm:w-auto">
+            <div className="bg-indigo-500/20 p-1.5 rounded-full ring-1 ring-indigo-500/30">
+               <Bell className="w-4 h-4 text-indigo-400" />
             </div>
-            <div className="flex-1 min-w-0 pr-4">
-               <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-300">New Promotion</span>
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex-1 min-w-0 pr-2">
+               <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Joe Pulse</span>
+                  <div className="w-1 h-1 rounded-full bg-indigo-400 animate-pulse" />
                </div>
-               <p className="font-black text-lg leading-tight tracking-tight">{latestPulse.text}</p>
+               <p className="text-sm font-medium leading-none truncate opacity-90">{latestPulse.text}</p>
             </div>
-            <button onClick={clearPulse} className="bg-white/10 hover:bg-white/20 p-2 rounded-xl">
-              <X className="w-5 h-5" />
+            <button onClick={clearPulse} className="hover:bg-white/10 p-1.5 rounded-full transition-colors">
+              <X className="w-4 h-4 opacity-50" />
             </button>
           </div>
         </div>
