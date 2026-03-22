@@ -1111,10 +1111,14 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
             await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
 
             // 🍱 Real-time Batching Injection (Transactional Root)
-            // Using internal function to guarantee ordering atomicity
-            const itemsToBatch = itemsWithResolvedType.filter(it => it.orderType === 'PREPARATION_ITEM');
-            const batchPromises = itemsToBatch.map(it => createBatchFromOrder(id, it, targetSlot));
-            await Promise.all(batchPromises);
+            // CRITICAL FIX: Only batch if payment is confirmed.
+            if (finalizedOrder.paymentStatus === 'SUCCESS') {
+                const itemsToBatch = itemsWithResolvedType.filter(it => it.orderType === 'PREPARATION_ITEM');
+                const batchPromises = itemsToBatch.map(it => createBatchFromOrder(id, it, targetSlot));
+                await Promise.all(batchPromises);
+            } else {
+                console.log(`[BATCH-BYPASS] skipping batch for pending payment: ${id}`);
+            }
 
         } catch (e) {
             console.warn("⚠️ Slot stats or batching write blocked. Skipping...", e);
@@ -1485,6 +1489,18 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
       const { invalidateReportsCache } = await import('./reporting');
       invalidateReportsCache();
     } catch (_e) {}
+
+    // 🍱 [KITCHEN-TRIGGER] Handshake — Send paid order to production queue
+    try {
+        const itemsToBatch = (orderData.items || []).filter((it: any) => it.orderType === 'PREPARATION_ITEM');
+        // BotharrivalTimeSlot (v2) or arrivalTime (v1) could be present
+        const nextSlot = orderData.arrivalTimeSlot || orderData.arrivalTime || 0;
+        if (itemsToBatch.length > 0 && nextSlot !== 0) {
+            await Promise.all(itemsToBatch.map((it: any) => createBatchFromOrder(orderId, it, nextSlot)));
+        }
+    } catch (e) {
+        console.error("Failed to batch order after payment confirmation:", e);
+    }
   } catch (error) {
     console.error("Error confirming payment:", error);
     throw error;
