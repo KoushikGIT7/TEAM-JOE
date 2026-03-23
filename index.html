@@ -16,28 +16,48 @@
     
     // 🔥 [GLOBAL-SUBSCRIBE] Clean entry point called by the 'Big Deals' button
     window.joeSubscribe = function() {
+      if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+        console.error('🛑 Critical: OneSignal REQUIRES HTTPS (Secure Context) or Localhost to function at the browser level.');
+        alert("Notification Engine blocked. You are running on an insecure connection (HTTP). OneSignal requires HTTPS.");
+        return;
+      }
+
       window.OneSignalDeferred.push(async function(OneSignal) {
+        console.log('[JOE] Triggering Notification Handshake...');
         try {
+          // 🛡️ [DOUBLE-STRIKE] Request permission AND opt-in
           const permission = await OneSignal.Notifications.requestPermission();
-          console.log('[JOE] Notification permission:', permission);
+          console.log('[JOE] Notification Status:', permission);
+          
           if (permission === 'granted') {
+            // Force opt-in if the student had manually disabled it before
+            if (OneSignal.User?.PushSubscription) {
+              await OneSignal.User.PushSubscription.optIn();
+              console.log('[JOE] Push registration forced active.');
+            }
             window.dispatchEvent(new CustomEvent('joe_notif_granted'));
+          } else {
+             console.warn('[JOE] Handshake denied by student browser.');
           }
         } catch(e) {
-          console.warn('[JOE] Permission request failed:', e);
+          console.error('[JOE] Critical Handshake failure:', e);
         }
       });
     };
 
     OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "c7140793-2586-4d5c-9f38-b6fb98815c3b",
-        safari_web_id: "web.onesignal.auto.61cc1b76-79db-483e-a0b9-263210abb193",
-        serviceWorkerPath: 'OneSignalSDKWorker.js',
-        notifyButton: { enable: false },
-        allowLocalhostAsSecureOrigin: true
-      });
-      console.log('[JOE] OneSignal ready. Click Big Deals to subscribe.');
+      try {
+        await OneSignal.init({
+          appId: "c7140793-2586-4d5c-9f38-b6fb98815c3b",
+          safari_web_id: "web.onesignal.auto.61cc1b76-79db-483e-a0b9-263210abb193",
+          serviceWorkerPath: '/OneSignalSDKWorker.js', // Absolute path for service worker
+          notifyButton: { enable: false },
+          allowLocalhostAsSecureOrigin: true
+        });
+        console.log('✅ [ONESIGNAL] Industrial Engine Ready.');
+      } catch (err) {
+        console.warn('⚠️ [ONESIGNAL] Early Init Failure:', err);
+      }
     });
   </script>
 </head>

@@ -5,11 +5,15 @@ import { useEffect } from 'react';
  */
 export const syncOneSignal = (userId: string | null) => {
     if (!userId) return;
-    const oneSignal = (window as any).OneSignal;
-    if (oneSignal && oneSignal.User) {
-        oneSignal.login(userId);
-        oneSignal.User.addTag('role', 'STUDENT');
-        console.log('⚡ [SONIC-ONESIGNAL] Instant Handshake strike:', userId);
+    const oneSignalDeferred = (window as any).OneSignalDeferred;
+    if (oneSignalDeferred) {
+        oneSignalDeferred.push((oneSignal: any) => {
+            if (oneSignal.User) {
+                oneSignal.login(userId);
+                oneSignal.User.addTag('role', 'STUDENT');
+                console.log('⚡ [SONIC-ONESIGNAL] Instant Handshake strike:', userId);
+            }
+        });
     }
 };
 
