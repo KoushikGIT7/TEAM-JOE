@@ -73,7 +73,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   }, []);
 
   useEffect(() => {
-    if (state === 'CASH_WAITING' && orderId) {
+    if (orderId) {
       let hasNavigated = false;
       const unsubscribe = listenToOrder(orderId, (order) => {
         if (order) {

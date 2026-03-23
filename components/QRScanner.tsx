@@ -16,6 +16,7 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
   const [error, setError]             = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const qrRef                         = useRef<Html5Qrcode | null>(null);
+  const hasScanned                    = useRef(false);
   const regionId                      = 'qr-reader-region';
 
   const stopCamera = useCallback(async () => {
@@ -44,6 +45,8 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
         setIsInitializing(true);
         const scanner = new Html5Qrcode(regionId, { verbose: false });
         qrRef.current = scanner;
+        
+        hasScanned.current = false; // Reset on startup
 
         await scanner.start(
           { facingMode: 'environment' },
@@ -53,9 +56,11 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
             disableFlip: false,
           },
           async (decodedText) => {
-            // 🛑 [HARD-LOCK] STOP CAMERA IMMEDIATELY 
-            // This prevents the loop and repetitive validation cycles.
-            await stopCamera();
+            if (hasScanned.current) return; // Drop duplicate concurrent frames
+            hasScanned.current = true;
+            
+            // 🛑 [HARD-LOCK] Stop camera hardware first
+            stopCamera();
             
             // Haptic feedback
             if ('vibrate' in navigator) navigator.vibrate(100);

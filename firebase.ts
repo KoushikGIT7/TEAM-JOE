@@ -45,8 +45,12 @@ export const messaging: Messaging = getMessaging(app);
 let db: Firestore;
 db = initializeFirestore(app, {
   localCache: memoryLocalCache(),
-  experimentalForceLongPolling: true,
+  // ✅ Auto-detect: uses WebSocket by default, falls back to long-poll only on restricted networks
+  // experimentalForceLongPolling was removed — it forced HTTP polling which caused multi-second
+  // onSnapshot delays, making the Cook Console appear to never receive batch updates.
+  experimentalAutoDetectLongPolling: true,
 });
+console.log("🔥 [FIRESTORE] Initialized with AutoDetectLongPolling (WebSocket preferred)");
 
 export { db };
 

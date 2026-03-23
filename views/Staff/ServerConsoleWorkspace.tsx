@@ -1,244 +1,279 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Camera, Check, CheckCircle, Search, 
-  PackageCheck, Zap, ShieldCheck, Clock, User 
+  Camera, CheckCircle2, Zap, Lock, ChefHat, 
+  PackageCheck, Clock, Loader2, X
 } from 'lucide-react';
-import { Order, CartItem } from '../../types';
-import SmoothImage from '../../components/SmoothImage';
+import { serveSingleItem } from '../../services/firestore-db';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 interface ServerConsoleWorkspaceProps {
-  activeOrders: Order[];
-  scanQueue: string[]; // Order IDs
+  scanQueue: string[];
   setScanQueue?: (fn: (prev: string[]) => string[]) => void;
-  isCameraOpen: boolean;
   setIsCameraOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  handleQRScan: (data: string) => void;
-  handleServeItem: (orderId: string, itemId: string, qty: number) => void;
-  isProcessing: boolean;
 }
 
-/** 
- * [SONIC-LOGIC] Hardware Status Interpreter
- * Decodes Firestore status into rapid UI feedback tiers.
+interface LiveItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  status: string;
+  orderType: string;
+  category?: string;
+  orderId: string;
+  userName?: string;
+  readyAt?: any;
+}
+
+/**
+ * 🎯 [SCAN-DRIVEN SERVER CONSOLE]
+ * 
+ * FLOW:
+ * 1. Student scans QR → processAtomicIntake runs
+ *    - STATIC ONLY → order auto-completed (CONSUMED), shown as done
+ *    - HAS DYNAMIC → order MANIFESTED, items appear in this console:
+ *        • STATIC items  → Green badge "READY" → Serve button active
+ *        • DYNAMIC items → Status badge shows cook progress (QUEUED/PREPARING)
+ *                         Serve button LOCKED until cook marks READY
+ * 2. Cook finalizes batch → item status becomes READY → serve button unlocks
+ * 3. Server serves each item → all served → order completed
  */
-const getItemMetadata = (item: CartItem) => {
-  const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
-  const s = item.status;
-  
-  if (rem <= 0 || s === 'SERVED' || s === 'COMPLETED') return { text: 'Served ✅', flavor: 'SERVED' };
-  
-  // 🛡️ [Principal Architect] Servability Gate
-  // If Kitchen has marked it READY, or if it's a zero-wait Static item, it's READY.
-  const isReady = s === 'READY' || s === 'COLLECTING' || s === 'READY_SERVED' || item.orderType === 'FAST_ITEM';
-  
-  if (isReady) return { text: 'Serve Now', flavor: 'READY' };
-  return { text: 'Cooking...', flavor: 'WAITING' };
-};
-
 const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
-  activeOrders,
   scanQueue,
-  setScanQueue,
   setIsCameraOpen,
-  handleServeItem,
 }) => {
-  const [filter, setFilter] = useState('');
-  const [recentlyServed, setRecentlyServed] = useState<Set<string>>(new Set());
-  const [fullyServedOrders, setFullyServedOrders] = useState<Set<string>>(new Set());
+  // Map: orderId → live items from Firestore subcollection
+  const [orderItemsMap, setOrderItemsMap] = useState<Record<string, LiveItem[]>>({});
+  const [processingKey, setProcessingKey] = useState<string | null>(null);
+  const [servedKeys, setServedKeys] = useState<Set<string>>(new Set());
+  const unsubRefs = useRef<Record<string, () => void>>({});
 
-  // 🛡️ [Principal Architect] Order-Centric Manifest
-  const groupedOrders = useMemo(() => {
-     return scanQueue.map(orderId => {
-        const order = activeOrders.find(o => o.id === orderId);
-        if (!order) return null;
+  // 📡 [SCAN-TRIGGERED LISTENER]
+  // For every newly scanned order in scanQueue, attach a real-time listener
+  // to its items subcollection. This drives the status-aware serving manifest.
+  useEffect(() => {
+    scanQueue.forEach(orderId => {
+      if (unsubRefs.current[orderId]) return; // Already listening
 
-        const items = order.items.filter(it => {
-            const uniqueKey = `${order.id}-${it.id}`;
-            const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
-            
-            // Filter out auto-served lunch items unless recently served for feedback
-            if (it.category === 'Lunch' && it.status === 'SERVED' && !recentlyServed.has(uniqueKey)) return false;
-            
-            // Hide already served items after they time out
-            if (rem <= 0 && !recentlyServed.has(uniqueKey)) return false;
+      console.log(`📡 [SERVER-SYNC] Attaching manifest listener: ${orderId}`);
+      const itemsRef = collection(db, 'orders', orderId, 'items');
+      const unsub = onSnapshot(itemsRef, (snap) => {
+        const items: LiveItem[] = snap.docs.map(d => ({
+          itemId: d.id,
+          orderId,
+          ...d.data() as any,
+        }));
+        setOrderItemsMap(prev => ({ ...prev, [orderId]: items }));
+      });
 
-            if (filter && !it.name.toLowerCase().includes(filter.toLowerCase())) return false;
-            return true;
+      unsubRefs.current[orderId] = unsub;
+    });
+
+    // Cleanup listeners for orders no longer in scanQueue
+    const activeIds = new Set(scanQueue);
+    Object.keys(unsubRefs.current).forEach(id => {
+      if (!activeIds.has(id)) {
+        unsubRefs.current[id]();
+        delete unsubRefs.current[id];
+        setOrderItemsMap(prev => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
         });
+      }
+    });
+  }, [scanQueue]);
 
-        if (items.length === 0 && !fullyServedOrders.has(orderId)) return null;
-        return { ...order, items };
-     }).filter(Boolean) as Order[];
-  }, [scanQueue, activeOrders, filter, recentlyServed, fullyServedOrders]);
+  // Cleanup all listeners on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(unsubRefs.current).forEach(u => u());
+    };
+  }, []);
 
-  const enhancedHandleServe = (orderId: string, itemId: string, qty: number) => {
+  const handleServe = async (orderId: string, itemId: string) => {
     const key = `${orderId}-${itemId}`;
-    
-    // ⚡ [SONIC-STROKE] Instant UI Flip
-    setRecentlyServed(prev => new Set(prev).add(key));
-    
-    // Silent background handover
-    handleServeItem(orderId, itemId, qty);
-
-    setTimeout(() => {
-        setRecentlyServed(prev => {
-            const next = new Set(prev);
-            next.delete(key);
-            return next;
-        });
-    }, 4000);
+    if (processingKey === key) return;
+    setProcessingKey(key);
+    try {
+      await serveSingleItem(orderId, itemId);
+      setServedKeys(prev => new Set(prev).add(key));
+    } catch (err) {
+      console.error('[SERVE-ERROR]', err);
+    } finally {
+      setProcessingKey(null);
+    }
   };
 
-  // Reconcile automatic cleanup
-  useEffect(() => {
-     groupedOrders.forEach(order => {
-        const allItemsDone = order.items.every(it => {
-           const rem = it.remainingQty ?? (it.quantity - (it.servedQty || 0));
-           const isOptimistic = recentlyServed.has(`${order.id}-${it.id}`);
-           return rem <= 0 || it.status === 'SERVED' || isOptimistic;
-        });
+  const getStatusConfig = (item: LiveItem) => {
+    const key = `${item.orderId}-${item.itemId}`;
+    const alreadyServed = servedKeys.has(key) || item.status === 'SERVED';
 
-        if (allItemsDone && order.items.length > 0 && !fullyServedOrders.has(order.id)) {
-           setFullyServedOrders(prev => new Set(prev).add(order.id));
-           setTimeout(() => {
-              setScanQueue?.(prev => prev.filter(id => id !== order.id));
-              setFullyServedOrders(prev => {
-                 const next = new Set(prev);
-                 next.delete(order.id);
-                 return next;
-              });
-           }, 4000);
-        }
-     });
-  }, [groupedOrders, recentlyServed]);
+    if (alreadyServed) return {
+      badge: 'SERVED ✓',
+      badgeClass: 'bg-slate-200 text-slate-500',
+      cardClass: 'opacity-40 grayscale',
+      canServe: false,
+      icon: <CheckCircle2 className="w-5 h-5 text-slate-400" />,
+    };
+
+    if (item.status === 'READY') return {
+      badge: 'READY',
+      badgeClass: 'bg-emerald-500 text-white animate-pulse',
+      cardClass: 'border-emerald-200 bg-emerald-50/50',
+      canServe: true,
+      icon: <Zap className="w-5 h-5 text-emerald-600 fill-current" />,
+    };
+
+    if (item.status === 'PREPARING') return {
+      badge: '🍳 PREPARING',
+      badgeClass: 'bg-amber-100 text-amber-700',
+      cardClass: 'border-amber-100',
+      canServe: false,
+      icon: <ChefHat className="w-5 h-5 text-amber-500" />,
+    };
+
+    // QUEUED / PENDING
+    return {
+      badge: '⏳ IN KITCHEN',
+      badgeClass: 'bg-slate-100 text-slate-500',
+      cardClass: 'border-slate-100',
+      canServe: false,
+      icon: <Lock className="w-5 h-5 text-slate-300" />,
+    };
+  };
+
+  // 🛡️ [MANIFEST-LOCK] 
+  // Orders remain in this list if they are in the scanQueue.
+  // We only filter if we are 100% sure the order is completely served 
+  // based on the live subcollection data.
+  const activeScannedOrders = scanQueue.filter(id => {
+    const items = orderItemsMap[id];
+    if (!items || items.length === 0) return true; // Keep while loading
+    
+    // An order is active if it has ANY item that is not yet served
+    return items.some(it => {
+      const status = it.status?.toUpperCase() || '';
+      return !['SERVED', 'COMPLETED', 'READY_SERVED'].includes(status);
+    });
+  });
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-50 relative overflow-hidden font-sans">
-      <div className="px-8 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white shadow-sm z-20">
-        <div className="flex flex-col">
-          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Kitchen Handover</span>
-          <div className="flex items-center gap-2.5">
-             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-             <h2 className="text-sm font-black text-slate-900 tracking-tight uppercase italic">{groupedOrders.length} Active Trays</h2>
+    <div className="flex-1 flex flex-col h-full bg-[#fdfdfd] font-sans select-none overflow-hidden">
+
+      {/* ── HEADER ─────────────────────────────────────────────────── */}
+      <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white shadow-sm z-10">
+        <div className="flex items-center gap-5">
+          <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg">
+            <PackageCheck className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">Serving Counter</h2>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+              {activeScannedOrders.length > 0
+                ? `${activeScannedOrders.length} Active Order${activeScannedOrders.length > 1 ? 's' : ''} on Manifest`
+                : 'Scan a student QR to begin'}
+            </p>
           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-            <input 
-              type="text" 
-              placeholder="Find student tray..." 
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-100 px-12 py-2.5 rounded-2xl text-xs font-black focus:outline-none focus:ring-4 focus:ring-slate-400/5 transition-all w-48 focus:w-64"
-            />
-          </div>
-          <button 
-            onClick={() => setIsCameraOpen(true)}
-            className="h-11 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl flex items-center gap-3 active:scale-95 transition-all"
-          >
-            <Camera className="w-5 h-5" /> Scan Intake
-          </button>
-        </div>
+
+        <button
+          onClick={() => setIsCameraOpen(true)}
+          className="h-12 px-8 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center gap-3 hover:bg-black"
+        >
+          <Camera className="w-4 h-4 text-emerald-400" />
+          SCAN QR
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-10">
-        {groupedOrders.length > 0 ? (
-          <div className="max-w-5xl mx-auto space-y-8">
-            {groupedOrders.map((order) => (
-              <OrderCard 
-                key={order.id}
-                order={order}
-                isFullyDone={fullyServedOrders.has(order.id)}
-                recentlyServed={recentlyServed}
-                onServeItem={enhancedHandleServe}
-              />
-            ))}
+      {/* ── CONTENT ────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto p-6 lg:p-10 space-y-8">
+
+        {activeScannedOrders.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center opacity-20 py-20">
+            <Camera className="w-16 h-16 text-slate-400 mb-6" />
+            <h3 className="text-2xl font-black text-slate-700 uppercase italic tracking-tighter">No Active Tokens</h3>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-3">
+              Scan a student QR code to load their order
+            </p>
           </div>
         ) : (
-          <div className="h-full flex flex-col items-center justify-center py-40">
-             <div className="w-40 h-40 bg-white rounded-[4rem] shadow-2xl flex items-center justify-center border-8 border-slate-100 mb-10 group overflow-hidden">
-                <Zap className="w-16 h-16 text-slate-200 group-hover:text-amber-500 transition-all duration-500" />
-             </div>
-             <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic mb-4">Pipeline Clear</h3>
-             <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] text-center max-w-[300px]">Waiting for next intake intake</p>
-          </div>
+          activeScannedOrders.map(orderId => {
+            const items = orderItemsMap[orderId] || [];
+            const pendingCount = items.filter(it => it.status !== 'SERVED' && !servedKeys.has(`${orderId}-${it.itemId}`)).length;
+
+            return (
+              <div key={orderId} className="bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-xl overflow-hidden">
+                
+                {/* Order Header */}
+                <div className="px-8 py-5 bg-slate-900 flex items-center justify-between">
+                  <div>
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Manifest ID</p>
+                    <h3 className="text-xl font-black text-white font-mono tracking-tighter">#{orderId.slice(-6).toUpperCase()}</h3>
+                  </div>
+                  <div className={`px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                    pendingCount === 0 ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'
+                  }`}>
+                    {pendingCount === 0 ? '✓ Complete' : `${pendingCount} Remaining`}
+                  </div>
+                </div>
+
+                {/* Items List */}
+                <div className="p-6 space-y-4">
+                  {items.map(item => {
+                    const cfg = getStatusConfig(item);
+                    const key = `${orderId}-${item.itemId}`;
+                    const isServing = processingKey === key;
+
+                    return (
+                      <div
+                        key={item.itemId}
+                        className={`flex items-center justify-between p-5 rounded-[1.5rem] border-2 transition-all duration-300 ${cfg.cardClass}`}
+                      >
+                        {/* Item Info */}
+                        <div className="flex items-center gap-5">
+                          <div className="w-12 h-12 bg-white rounded-2xl shadow flex items-center justify-center border border-slate-100">
+                            {cfg.icon}
+                          </div>
+                          <div>
+                            <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest w-fit mb-1.5 ${cfg.badgeClass}`}>
+                              {cfg.badge}
+                            </div>
+                            <h4 className="text-lg font-black text-slate-900 uppercase italic tracking-tight leading-none">
+                              {item.name}
+                            </h4>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                              Qty: {item.quantity}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Serve Button */}
+                        {cfg.canServe ? (
+                          <button
+                            onClick={() => handleServe(orderId, item.itemId)}
+                            disabled={!!isServing}
+                            className="h-14 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all hover:bg-emerald-600 shadow-lg flex items-center gap-2 shrink-0"
+                          >
+                            {isServing
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <><CheckCircle2 className="w-4 h-4" /> SERVE</>
+                            }
+                          </button>
+                        ) : item.status !== 'SERVED' && !servedKeys.has(key) ? (
+                          <div className="h-14 px-8 bg-slate-50 text-slate-300 rounded-2xl font-black text-[9px] uppercase tracking-widest flex items-center gap-2 border-2 border-slate-100 shrink-0">
+                            <Lock className="w-4 h-4" />
+                            {item.status === 'PREPARING' ? 'COOKING...' : 'WAITING'}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
         )}
-      </div>
-    </div>
-  );
-};
-
-const OrderCard: React.FC<{
-  order: Order;
-  isFullyDone: boolean;
-  recentlyServed: Set<string>;
-  onServeItem: (orderId: string, itemId: string, qty: number) => void;
-}> = ({ order, isFullyDone, recentlyServed, onServeItem }) => {
-  return (
-    <div className={`rounded-[3rem] border-2 transition-all duration-500 ${
-      isFullyDone ? 'border-emerald-500 bg-emerald-50 shadow-2xl scale-[1.02]' : 'border-slate-100 bg-white shadow-xl'
-    }`}>
-      <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-           <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center ${isFullyDone ? 'bg-emerald-500' : 'bg-slate-900'} shadow-lg transition-colors`}>
-              {isFullyDone ? <CheckCircle className="w-8 h-8 text-white animate-in zoom-in" /> : <User className="w-8 h-8 text-white" />}
-           </div>
-           <div>
-              <div className="flex items-center gap-3">
-                 <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none italic">Order #{order.id.slice(-6).toUpperCase()}</h2>
-                 {isFullyDone && <span className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md">Fulfillment Finalized</span>}
-              </div>
-              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">{order.items.length} Remaining Items • Preparing Tray</p>
-           </div>
-        </div>
-      </div>
-
-      <div className="p-4 space-y-2">
-        {order.items.map(item => {
-           const uniqueKey = `${order.id}-${item.id}`;
-           const meta = getItemMetadata(item);
-           const isPushed = recentlyServed.has(uniqueKey) || meta.flavor === 'SERVED';
-           const rem = item.remainingQty ?? (item.quantity - (item.servedQty || 0));
-
-           return (
-              <div key={item.id} className={`flex items-center p-4 rounded-[2.2rem] transition-all ${isPushed ? 'bg-emerald-50/50 opacity-60' : 'hover:bg-slate-50'}`}>
-                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-50 border-2 border-white shadow-sm flex-shrink-0">
-                    <SmoothImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                 </div>
-                 <div className="flex-1 ml-5">
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight leading-none mb-1">{item.name}</h4>
-                    <p className={`text-[10px] font-black uppercase tracking-widest ${
-                       isPushed ? 'text-emerald-600' : 
-                       meta.flavor === 'READY' ? 'text-amber-600' : 'text-slate-400'
-                    }`}>
-                       {meta.flavor === 'WAITING' ? (item.status === 'PREPARING' ? 'Kitchen Preparing' : 'Awaiting Kitchen') : (isPushed ? 'Fulfilled ✅' : 'Pick Up Ready')} • {isPushed ? '0' : rem}x
-                    </p>
-                 </div>
-
-                 <div className="ml-4">
-                    {isPushed ? (
-                       <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600">
-                          <CheckCircle className="w-6 h-6" />
-                       </div>
-                    ) : meta.flavor === 'WAITING' ? (
-                       <div className="px-5 py-3 rounded-2xl bg-rose-50 text-rose-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 italic">
-                          <Clock className="w-4 h-4 text-rose-400" />
-                          Wait
-                       </div>
-                    ) : (
-                       <button 
-                          onClick={() => onServeItem(order.id, item.id, rem)}
-                          className="h-12 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-2 hover:bg-black"
-                       >
-                          <Check className="w-4 h-4" /> Serve
-                       </button>
-                    )}
-                 </div>
-              </div>
-           );
-        })}
       </div>
     </div>
   );

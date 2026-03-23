@@ -372,7 +372,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                     <div>
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                          <span className="text-[14px] font-black bg-slate-900 text-white px-4 py-1.5 rounded-xl uppercase tracking-widest italic shadow-lg animate-in zoom-in border border-white/10">
-                            #{order.id.slice(-4).toUpperCase()}
+                            #{order.id.slice(-4).toUpperCase()}{order.utr && ` • UTR: ${order.utr}`}
                          </span>
                          {isAutoVerified && (
                             <span className="text-[9px] font-black bg-emerald-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 animate-pulse">

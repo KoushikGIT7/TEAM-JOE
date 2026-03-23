@@ -9,7 +9,8 @@ import {
   LogOut,
   Sparkles,
   Zap,
-  ShieldCheck
+  ShieldCheck,
+  Timer
 } from 'lucide-react';
 import { Order, UserProfile } from '../../types';
 import { getScanLogs, processAtomicIntake } from '../../services/firestore-db';
@@ -27,7 +28,6 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [terminalState, setTerminalState] = useState<'IDLE' | 'SCANNING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [lastResult, setLastResult] = useState<{ title: string; sub: string } | null>(null);
-  const scanHistoryRef = useRef<Set<string>>(new Set());
 
   // 🛡️ [Principal Architect] Sonic Feedback Engine
   const triggerStrobe = (state: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
@@ -53,18 +53,21 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     triggerStrobe('SUCCESS', 'VERIFYING...', 'Checking Token Integrity');
 
     try {
-      const { result, order } = await processAtomicIntake(data.trim(), profile.uid);
+      const { result } = await processAtomicIntake(data.trim(), profile.uid);
       
-      if (result === 'ALREADY_MANIFESTED' || result === 'ALREADY_CONSUMED') {
+      // [PHASED-AUDIT] Type-Cast for string comparison as result might be an extended enum
+      const res = result as string;
+      
+      if (res === 'ALREADY_MANIFESTED' || res === 'ALREADY_CONSUMED') {
          // Silent re-scan gate
          return;
       }
 
-      if (result === 'AWAITING_PAYMENT') {
+      if (res === 'AWAITING_PAYMENT') {
         triggerStrobe('ERROR', 'UNPAID ORDER', 'Send student to cashier');
-      } else if (result === 'CONSUMED') {
+      } else if (res === 'CONSUMED') {
         triggerStrobe('SUCCESS', 'VERIFIED ✅', 'RELEASE MEAL NOW');
-      } else if (result === 'MANIFESTED') {
+      } else if (res === 'MANIFESTED') {
         triggerStrobe('SUCCESS', 'CONFIRMED ✅', 'MANIFEST CREATED IN KITCHEN');
       }
       
@@ -109,7 +112,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       <div className="px-8 h-20 flex justify-between items-center bg-white border-b border-slate-200 shrink-0 shadow-sm">
         <div className="flex items-center gap-4">
            <div className="bg-slate-900 p-2 rounded-lg">
-              <Logo size="sm" isDark />
+              <Logo size="sm" />
            </div>
            <h1 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Intake Console</h1>
         </div>

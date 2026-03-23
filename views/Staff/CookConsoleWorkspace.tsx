@@ -1,264 +1,280 @@
-import React, { useMemo, useEffect, useState } from 'react';
-import { Timer, Flame, ChefHat, Clock, Play, Check } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import {
+  ChefHat, Zap, CheckCircle2, Sparkles, Filter, Lock
+} from 'lucide-react';
 import { PrepBatch } from '../../types';
-import { startBatchPreparation, markBatchReady } from '../../services/firestore-db';
+import { startBatch, finalizeBatch } from '../../services/firestore-db';
+import {
+  collection, query, where, orderBy, onSnapshot,
+  collectionGroup, limit
+} from 'firebase/firestore';
+import { db } from '../../firebase';
 
 interface CookConsoleWorkspaceProps {
-  batches: PrepBatch[];
+  initialStationId?: string;
 }
 
-const formatSlot = (slot: number) => {
-  const s = slot.toString().padStart(4, '0');
-  let hours = parseInt(s.slice(0, 2), 10);
-  const minutes = s.slice(2);
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  return `${hours}:${minutes} ${ampm}`;
-};
+/**
+ * 🍳 [COOK CONSOLE] Real-time kitchen production hub.
+ *
+ * Data flow:
+ *   prepBatches {status IN [QUEUED, PREPARING]} ──onSnapshot──► this component
+ *
+ * Rules:
+ *  • Cook ONLY reads from prepBatches — NEVER from orders directly.
+ *  • Client-side sort ensures FIFO even if cloud index is still building.
+ *  • Auto-fallback to non-ordered query if index is missing (FAILED_PRECONDITION).
+ */
+const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStationId = 'ALL' }) => {
+  const [batches, setBatches] = useState<PrepBatch[]>([]);
+  const [activeStation, setActiveStation] = useState(initialStationId);
+  const [processingMap, setProcessingMap] = useState<Record<string, boolean>>({});
+  const [optimisticStatus, setOptimisticStatus] = useState<Record<string, string>>({});
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  const [indexReady, setIndexReady] = useState(true); // assume ready; flip on error
 
-const BatchItemCard = ({ 
-  batch, 
-  isOptimisticPreparing, 
-  optimisticPushedQty,
-  setOptimisticPrep,
-  registerPush
-}: { 
-  batch: PrepBatch; 
-  isOptimisticPreparing: boolean;
-  optimisticPushedQty: number;
-  setOptimisticPrep: (id: string) => void;
-  registerPush: (id: string, count: number) => void;
-}) => {
-   const [isProcessing, setIsProcessing] = useState(false);
-
-   const onStart = async () => {
-       setIsProcessing(true);
-       setOptimisticPrep(batch.id); // ⚡ OPTIMISTIC PREP
-       try { 
-          await startBatchPreparation(batch.id); 
-       } catch(e) { 
-          console.error("Start prep failed:", e); 
-       } finally { 
-          setIsProcessing(false); 
-       }
-   };
-
-   const onRelease = (count?: number) => {
-       const qtyToPush = count ?? (batch.quantity - optimisticPushedQty);
-       if (qtyToPush <= 0) return;
-
-       setIsProcessing(true);
-       
-       // ⚡ OPTIMISTIC RELEASE (Root Level Speed)
-       registerPush(batch.id, qtyToPush);
-       
-       // Silent non-blocking update
-       markBatchReady(batch.id, count).catch(e => {
-          console.error("Background release failed:", e);
-       }).finally(() => {
-          setIsProcessing(false);
-       });
-   };
-
-   // Derived State
-   const currentQty = Math.max(0, batch.quantity - optimisticPushedQty);
-   const isPreparing = batch.status === 'PREPARING' || isOptimisticPreparing;
-   const isCompleted = currentQty <= 0 && batch.status !== 'QUEUED';
-
-   if (isCompleted) return null; // Clean UI removal
-
-   return (
-      <div className={`p-5 rounded-[2.5rem] border-2 flex flex-col justify-between transition-all group ${
-         isPreparing ? 'border-amber-400 bg-amber-50/10 shadow-lg shadow-amber-900/5' : 'border-slate-100 bg-white hover:border-slate-200 shadow-sm'
-      }`}>
-          <div className="flex justify-between items-start mb-6">
-              <div>
-                 <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${
-                    isPreparing ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-500'
-                 }`}>
-                    {isPreparing ? 'In Production' : 'Queued'}
-                 </span>
-                 <h3 className="text-2xl lg:text-3xl font-black text-slate-900 mt-3 uppercase tracking-tighter leading-none">{batch.itemName}</h3>
-              </div>
-              <div className={`text-4xl lg:text-5xl font-black italic font-mono ${isPreparing ? 'text-amber-600' : 'text-slate-900'}`}>
-                ×{currentQty}
-              </div>
-          </div>
-          
-          <div className="mt-auto">
-              {!isPreparing ? (
-                 <button 
-                    disabled={isProcessing}
-                    onClick={onStart}
-                    className="w-full bg-slate-900 text-white rounded-2xl h-14 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-2 hover:bg-black disabled:opacity-50"
-                 >
-                    {isProcessing ? <Timer className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />} Start Preparing
-                 </button>
-              ) : (
-                 <div className="flex flex-col gap-2">
-                    <div className="flex gap-2 w-full">
-                       {[1, 2, 3, 4].filter(num => num < currentQty).map(num => (
-                          <button 
-                            key={num}
-                            onClick={() => onRelease(num)}
-                            className="flex-1 border-2 border-amber-500 text-amber-600 rounded-2xl py-3.5 font-black tracking-tighter text-sm active:scale-95 transition-all hover:bg-amber-50 bg-white shadow-sm"
-                          >
-                            +{num}
-                          </button>
-                       ))}
-                    </div>
-                    <button 
-                      onClick={() => onRelease()}
-                      className="w-full bg-amber-500 text-white rounded-2xl h-14 font-black uppercase tracking-widest text-[11px] active:scale-[0.98] transition-all shadow-xl shadow-amber-500/20 hover:bg-amber-600 flex items-center justify-center gap-2"
-                    >
-                      <Check className="w-5 h-5" /> Push All ({currentQty})
-                    </button>
-                 </div>
-              )}
-          </div>
-      </div>
-   );
-};
-
-const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ batches }) => {
-  const [optimisticPreparingIds, setOptimisticPreparingIds] = useState<Set<string>>(new Set());
-  const [optimisticPushes, setOptimisticPushes] = useState<Record<string, number>>({});
-  const [, setTick] = useState(0);
-
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PRIMARY LISTENER — exactly as specified: where status IN [...] + orderBy createdAt
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const timer = setInterval(() => setTick(t => t + 1), 60000);
-    return () => clearInterval(timer);
-  }, []);
+    console.log(`🔥 [COOK-CONSOLE] Activating listener [mode: ${indexReady ? 'ORDERED' : 'FALLBACK'}]...`);
 
-  // Sync cleanup: when real batch data updates, reconcile optimistic states
-  useEffect(() => {
-     setOptimisticPushes(prev => {
-        const next = { ...prev };
-        batches.forEach(b => {
-           // If real quantity decreased, we can reduce the optimistic push offset
-           // or just wipe it if the batch state is now consistent
-           if (b.status === 'READY') delete next[b.id];
-        });
-        return next;
-     });
-     setOptimisticPreparingIds(prev => {
-        const next = new Set(prev);
-        batches.forEach(b => {
-           if (b.status === 'PREPARING') next.delete(b.id);
-        });
-        return next;
-     });
+    const base = [
+      collection(db, 'prepBatches'),
+      where('status', 'in', ['QUEUED', 'PREPARING']),
+    ] as const;
+
+    // Use orderBy only if index confirmed ready; otherwise fall through to fallback below
+    const q = indexReady
+      ? query(collection(db, 'prepBatches'), where('status', 'in', ['QUEUED', 'PREPARING']), orderBy('createdAt', 'asc'))
+      : query(collection(db, 'prepBatches'), where('status', 'in', ['QUEUED', 'PREPARING']));
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const live = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as PrepBatch[];
+        console.log(`🔥 [COOK-CONSOLE] Live batches: ${live.length}`);
+        setBatches(live);
+      },
+      (err) => {
+        console.error('❌ [COOK-CONSOLE] Listener error:', err.message);
+        if (err.message.includes('index') || err.code === 'failed-precondition') {
+          console.warn('⚠️ [COOK-CONSOLE] Index missing — switching to fallback query (no orderBy)');
+          setIndexReady(false); // triggers re-subscribe without orderBy
+        }
+      }
+    );
+
+    // ── STATUS DOCTOR ─────────────────────────────────────────────────────────
+    // Watches raw items to surface "zombie" items (paid but not yet batched)
+    const unsubDoctor = onSnapshot(
+      query(collectionGroup(db, 'items'), where('status', 'in', ['PENDING', 'RESERVED', 'QUEUED']), limit(100)),
+      (snap) => {
+        const counts = snap.docs.reduce((acc, d) => {
+          const s = (d.data() as any).status as string;
+          acc[s] = (acc[s] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+        if (Object.keys(counts).length > 0)
+          console.log('🔬 [STATUS-DOCTOR] Item census:', counts);
+      }
+    );
+
+    return () => { unsub(); unsubDoctor(); };
+  }, [indexReady]); // re-run on fallback switch
+
+  // ── Available stations from live data ──────────────────────────────────────
+  const stations = useMemo(() => {
+    const ids = new Set(batches.map(b => b.stationId).filter(Boolean) as string[]);
+    return ['ALL', 'GENERAL', ...Array.from(ids)];
   }, [batches]);
 
-  const activeBatchSlot = useMemo(() => {
-    const preparing = batches.find(b => b.status === 'PREPARING' || optimisticPreparingIds.has(b.id));
-    if (preparing) return preparing.arrivalTimeSlot;
-    
-    // Sort queued items by arrival to find the current active focus
-    const queuedItems = batches
-      .filter(b => b.status === 'QUEUED' && (b.quantity - (optimisticPushes[b.id] || 0)) > 0)
-      .sort((a, b) => a.arrivalTimeSlot - b.arrivalTimeSlot);
-    
-    return queuedItems?.[0]?.arrivalTimeSlot || null;
-  }, [batches, optimisticPreparingIds, optimisticPushes]);
+  // ── FIFO sort on client (guarantees order even without cloud index) ──────────
+  const sorted = useMemo(() => {
+    return batches
+      .map(b => ({ ...b, status: optimisticStatus[b.id] ?? b.status }))
+      .filter(b =>
+        (activeStation === 'ALL' || b.stationId === activeStation) &&
+        (b.status === 'QUEUED' || b.status === 'PREPARING')
+      )
+      .sort((a, b) => {
+        if (a.status === 'PREPARING' && b.status !== 'PREPARING') return -1;
+        if (b.status === 'PREPARING' && a.status !== 'PREPARING') return 1;
+        const tA = (a.createdAt as any)?.toMillis?.() ?? (a.createdAt as number) ?? 0;
+        const tB = (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0;
+        return tA - tB;
+      });
+  }, [batches, optimisticStatus, activeStation]);
 
-  const activeBatchItems = useMemo(() => {
-    if (!activeBatchSlot) return [];
-    return batches.filter(b => {
-       const curQty = b.quantity - (optimisticPushes[b.id] || 0);
-       return (
-          b.arrivalTimeSlot === activeBatchSlot && 
-          curQty > 0 && 
-          (['QUEUED', 'PREPARING', 'ALMOST_READY'].includes(b.status) || optimisticPreparingIds.has(b.id))
-       );
-    }).sort((a, b) => (a.status === 'PREPARING' || optimisticPreparingIds.has(a.id)) ? -1 : 1);
-  }, [batches, activeBatchSlot, optimisticPreparingIds, optimisticPushes]);
+  // Reconcile optimistic overrides when Firestore confirms
+  useEffect(() => {
+    setOptimisticStatus(prev => {
+      const next = { ...prev };
+      let changed = false;
+      batches.forEach(b => { if (next[b.id] === b.status) { delete next[b.id]; changed = true; } });
+      return changed ? next : prev;
+    });
+  }, [batches]);
 
-  const registerPush = (id: string, count: number) => {
-     setOptimisticPushes(prev => ({
-        ...prev,
-        [id]: (prev[id] || 0) + count
-     }));
+  const focus = sorted[0];
+
+  const handleStart = async (batchId: string, items: any[]) => {
+    if (processingMap[batchId]) return;
+    setOptimisticStatus(p => ({ ...p, [batchId]: 'PREPARING' }));
+    setProcessingMap(p => ({ ...p, [batchId]: true }));
+    try {
+      await startBatch(batchId, items);
+      setLastAction('Cooking Started ⚡');
+      setTimeout(() => setLastAction(null), 2000);
+    } catch {
+      setOptimisticStatus(p => { const n = { ...p }; delete n[batchId]; return n; });
+    } finally {
+      setProcessingMap(p => ({ ...p, [batchId]: false }));
+    }
   };
 
-  return (
-    <div className="flex-1 overflow-auto bg-slate-50 p-6 lg:p-10 font-sans">
-      
-      {/* 🟢 TOP BAR / STATUS */}
-      <div className="flex items-center justify-between mb-12">
-         <div className="flex items-center gap-6">
-            <div className="bg-slate-900 p-4 rounded-[1.5rem] shadow-2xl">
-               <Flame className="w-8 h-8 text-amber-500" />
-            </div>
-            <div>
-               <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">Pro-Production</h2>
-               <div className="flex items-center gap-2 mt-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Real-time Sync Active</span>
-               </div>
-            </div>
-         </div>
-         
-         {activeBatchSlot && (
-            <div className="bg-white px-8 py-5 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col items-end">
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Active Slot</span>
-               <span className="text-3xl font-black text-slate-900 font-mono tracking-tighter">{formatSlot(activeBatchSlot)}</span>
-            </div>
-         )}
-      </div>
+  const handleFinalize = async (batchId: string, items: any[]) => {
+    if (processingMap[batchId]) return;
+    setOptimisticStatus(p => ({ ...p, [batchId]: 'READY' }));
+    setProcessingMap(p => ({ ...p, [batchId]: true }));
+    try {
+      await finalizeBatch(batchId, items);
+      setLastAction('Ready for Service ✓');
+      setTimeout(() => setLastAction(null), 2000);
+    } catch {
+      setOptimisticStatus(p => { const n = { ...p }; delete n[batchId]; return n; });
+    } finally {
+      setProcessingMap(p => ({ ...p, [batchId]: false }));
+    }
+  };
 
-      <div className="mb-16">
-        {activeBatchItems.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {activeBatchItems.map((batch) => (
-              <BatchItemCard 
-                key={batch.id} 
-                batch={batch} 
-                isOptimisticPreparing={optimisticPreparingIds.has(batch.id)}
-                optimisticPushedQty={optimisticPushes[batch.id] || 0}
-                setOptimisticPrep={(id) => setOptimisticPreparingIds(prev => new Set(prev).add(id))}
-                registerPush={registerPush}
-              />
+  // ── EMPTY STATE ────────────────────────────────────────────────────────────
+  if (sorted.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] relative">
+        <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={!indexReady} />
+        <div className="flex-1 flex flex-col items-center justify-center text-center p-20 select-none">
+          <div className="w-32 h-32 rounded-[3rem] bg-white/5 border-4 border-white/10 flex items-center justify-center mb-8">
+            <Sparkles className="w-12 h-12 text-white/20" />
+          </div>
+          <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter mb-3">Pipeline Clear</h2>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">
+            {!indexReady ? '⚠️ Fallback sync active — waiting for orders...' : 'Waiting for kitchen manifests...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN LAYOUT ────────────────────────────────────────────────────────────
+  return (
+    <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] overflow-hidden relative">
+      <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[100px] rounded-full pointer-events-none" />
+
+      {lastAction && (
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-emerald-500 text-white px-8 py-3 rounded-3xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-emerald-500/20 flex items-center gap-3">
+            <Zap className="w-4 h-4 fill-current" />{lastAction}
+          </div>
+        </div>
+      )}
+
+      <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={!indexReady} />
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* ── SIDEBAR QUEUE ───────────────────────────────────────────── */}
+        <div className="w-80 border-r border-white/5 flex flex-col bg-white/[0.01]">
+          <div className="p-6 border-b border-white/5">
+            <h2 className="text-white font-black uppercase italic tracking-tight text-lg">Active Queue</h2>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">{sorted.length} units</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {sorted.map((b, i) => (
+              <div
+                key={b.id}
+                className={`p-5 rounded-[1.5rem] border transition-all ${i === 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/[0.02] border-white/5 opacity-40'}`}
+              >
+                <div className="flex items-center justify-between mb-3 text-[9px] font-black uppercase tracking-widest">
+                  <span className={b.status === 'PREPARING' ? 'text-emerald-400' : 'text-white/40'}>{b.status}</span>
+                  <span className="text-white/20">{b.stationId}</span>
+                </div>
+                <h3 className="text-white font-bold text-base">
+                  {b.items?.[0]?.name}
+                  {b.items?.length > 1 ? ` +${b.items.length - 1}` : ''}
+                </h3>
+              </div>
             ))}
           </div>
-        ) : (
-          <div className="py-32 text-center bg-white rounded-[4rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
-             <ChefHat className="w-24 h-24 text-slate-100 mb-6" />
-             <p className="text-3xl font-black text-slate-900">Queue Satisfied</p>
-             <p className="text-slate-400 font-black uppercase tracking-[0.4em] text-[10px] mt-2">All slots up to date</p>
-          </div>
-        )}
-      </div>
+        </div>
 
-      {/* ── Production Pipeline (Upcoming) ── */}
-      <div>
-         <div className="flex items-center gap-4 mb-8">
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-               <Clock className="w-6 h-6 text-slate-400" />
+        {/* ── MAIN PAN ────────────────────────────────────────────────── */}
+        <div className="flex-1 p-10 overflow-y-auto">
+          {focus && (
+            <div className="max-w-3xl mx-auto">
+              <div className="flex items-center justify-between mb-10">
+                <div>
+                  <span className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[10px] mb-1 block">{focus.stationId} STATION</span>
+                  <h1 className="text-5xl font-black text-white uppercase italic tracking-tighter">Kitchen Batch</h1>
+                </div>
+                <span className="text-3xl font-black text-white/10 font-mono">#{focus.id.slice(-4).toUpperCase()}</span>
+              </div>
+
+              <div className="bg-white/[0.03] border border-white/5 rounded-[3rem] p-10">
+                <div className="space-y-4 mb-10">
+                  {focus.items.map((it: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
+                      <h4 className="text-xl font-bold text-white">{it.name}</h4>
+                      <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest">#{it.orderId?.slice(-4).toUpperCase()}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {focus.status === 'QUEUED' ? (
+                  <button
+                    onClick={() => handleStart(focus.id, focus.items)}
+                    disabled={!!processingMap[focus.id]}
+                    className="w-full h-20 bg-white text-black rounded-[1.5rem] font-black text-lg uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    <Zap className="w-7 h-7 fill-current" /> Start Cooking
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleFinalize(focus.id, focus.items)}
+                    disabled={!!processingMap[focus.id]}
+                    className="w-full h-20 bg-emerald-500 text-white rounded-[1.5rem] font-black text-lg uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20 disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-7 h-7" /> Finalize Batch
+                  </button>
+                )}
+              </div>
             </div>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Upcoming Pipeline</h2>
-         </div>
-
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 opacity-40">
-            {batches
-              .filter(b => b.arrivalTimeSlot !== activeBatchSlot && ['QUEUED', 'PREPARING'].includes(b.status))
-              .sort((a,b) => a.arrivalTimeSlot - b.arrivalTimeSlot)
-              .slice(0, 10) // Limit display
-              .map(batch => (
-                <BatchItemCard 
-                   key={batch.id} 
-                   batch={batch}
-                   isOptimisticPreparing={optimisticPreparingIds.has(batch.id)}
-                   optimisticPushedQty={optimisticPushes[batch.id] || 0}
-                   setOptimisticPrep={(id) => setOptimisticPreparingIds(prev => new Set(prev).add(id))}
-                   registerPush={registerPush}
-                />
-              ))
-            }
-         </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
+
+// ── SHARED STATION BAR ─────────────────────────────────────────────────────
+const StationBar = ({
+  stations, active, setActive, fallback,
+}: { stations: string[]; active: string; setActive: (s: string) => void; fallback: boolean }) => (
+  <div className="h-16 border-b border-white/5 flex items-center px-6 gap-3 bg-white/[0.01] shrink-0 overflow-x-auto no-scrollbar">
+    <Filter className="w-4 h-4 text-slate-500 shrink-0" />
+    {Array.from(new Set(stations)).map(s => (
+      <button
+        key={s}
+        onClick={() => setActive(s)}
+        className={`px-5 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${active === s ? 'bg-white text-black' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}
+      >
+        {s.replace('_', ' ')}
+      </button>
+    ))}
+    <div className="ml-auto flex items-center gap-2 shrink-0">
+      <span className={`w-2 h-2 rounded-full ${fallback ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
+      <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">{fallback ? 'Fallback Sync' : 'WebSocket Live'}</span>
+    </div>
+  </div>
+);
 
 export default CookConsoleWorkspace;

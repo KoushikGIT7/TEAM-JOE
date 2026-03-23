@@ -239,20 +239,25 @@ export type PrepBatchStatus = 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' 
 
 export interface PrepBatch {
   id: string;
-  itemId: string;
-  itemName: string;
-  quantity: number;
-  orderIds: string[];
-  /** Slot representation: e.g. 1100, 1115, 1130... */
-  arrivalTimeSlot: number;
+  /** 🍱 [STATION-AFFINITY] Maps this production unit to a kitchen workstation */
+  stationId?: string;
+  /** 🍳 [ELITE-UPGRADE] Multi-item variety mix for the Pan */
+  items: {
+    orderId: string;
+    itemId: string;
+    name: string;
+    userName?: string;
+  }[];
   status: PrepBatchStatus;
-  isRequeued?: boolean;
-  /** 🍳 [SONIC-JIT] Tracking students physically present */
-  arrivedCount?: number;
-  arrivedOrderIds?: string[];
   readyAt?: number;
   createdAt: number;
   updatedAt: number;
+  /** Legacy fields for broad compatibility */
+  itemId?: string;
+  itemName?: string;
+  quantity?: number;
+  orderIds?: string[];
+  arrivalTimeSlot?: number;
 }
 
 export interface SystemMaintenance {

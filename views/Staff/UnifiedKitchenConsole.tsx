@@ -1,44 +1,18 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  CheckCircle, 
-  ChevronRight, 
-  Clock, 
-  AlertTriangle, 
-  ShieldAlert, 
-  Zap, 
-  Send, 
-  Sparkles, 
-  Search, 
-  ChevronLeft, 
-  CheckCircle2, 
-  ClipboardList,
-  ShieldCheck,
-  LayoutDashboard,
-  LogOut,
-  X,
-  Flame
+  CheckCircle, ChevronRight, Clock, AlertTriangle, ShieldAlert, Zap, 
+  Send, Sparkles, Search, ChevronLeft, CheckCircle2, ClipboardList,
+  ShieldCheck, LayoutDashboard, LogOut, X, Flame
 } from 'lucide-react';
-import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { onSnapshot, query, collectionGroup, where, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { PrepBatch, Order, UserProfile, OrderStatus } from '../../types';
+import { UserProfile } from '../../types';
 import { 
-  listenToBatches, 
-  listenToActiveOrders, 
-  startBatchPreparation, 
-  markBatchAlmostReady,
-  markBatchReady,
-  serveItemBatch,
-  serveOrderItemsAtomic,
-  forceReadyOrder,
-  validateQRForServing,
-  broadcastSystemMessage,
   processAtomicIntake,
-  flushMissedPickups,
-  serveFullOrder,
-  abandonItem
+  runBatchGenerator,
+  runKitchenWatchdog
 } from '../../services/firestore-db';
-import { parseQRPayload, parseServingQR } from '../../services/qr';
-import { initializeScanner } from '../../services/scanner';
+import { parseServingQR } from '../../services/qr';
 import CookConsoleWorkspace from './CookConsoleWorkspace';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
 import QRScanner from '../../components/QRScanner';
@@ -60,16 +34,16 @@ interface UnifiedHeaderProps {
 
 const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack, currentTime, activeWorkspace, setActiveWorkspace }) => {
   return (
-    <header className="bg-white px-8 h-20 flex items-center justify-between border-b border-slate-200 shrink-0 shadow-sm z-30">
-      <div className="flex items-center gap-6">
-         <div className="bg-slate-900 px-5 py-2 rounded-lg">
-            <span className="text-white font-bold text-lg tracking-tight uppercase">JOE CAFE</span>
+    <header className="bg-white px-4 lg:px-8 py-3 lg:h-20 flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-200 shrink-0 shadow-sm z-30 gap-4 lg:gap-0">
+      <div className="flex items-center justify-between w-full lg:w-auto lg:justify-start gap-4 lg:gap-6">
+         <div className="bg-slate-900 px-3 py-1.5 lg:px-5 lg:py-2 rounded-lg">
+            <span className="text-white font-bold text-sm lg:text-lg tracking-tight uppercase">JOE CAFE</span>
          </div>
          
-         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full lg:w-auto overflow-x-auto custom-scrollbar flex-nowrap">
             <button 
               onClick={() => setActiveWorkspace('COOK')}
-              className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all ${
+              className={`px-4 lg:px-8 h-10 lg:h-12 rounded-full font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
                 activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -77,7 +51,7 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
             </button>
             <button 
               onClick={() => setActiveWorkspace('SERVER')}
-              className={`px-8 h-12 rounded-full font-black text-xs uppercase tracking-widest transition-all ${
+              className={`px-4 lg:px-8 h-10 lg:h-12 rounded-full font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
                 activeWorkspace === 'SERVER' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -86,31 +60,31 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
          </div>
       </div>
 
-      <div className="flex items-center gap-8">
-         <div className="text-right flex flex-col items-end">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Live Ops Time</span>
-            <span className="text-2xl font-black text-slate-900 font-mono tracking-tighter leading-none">
+      <div className="flex items-center justify-between lg:justify-end w-full lg:w-auto gap-4 lg:gap-8 overflow-x-auto flex-nowrap pb-1 lg:pb-0">
+         <div className="text-right flex flex-col items-start lg:items-end">
+            <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Live Ops</span>
+            <span className="text-lg lg:text-2xl font-black text-slate-900 font-mono tracking-tighter leading-none whitespace-nowrap">
                {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
          </div>
          
-         <div className="h-10 w-[1px] bg-slate-200" />
+         <div className="h-8 lg:h-10 w-[1px] bg-slate-200 shrink-0" />
 
-         <div className="flex items-center gap-4">
+         <div className="flex items-center gap-2 lg:gap-4 shrink-0">
             {profile.role === 'ADMIN' && onBack && (
               <button 
                 onClick={onBack}
-                className="px-4 h-11 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-bold text-xs uppercase hover:bg-slate-100 transition-all flex items-center gap-2"
+                className="px-3 lg:px-4 h-10 lg:h-11 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-bold text-[10px] lg:text-xs uppercase hover:bg-slate-100 transition-all flex items-center gap-1.5 lg:gap-2 whitespace-nowrap"
               >
-                <LayoutDashboard className="w-4 h-4" />
-                Dashboard
+                <LayoutDashboard className="w-3 h-3 lg:w-4 lg:h-4" />
+                <span className="hidden sm:inline">Dashboard</span>
               </button>
             )}
-            <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold shadow-lg">
+            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold shadow-lg">
                {profile.name?.charAt(0) || 'S'}
             </div>
-            <button onClick={onLogout} className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all">
-              <LogOut className="w-5 h-5" />
+            <button onClick={onLogout} className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all">
+              <LogOut className="w-4 h-4 lg:w-5 lg:h-5" />
             </button>
          </div>
       </div>
@@ -119,14 +93,12 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
 };
 
 const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
-  const [batches, setBatches] = useState<PrepBatch[]>([]);
-  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MARKETING'>('COOK');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [optimisticOrders, setOptimisticOrders] = useState<Record<string, Order>>({});
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [localScanBuffer, setLocalScanBuffer] = useState<string[]>([]);
+  
+  // scanQueue drives the entire Server Manifest loop now
+  const [scanQueue, setScanQueue] = useState<string[]>([]);
 
   const [sonicMode, setSonicMode] = useState<{
     status: 'SUCCESS' | 'ERROR' | 'IDLE';
@@ -148,7 +120,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           if (prev.status === 'IDLE') return prev;
           return { ...prev, status: 'IDLE' };
        });
-    }, 1200);
+    }, 800);
   };
 
   const scanLockRef = useRef(false);
@@ -156,23 +128,26 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   useEffect(() => {
     const maintenanceLoop = setInterval(async () => {
       setCurrentTime(new Date());
-      await flushMissedPickups(); 
-    }, 15000); 
+      await runKitchenWatchdog();
+      // ⚡ [BACKUP-HEARTBEAT] Only pulse generator if the real-time trigger didn't hit recently
+      await runBatchGenerator(profile.uid);
+    }, 15000); // Relaxed to 15s interval as the real-time snapshot is primary
 
-    const unsubBatches = listenToBatches(setBatches);
-    const unsubOrders = listenToActiveOrders(setActiveOrders);
+    // ⚡ [REAL-TIME-GENERATOR] Widened aperture for rush-tsunami handling
+    const unsubGenerator = onSnapshot(
+       query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(50)),
+       () => runBatchGenerator(profile.uid)
+    );
 
     return () => {
       clearInterval(maintenanceLoop);
-      unsubBatches();
-      unsubOrders();
+      if (unsubGenerator) unsubGenerator();
     };
-  }, []);
+  }, [profile.uid]);
 
-  const handleQRScan = async (rawData: string) => {
+  const handleQRScan = useCallback(async (rawData: string) => {
     if (!rawData?.trim() || scanLockRef.current) return;
     
-    // 🛑 [HARDWARE-GATE] Lockdown immediately 
     scanLockRef.current = true;
     setIsCameraOpen(false); 
     
@@ -183,52 +158,32 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         return;
     }
 
-    // 🏎️ [OPTIMISTIC-VERIFY] Instant feedback before backend
     triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
 
     try {
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
         
-        if (result as any === 'ALREADY_MANIFESTED' || result as any === 'ALREADY_CONSUMED') {
-            return;
-        }
-
-        setOptimisticOrders(prev => ({ ...prev, [order.id]: order }));
-        
-        if (result === 'AWAITING_PAYMENT') {
-           triggerSonicPulse('SUCCESS', 'UNPAID TOKEN', 'Please direct student to cashier.');
+        if (result === 'ALREADY_MANIFESTED') {
+            setScanQueue(prev => Array.from(new Set([...prev, order.id])));
+            triggerSonicPulse('SUCCESS', 'TOKEN ACTIVE ✅', 'Order already on manifest');
         } else if (result === 'CONSUMED') {
-           triggerSonicPulse('SUCCESS', 'VERIFIED ✅', 'COLLECT YOUR MEAL');
-           setLocalScanBuffer(prev => Array.from(new Set([...prev, order.id])));
+            triggerSonicPulse('SUCCESS', 'ORDER COMPLETE ✅', 'ALL ITEMS AUTO-SERVED');
         } else if (result === 'MANIFESTED') {
-           triggerSonicPulse('SUCCESS', 'CONFIRMED ✅', 'MANIFEST CREATED IN KITCHEN');
+            setScanQueue(prev => Array.from(new Set([...prev, order.id])));
+            triggerSonicPulse('SUCCESS', 'MANIFEST LIVE ✅', 'ITEMS LOADED ON SCREEN');
+        } else if (result === 'AWAITING_PAYMENT') {
+            triggerSonicPulse('ERROR', 'UNPAID ORDER', 'Direct student to cashier');
         }
     } catch (err: any) {
-        triggerSonicPulse('ERROR', 'SCAN ERROR', (err?.message || 'Transaction failed').toUpperCase());
+        if (err.message === 'ALREADY_CONSUMED') {
+            triggerSonicPulse('ERROR', 'ALREADY USED', 'QR code already consumed');
+        } else {
+            triggerSonicPulse('ERROR', 'SCAN ERROR', (err?.message || 'Transaction failed').toUpperCase());
+        }
     } finally {
-        setTimeout(() => { scanLockRef.current = false; }, 1000);
+        setTimeout(() => { scanLockRef.current = false; }, 800);
     }
-  };
-
-  const handleServeItem = async (orderId: string, itemId: string, qty: number) => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-    try {
-      await serveItemBatch(orderId, itemId, qty, profile.uid);
-      triggerSonicPulse('SUCCESS', 'ITEM SERVED ✅', 'Confirmation Recorded.');
-    } catch (err: any) {
-      console.error("Manual serve failed:", err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const scanQueue = useMemo(() => {
-    const list = activeOrders
-      .filter(o => (o.qrState === 'SCANNED' || localScanBuffer.includes(o.id)) && o.orderStatus !== 'COMPLETED' && o.orderStatus !== 'SERVED')
-      .map(o => o.id);
-    return Array.from(new Set([...localScanBuffer, ...list]));
-  }, [activeOrders, localScanBuffer]);
+  }, [profile.uid]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans select-none">
@@ -243,17 +198,12 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         />
         
         <main className="flex-1 overflow-hidden relative">
-          {activeWorkspace === 'COOK' && <CookConsoleWorkspace batches={batches} />}
+          {activeWorkspace === 'COOK' && <CookConsoleWorkspace initialStationId="ALL" />}
           {activeWorkspace === 'SERVER' && (
              <ServerConsoleWorkspace 
-                activeOrders={activeOrders}
                 scanQueue={scanQueue}
-                setScanQueue={setLocalScanBuffer}
-                isCameraOpen={isCameraOpen}
+                setScanQueue={setScanQueue}
                 setIsCameraOpen={setIsCameraOpen}
-                handleQRScan={handleQRScan}
-                handleServeItem={handleServeItem}
-                isProcessing={isProcessing}
              />
           )}
 
@@ -271,9 +221,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
 
           {isCameraOpen && (
             <QRScanner
-              onScan={(data) => { 
-                 handleQRScan(data);
-              }}
+              onScan={handleQRScan}
               onClose={() => setIsCameraOpen(false)}
             />
           )}

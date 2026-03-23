@@ -9,6 +9,13 @@ export const useOneSignal = (userId: string | null) => {
     useEffect(() => {
         if (!userId) return;
 
+        // 🛡️ [DOMAIN-GUARD] Skip SDK Handshake on non-production domains (Localhost/Vite-Internal)
+        const isProd = window.location.hostname === 'joecafebrand.netlify.app';
+        if (!isProd) {
+            console.log('🛡️ [ONESIGNAL-SKIP] Dev mode / domain mismatch. Messaging silenced.');
+            return;
+        }
+
         const oneSignalDeferred = (window as any).OneSignalDeferred;
         
         if (oneSignalDeferred) {

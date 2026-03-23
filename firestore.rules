@@ -7,25 +7,31 @@ service cloud.firestore {
     }
 
     function getRawRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
     function isStaff() {
-      return isAuthenticated() && (
-        getRawRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK', 'admin', 'server', 'cashier', 'cook']
-      );
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             (getRawRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK', 'admin', 'server', 'cashier', 'cook']);
     }
 
     function isAdmin() {
-      return isAuthenticated() && (getRawRole() == 'ADMIN' || getRawRole() == 'admin');
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             (getRawRole() in ['ADMIN', 'admin']);
     }
 
     function isCashier() {
-      return isAuthenticated() && (getRawRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier']);
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             (getRawRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier']);
     }
 
     function isServer() {
-      return isAuthenticated() && (getRawRole() in ['ADMIN', 'SERVER', 'admin', 'server']);
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             (getRawRole() in ['ADMIN', 'SERVER', 'admin', 'server']);
     }
 
     match /menu/{itemId} {
@@ -50,11 +56,7 @@ service cloud.firestore {
 
       allow update: if (isStaff()) 
           || (isAuthenticated() && request.auth.uid == resource.data.userId)
-          || (resource.data.userId is string && resource.data.userId.matches('guest_.*') && 
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                'utr', 'utrSubmittedAt', 'paymentStatus', 'arrivalSignal', 'arrivalSignalAt', 'updatedAt'
-              ])
-             );
+          || (resource.data.userId is string && resource.data.userId.matches('guest_.*'));
 
       allow delete: if isAdmin();
       
@@ -122,6 +124,25 @@ service cloud.firestore {
     }
 
     match /system_messages/{msgId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /system_locks/{lockId} {
+      allow read, write: if isStaff();
+    }
+
+    match /system_status/{docId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /system_settings/{docId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    
+    match /{path=**}/items/{itemId} {
       allow read: if true;
       allow write: if isStaff();
     }
