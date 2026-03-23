@@ -17,6 +17,7 @@ import { onSnapshot, collection, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import Logo from '../../components/Logo';
 import { joeSounds } from '../../utils/audio';
+import { syncOneSignal } from '../../services/onesignal-push';
 
 interface HomeViewProps {
   profile: UserProfile | null;
@@ -54,10 +55,13 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     }
 
     // 📣 [SONIC-HANDSHAKE] Instant UI sync for custom event
-    const handleGranted = () => setNotifSubscribed(true);
+    const handleGranted = () => {
+      setNotifSubscribed(true);
+      syncOneSignal(profile?.uid || null);
+    };
     window.addEventListener('joe_notif_granted', handleGranted);
     return () => window.removeEventListener('joe_notif_granted', handleGranted);
-  }, []);
+  }, [profile?.uid]);
 
   // 🔔 [BELL-RING] Auto-ring bell every 8s to attract attention
   useEffect(() => {

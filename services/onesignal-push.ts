@@ -1,10 +1,18 @@
 import { useEffect } from 'react';
 
 /**
- * 📣 [ONESIGNAL-ENGINE] Identity Handshake Service
- * Syncs the student profile with the background messaging system tray.
- * Hardened to prevent v16 'LoginManager' initialization race conditions.
+ * 🎯 [SONIC-SYNC] Synchronize ID immediately on demand
  */
+export const syncOneSignal = (userId: string | null) => {
+    if (!userId) return;
+    const oneSignal = (window as any).OneSignal;
+    if (oneSignal && oneSignal.User) {
+        oneSignal.login(userId);
+        oneSignal.User.addTag('role', 'STUDENT');
+        console.log('⚡ [SONIC-ONESIGNAL] Instant Handshake strike:', userId);
+    }
+};
+
 export const useOneSignal = (userId: string | null) => {
     useEffect(() => {
         if (!userId) return;
