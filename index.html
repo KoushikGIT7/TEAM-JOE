@@ -20,6 +20,9 @@
         try {
           const permission = await OneSignal.Notifications.requestPermission();
           console.log('[JOE] Notification permission:', permission);
+          if (permission === 'granted') {
+            window.dispatchEvent(new CustomEvent('joe_notif_granted'));
+          }
         } catch(e) {
           console.warn('[JOE] Permission request failed:', e);
         }
