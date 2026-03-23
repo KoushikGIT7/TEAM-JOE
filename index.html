@@ -52,18 +52,64 @@
       });
     };
 
+    // 🏁 [GLOBAL-IDENTITY-STATE] Cache UID if SDK isn't ready yet
+    window.pendingJoeSyncUserId = null;
+
+    window.joeSyncUser = function(userId) {
+      if (!userId) return;
+      
+      const os = window.OneSignal;
+      if (!os || !os.initialized) {
+        console.log('[JOE] OneSignal hydration pending. Caching UID:', userId);
+        window.pendingJoeSyncUserId = userId;
+        return;
+      }
+
+      window.OneSignalDeferred.push(async function() {
+        try {
+          // Extra safety buffer for internal Manager hydration
+          await new Promise(r => setTimeout(r, 800));
+          await os.login(userId);
+          await os.User.addTag('role', 'STUDENT');
+          console.log('[JOE] Identitystrike success:', userId);
+          window.pendingJoeSyncUserId = null;
+        } catch (e) {
+          console.error('[JOE] identity Sync Crush:', e);
+        }
+      });
+    };
+
     OneSignalDeferred.push(async function(OneSignal) {
+      // 🛡️ [DOMAIN-SHIELD] Prevent fatal SDK crashes on unauthorized staging/local domains
+      const isTestDomain = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const isProdDomain = window.location.hostname.includes('joecafebrand.netlify.app');
+      
+      if (!isTestDomain && !isProdDomain) {
+         console.warn('🚧 [ONESIGNAL-SHIELD] Current domain is not authorized in OneSignal Dashboard. SDK initialization silenced to prevent crash.');
+         return;
+      }
+
       try {
         await OneSignal.init({
           appId: "c7140793-2586-4d5c-9f38-b6fb98815c3b",
           safari_web_id: "web.onesignal.auto.61cc1b76-79db-483e-a0b9-263210abb193",
-          serviceWorkerPath: '/OneSignalSDKWorker.js', // Absolute path for service worker
+          serviceWorkerPath: '/OneSignalSDK.sw.js', 
           notifyButton: { enable: false },
           allowLocalhostAsSecureOrigin: true
         });
         console.log('✅ [ONESIGNAL] Industrial Engine Ready.');
+        
+        if (window.pendingJoeSyncUserId) {
+          console.log('[JOE] Found pending student identity. Resolving now...');
+          window.joeSyncUser(window.pendingJoeSyncUserId);
+        }
       } catch (err) {
-        console.warn('⚠️ [ONESIGNAL] Early Init Failure:', err);
+        // Specifically catch the domain error to prevent global uncaught exceptions
+        if (err.message && err.message.includes('netlify.app')) {
+           console.warn('🛡️ [ONESIGNAL] Initialized failed (Domain Restricted). If you are testing locally, ensure "Localhost" is allowed in OneSignal Web Configuration.');
+        } else {
+           console.warn('⚠️ [ONESIGNAL-INITIALIZATION-FAIL]:', err);
+        }
       }
     });
   </script>
