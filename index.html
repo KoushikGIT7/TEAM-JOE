@@ -16,6 +16,13 @@
     
     // 🔥 [GLOBAL-SUBSCRIBE] Clean entry point called by the 'Big Deals' button
     window.joeSubscribe = function() {
+      console.log('🔔 [CLICK-DETECTION] Notification Bell tapped.');
+      
+      if (!window.OneSignalDeferred) {
+         console.warn('⚠️ [ONESIGNAL-MISSING] SDK script failed to load from CDN. Handshake impossible.');
+         return;
+      }
+
       if (!window.isSecureContext && window.location.hostname !== 'localhost') {
         console.error('🛑 Critical: OneSignal REQUIRES HTTPS (Secure Context) or Localhost to function at the browser level.');
         alert("Notification Engine blocked. You are running on an insecure connection (HTTP). OneSignal requires HTTPS.");

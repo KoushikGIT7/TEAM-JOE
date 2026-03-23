@@ -445,7 +445,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       </aside>
 
       {/* Main Home Header */}
-      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-40 p-4 shadow-sm border-b border-black/5">
+      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-4 shadow-sm border-b border-black/5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <button 
