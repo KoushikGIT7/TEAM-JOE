@@ -126,21 +126,18 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   const scanLockRef = useRef(false);
 
   useEffect(() => {
-    const maintenanceLoop = setInterval(async () => {
+    const clockInterval = setInterval(() => {
       setCurrentTime(new Date());
-      await runKitchenWatchdog();
-      // ⚡ [BACKUP-HEARTBEAT] Only pulse generator if the real-time trigger didn't hit recently
-      await runBatchGenerator(profile.uid);
-    }, 15000); // Relaxed to 15s interval as the real-time snapshot is primary
+    }, 1000);
 
-    // ⚡ [REAL-TIME-GENERATOR] Widened aperture for rush-tsunami handling
+    // ⚡ [REAL-TIME-GENERATOR] Triggered by data changes, no polling needed for instant response
     const unsubGenerator = onSnapshot(
        query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(50)),
        () => runBatchGenerator(profile.uid)
     );
 
     return () => {
-      clearInterval(maintenanceLoop);
+      clearInterval(clockInterval);
       if (unsubGenerator) unsubGenerator();
     };
   }, [profile.uid]);

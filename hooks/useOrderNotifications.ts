@@ -80,7 +80,7 @@ export const useOrderNotifications = (userId: string | null) => {
                         if (!sessionDedupeRef.current.has(dedupeKey)) {
                             sessionDedupeRef.current.add(dedupeKey);
                             joeSounds.playFoodReady(); 
-                            sonicVoice.announceMealReady(data.userName);
+                            sonicVoice.announceMealReady();
                             triggerLocalNotification(
                                 '🍽️ Order Ready!',
                                 `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
@@ -125,7 +125,7 @@ export const useOrderNotifications = (userId: string | null) => {
                                 if (!sessionDedupeRef.current.has(dKey)) {
                                     sessionDedupeRef.current.add(dKey);
                                     joeSounds.playFoodReady(); 
-                                    sonicVoice.announceMealReady(freshData.userName);
+                                    sonicVoice.announceMealReady();
                                     triggerLocalNotification(
                                         '🍽️ Order Ready!',
                                         `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`

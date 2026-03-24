@@ -9,6 +9,7 @@ import { UserProfile } from './types';
 import { Bell, X } from 'lucide-react';
 import { joeSounds } from './utils/audio';
 import { useOneSignal } from './services/onesignal-push';
+import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -45,6 +46,9 @@ const App: React.FC = () => {
   const profile = authProfile || guestProfile;
   const { latestPulse, clearPulse } = useMarketingPulses(profile?.role || null);
   const [isInitializingGuest, setIsInitializingGuest] = useState(true);
+
+  // 🛠️ [SYSTEM-STABILITY] Background Maintenance (Leaders only)
+  useMaintenanceWorker(profile?.uid || null, profile?.role || null);
 
   // 📣 [ONESIGNAL-HANDSHAKE] Automated enrollment once identity is established
   useOneSignal(profile?.uid || null);

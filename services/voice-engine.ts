@@ -46,14 +46,13 @@ class VoiceEngine {
   }
 
   /** 🍔 Meal Ready Broadcast */
-  public announceMealReady(userName: string = 'User') {
-    const formattedName = userName.split(' ')[0]; // Just use first name
-    this.speak(`Joe! ${formattedName}, your meal is ready! Please collect at the counter.`, 'HIGH');
+  public announceMealReady() {
+    this.speak(`Meal ready! Counter.`, 'HIGH');
   }
 
   /** ✅ Order Completed Broadcast */
   public announceOrderComplete() {
-    this.speak(`Order complete. Thank you, boss!`, 'NORMAL');
+    this.speak(`Order done. Thanks!`, 'NORMAL');
   }
 }
 

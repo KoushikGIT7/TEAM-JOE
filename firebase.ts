@@ -1,7 +1,7 @@
 // Firebase Configuration
 import { initializeApp, getApps, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
-import { initializeFirestore, Firestore, memoryLocalCache } from "firebase/firestore";
+import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 // Firebase configuration - load from environment variables or use defaults
 const firebaseConfig = {
@@ -27,27 +27,12 @@ export const auth: Auth = getAuth(app);
 import { getMessaging, Messaging } from "firebase/messaging";
 export const messaging: Messaging = getMessaging(app);
 
-// Initialize Firestore with memoryLocalCache.
-//
-// WHY NOT persistentLocalCache?
-// persistentLocalCache() uses IndexedDB which triggers a known Firebase SDK
-// internal assertion error (ID: ca9 / b815, ve=-1) when:
-//   - The IndexedDB watch-stream target state gets corrupted
-//   - Multiple browser tabs are open simultaneously
-//   - Network conditions cause the watch stream to reset unexpectedly
-//
-// memoryLocalCache is stable, does not use IndexedDB, has no multi-tab
-// conflicts, and still provides full real-time onSnapshot support.
-// Offline persistence is not critical for a cafeteria ordering system.
-//
-// experimentalForceLongPolling: true — improves reliability on college/
-// corporate WiFi networks that block WebSocket upgrades (HTTP polling fallback).
+// Initialize Firestore with persistentLocalCache to satisfy production hardening (Task 5).
+// Enables offline action queuing and data persistence during network drops.
 let db: Firestore;
 db = initializeFirestore(app, {
-  localCache: memoryLocalCache(),
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   // ✅ Auto-detect: uses WebSocket by default, falls back to long-poll only on restricted networks
-  // experimentalForceLongPolling was removed — it forced HTTP polling which caused multi-second
-  // onSnapshot delays, making the Cook Console appear to never receive batch updates.
   experimentalAutoDetectLongPolling: true,
 });
 console.log("🔥 [FIRESTORE] Initialized with AutoDetectLongPolling (WebSocket preferred)");

@@ -119,7 +119,7 @@ class SoundService {
       this.tone(783.99, now + 0.20, 0.18, 0.16, 'sine');  // G5
       this.tone(1046.5, now + 0.32, 0.55, 0.13, 'sine');  // C6 — high bright finish
       // Subtle "JOE" brand voice overlay
-      setTimeout(() => this.say('JOE: Confirmed', 0.85, 1.1, 0.9), 100);
+      setTimeout(() => this.say('Confirmed', 0.85, 1.1, 0.9), 100);
     } catch (e) {
       console.warn('[JOE Audio] Confirmed sound blocked:', e);
     }
@@ -139,7 +139,7 @@ class SoundService {
       this.tone(1174.66, now + 0.18, 0.65, 0.16, 'sine'); // D6 — bright ring-out
       // Harmonic shimmer underneath
       this.tone(587.33, now,        0.80, 0.07, 'sine');  // D5 — soft body
-      setTimeout(() => this.say('Ready!', 1.0, 1.2, 0.9), 200);
+      setTimeout(() => this.say('Ready', 1.0, 1.2, 0.9), 200);
     } catch (e) {
       console.warn('[JOE Audio] Food ready sound blocked:', e);
     }

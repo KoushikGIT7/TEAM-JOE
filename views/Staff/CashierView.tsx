@@ -67,7 +67,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
               // 📝 Notification Card
               if ('Notification' in window && Notification.permission === 'granted') {
                  new Notification('💸 UTR RECEIVED: ' + finalUtr, {
-                    body: `${order.userName} submitted a ₹${order.totalAmount} payment for verification.`,
+                    body: `UTR received. Verify.`,
                     icon: '/JeoLogoFinal.png',
                     requireInteraction: true
                  });
@@ -91,19 +91,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       }),
     ];
 
-    // 🕵️ [SENTINEL-WATCHDOG] Periodically cleanup missed pickups every 30s
-    // Ensures food is recycled into next batches even if no one is manually triggering.
-    const sentinelId = setInterval(async () => {
-       console.log('🕵️ [SENTINEL] Patrolling for missed pickups...');
-       const count = await flushMissedPickups('WATCHDOG');
-       if (count > 0) {
-          console.log(`⚡ [SENTINEL] Recycled ${count} missed orders.`);
-       }
-    }, 30000);
-
     return () => { 
         unsubs.forEach(fn => fn()); 
-        clearInterval(sentinelId);
     };
   }, []);
 
@@ -549,6 +538,152 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     </div>
   );
 
+  // --- 📱 MOBILE SPECIFIC VIEW RENDERERS ---
+
+  const renderMobileRequests = () => (
+    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+       <div className="flex items-center justify-between mb-4 px-1">
+          <h2 className="text-base font-black uppercase italic text-slate-900">Verification Queue</h2>
+          <span className="bg-amber-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-amber-500/20">{pendingOrders.length} Pending</span>
+       </div>
+       
+       <div className="space-y-3">
+          {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).map(order => {
+             const hasConflict = conflictMap[order.totalAmount] > 1;
+             const isUtrSubmitted = order.paymentStatus === 'UTR_SUBMITTED';
+
+             return (
+               <div key={order.id} className={`bg-white rounded-2xl p-4 border transition-all duration-300 ${
+                 hasConflict ? 'border-amber-200 shadow-lg shadow-amber-500/5' : 
+                 isUtrSubmitted ? 'border-indigo-200 shadow-lg shadow-indigo-500/5' : 'border-slate-100'
+               }`}>
+                  {/* Card Header: Student Name & Time */}
+                  <div className="flex justify-between items-start mb-3">
+                     <div className="min-w-0 pr-2">
+                        <h3 className="text-[15px] font-black text-slate-900 truncate leading-tight">{order.userName}</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatTime(order.createdAt)} • #{order.id.slice(-4).toUpperCase()}</p>
+                     </div>
+                     <div className="text-right shrink-0">
+                        <p className="text-xl font-black text-slate-900 leading-none">₹{order.totalAmount}</p>
+                        {isUtrSubmitted && <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest mt-1 block">UTR SENT</span>}
+                     </div>
+                  </div>
+
+                  {/* UTR Highlights (Gen-Z Minimalist) */}
+                  {(order.utrLast4 || order.utr) && (
+                     <div className="bg-slate-900 rounded-xl p-3 mb-3 border border-white/5 flex items-center justify-between">
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">UTR KEY</span>
+                        <p className="font-mono font-black text-white text-lg tracking-widest leading-none">
+                           {order.utrLast4 || (order.utr?.length === 4 ? order.utr : order.utr?.slice(-4)) || '----'}
+                        </p>
+                     </div>
+                  )}
+
+                  {/* Items Summary (Compact but readable) */}
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                     {order.items.map((it, idx) => (
+                        <span key={idx} className="bg-slate-50 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-100">
+                           {it.quantity}x {it.name}
+                        </span>
+                     ))}
+                  </div>
+
+                  {/* POS-style Smart Actions */}
+                  <div className="flex gap-2">
+                     <button 
+                        onClick={() => handleConfirm(order.id)}
+                        className={`flex-1 h-11 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                           isUtrSubmitted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 
+                           hasConflict ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-white'
+                        }`}
+                     >
+                        <Zap className="w-3.5 h-3.5" />
+                        {isUtrSubmitted ? "Verify & Pay" : "Accept Cash"}
+                     </button>
+                     <button 
+                        onClick={() => handleReject(order.id)}
+                        className="w-11 h-11 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center active:scale-95 transition-all"
+                     >
+                        <X className="w-4 h-4" />
+                     </button>
+                  </div>
+               </div>
+             );
+          })}
+          {pendingOrders.length === 0 && (
+             <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+                <p className="text-sm font-black text-slate-900">All Clear</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 leading-none">Queue fully processed</p>
+             </div>
+          )}
+       </div>
+    </div>
+  );
+
+  const renderMobileHistory = () => (
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+       <div className="px-1 block space-y-3">
+          <h2 className="text-base font-black uppercase italic text-slate-900">Cryptographic Ledger</h2>
+          <div className="relative">
+             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+             <input 
+               type="text" placeholder="Find order..." value={search} onChange={e => setSearch(e.target.value)}
+               className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-xs font-black outline-none focus:ring-4 focus:ring-emerald-500/5 transition-all"
+             />
+          </div>
+       </div>
+
+       <div className="space-y-2">
+          {filteredOrders.map(order => (
+             <div key={order.id} className="bg-white rounded-xl p-4 border border-slate-100 flex items-center justify-between shadow-sm">
+                <div className="min-w-0 pr-4">
+                   <p className="text-[13px] font-black text-slate-900 leading-tight truncate">{order.userName}</p>
+                   <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
+                      <span className="text-[9px] font-mono font-black text-emerald-600 uppercase tracking-widest italic">{order.utr?.slice(-4) || 'CASH'}</span>
+                   </div>
+                </div>
+                <div className="text-right shrink-0">
+                   <p className="text-[15px] font-black text-slate-900">₹{order.totalAmount}</p>
+                   <span className={`text-[8px] font-black uppercase tracking-widest mt-1 block ${order.paymentStatus === 'SUCCESS' ? 'text-emerald-500' : 'text-slate-300'}`}>
+                      {order.paymentStatus === 'SUCCESS' ? 'VERIFIED' : 'PENDING'}
+                   </span>
+                </div>
+             </div>
+          ))}
+       </div>
+    </div>
+  );
+
+  const renderMobileDashboard = () => (
+    <div className="space-y-4 animate-in fade-in duration-500">
+       <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+             <DollarSign className="w-5 h-5 text-emerald-600 mb-2" />
+             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Cash</p>
+             <p className="text-xl font-black text-slate-900 italic">₹{stats.cash.toLocaleString()}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+             <Receipt className="w-5 h-5 text-blue-600 mb-2" />
+             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Tickets</p>
+             <p className="text-xl font-black text-slate-900 italic">{stats.count}</p>
+          </div>
+       </div>
+
+       <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Velocity Audit</h3>
+          <div className="h-48">
+             <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.hourlyData}>
+                   <Bar dataKey="orders" fill="#10B981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+             </ResponsiveContainer>
+          </div>
+       </div>
+    </div>
+  );
+
   const renderDesktopSummary = () => (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
        <div className="bg-white rounded-[3rem] p-12 border border-slate-100 shadow-2xl relative overflow-hidden">
@@ -607,32 +742,71 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     </div>
   );
 
+  const renderMobileLedgerSync = () => (
+    <div className="space-y-4 animate-in fade-in zoom-in duration-500 max-w-lg mx-auto">
+       <div className="bg-[#111827] rounded-2xl p-6 text-white shadow-xl relative overflow-hidden border border-white/5">
+          <div className="relative z-10">
+             <h2 className="text-base font-black uppercase italic tracking-tighter mb-1">Automation Hub</h2>
+             <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] opacity-70">Paste bank logs to auto-pair orders</p>
+          </div>
+          <Zap className="absolute top-0 right-0 w-32 h-32 text-emerald-500/10 -mr-10 -mt-10 rotate-12" />
+       </div>
+
+       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <textarea 
+            value={syncInput}
+            onChange={(e) => setSyncInput(e.target.value)}
+            placeholder="Paste UTR logs here..."
+            className="w-full h-40 bg-slate-50 border border-slate-100 rounded-xl p-4 text-[12px] font-mono font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/5 transition-all mb-4 placeholder:opacity-30"
+          />
+
+          <button 
+            onClick={handleBulkSync}
+            disabled={isSyncing || !syncInput.trim()}
+            className="w-full h-12 bg-slate-900 text-white font-black rounded-xl shadow-lg active:scale-95 transition-all text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 disabled:opacity-50"
+          >
+             {isSyncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+             Sync Bank Deposits
+          </button>
+       </div>
+    </div>
+  );
+
+
   const renderMobileControl = () => {
     switch (activeTab) {
-      case 'PENDING': return renderDesktopRequests();
-      case 'ORDERS': return renderDesktopHistory();
-      case 'INSIGHT': return renderDesktopDashboard();
-      case 'LEDGER': return renderLedgerSync();
+      case 'PENDING': return renderMobileRequests();
+      case 'LEDGER': return renderMobileLedgerSync();
+      case 'ORDERS': return renderMobileHistory();
+      case 'INSIGHT': return renderMobileDashboard();
       case 'SUMMARY': return (
-        <div className="space-y-6 animate-in fade-in duration-300">
-           <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
-              <p className="text-[9px] font-black opacity-40 uppercase tracking-[0.4em] mb-4">Cash Position</p>
-              <div className="flex items-baseline gap-2 mb-10">
-                 <span className="text-xl font-black opacity-20">₹</span>
-                 <p className="text-6xl font-black tracking-tighter leading-none italic">{stats.cash.toLocaleString()}</p>
+        <div className="space-y-4 animate-in fade-in duration-300">
+           <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+              <p className="text-[9px] font-black opacity-40 uppercase tracking-[0.4em] mb-3">Cash Position</p>
+              <div className="flex items-baseline gap-1.5 mb-6">
+                 <span className="text-sm font-black opacity-20">₹</span>
+                 <p className="text-4xl font-black tracking-tight leading-none italic">{stats.cash.toLocaleString()}</p>
               </div>
-              <p className="text-[9px] font-black opacity-40 uppercase tracking-[0.2em]">Verified Terminal Ops</p>
-              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mt-10" />
+              <p className="text-[9px] font-black opacity-40 uppercase tracking-[0.2em]">{profile.name}</p>
+              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-3xl -mr-8 -mt-8" />
            </div>
-           <div className="grid grid-cols-1 gap-3">
-              <button onClick={handleAuditExport} className="w-full bg-emerald-600 text-white rounded-2xl py-6 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-4 active:scale-95 shadow-xl shadow-emerald-50">
-                 <FileText className="w-5 h-5 text-emerald-200" /> DOWNLOAD DAILY PDF
+           
+           <div className="space-y-2">
+              <button onClick={handleAuditExport} className="w-full h-14 bg-emerald-600 text-white rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95 shadow-lg shadow-emerald-500/10">
+                 <FileText className="w-4 h-4 text-emerald-100" /> DOWNLOAD PDF
               </button>
-              <button onClick={onLogout} className="w-full bg-white text-rose-600 border border-slate-200 rounded-2xl py-5 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95">
+              <button onClick={onLogout} className="w-full h-12 bg-white text-rose-600 border border-slate-200 rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95">
                  <LogOut className="w-4 h-4" /> SIGN OUT
               </button>
            </div>
-           <p className="text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pt-4 opacity-50 italic">Agent ID: {profile.uid.slice(0, 12)}</p>
+           
+           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                 <p className="text-[10px] font-black text-slate-900 uppercase">STATION {profile.role}</p>
+                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{profile.uid.slice(0, 16)}</p>
+              </div>
+              <ShieldCheck className="w-5 h-5 text-emerald-500/20" />
+           </div>
         </div>
       );
       default: return null;

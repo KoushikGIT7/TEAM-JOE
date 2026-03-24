@@ -55,6 +55,7 @@ export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
 export const PICKUP_WINDOW_DURATION_MS = 200000; // ⏱️ 3 Minutes + 20s Buffer (180s + 20s)
 import { parseQRPayload, parseServingQR, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
+import { safeListener } from "./safeListener";
 import {
   useCallables,
   createOrderCallable,
@@ -1285,117 +1286,127 @@ export const listenToOrder = (orderId: string, callback: (order: Order | null) =
 };
 
 export const listenToAllOrders = (callback: (orders: Order[]) => void): (() => void) => {
-  // PERFORMANCE FIX: Limit to 100 most recent orders to prevent Quota Exceeded errors.
-  // This ensures the cashier ledger only processes relevant recent history.
-  return onSnapshot(
-    query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100)),
-    (snapshot) => {
-      const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
-    },
-    (error) => {
-      console.error("Error listening to orders (Quota Check):", error);
-      // Fallback: If index is missing, try without orderBy but KEEP the limit
-      if (error.code === 'failed-precondition') {
-         return onSnapshot(
-           query(collection(db, "orders"), limit(100)),
-           (snap) => callback(snap.docs.map(d => firestoreToOrder(d.id, d.data())).sort((a,b) => b.createdAt - a.createdAt)),
-           (e) => { console.error("Final fallback error:", e); callback([]); }
-         );
-      }
-      callback([]);
-    }
+  const q = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100));
+  const fallbackQ = query(collection(db, "orders"), limit(100));
+
+  return safeListener(
+    'cashier-all-orders',
+    q,
+    (snapshot) => snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data())),
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
 
 /** Paginated recent orders (e.g. for kitchen dashboard). Limit 50. */
 export const listenToRecentOrders = (callback: (orders: Order[]) => void, limitCount: number = 50): (() => void) => {
-  return onSnapshot(
-    query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(limitCount)),
-    (snapshot) => {
-      const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
-    },
-    (error) => {
-      console.error("Error listening to recent orders:", error);
-      callback([]);
-    }
+  const q = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(limitCount));
+  const fallbackQ = query(collection(db, "orders"), limit(limitCount));
+
+  return safeListener(
+    'recent-orders',
+    q,
+    (snapshot) => snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data())),
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
 export const listenToUserOrders = (userId: string, callback: (orders: Order[]) => void): (() => void) => {
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      where("userId", "==", userId),
-      where("paymentStatus", "in", ["SUCCESS", "PENDING", "UTR_SUBMITTED"])
-    ),
-    (snapshot) => {
-      const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
-    },
-    (error) => {
-      console.error("Error listening to user orders:", error);
-      callback([]);
-    }
+  const q = query(
+    collection(db, "orders"),
+    where("userId", "==", userId),
+    where("paymentStatus", "in", ["SUCCESS", "PENDING", "UTR_SUBMITTED"]),
+    orderBy("createdAt", "desc"),
+    limit(10)
+  );
+  const fallbackQ = query(
+    collection(db, "orders"),
+    where("userId", "==", userId),
+    limit(20)
+  );
+
+  return safeListener(
+    `user-orders-${userId}`,
+    q,
+    (snapshot) => snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data())),
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
 export const listenToAllUserOrders = (userId: string, callback: (orders: Order[]) => void): (() => void) => {
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      where("userId", "==", userId)
-    ),
-    (snapshot) => {
-      const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      callback(orders);
-    },
-    (error) => {
-      console.error("Error listening to all user orders:", error);
-      callback([]);
-    }
+  const q = query(
+    collection(db, "orders"),
+    where("userId", "==", userId),
+    orderBy("createdAt", "desc"),
+    limit(30)
+  );
+  const fallbackQ = query(
+    collection(db, "orders"),
+    where("userId", "==", userId),
+    limit(50)
+  );
+
+  return safeListener(
+    `all-user-orders-${userId}`,
+    q,
+    (snapshot) => snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data())),
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
 export const listenToLatestActiveQR = (userId: string, callback: (order: Order | null) => void): (() => void) => {
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      where("userId", "==", userId),
-      where("paymentStatus", "==", "SUCCESS"),
-      where("qrStatus", "==", "ACTIVE")
-    ),
+  const q = query(
+    collection(db, "orders"),
+    where("userId", "==", userId),
+    where("paymentStatus", "==", "SUCCESS"),
+    where("qrStatus", "==", "ACTIVE"),
+    limit(1)
+  );
+
+  return safeListener(
+    `user-active-qr-${userId}`,
+    q,
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      if (orders.length === 0) return callback(null);
-      const latest = orders.reduce((acc, cur) => ((cur.createdAt || 0) > (acc.createdAt || 0) ? cur : acc), orders[0]);
-      callback(latest);
+      if (orders.length === 0) return null;
+      return orders.reduce((acc, cur) => ((cur.createdAt || 0) > (acc.createdAt || 0) ? cur : acc), orders[0]);
     },
-    (error) => {
-      console.error("Error listening to latest active QR:", error);
-      callback(null);
-    }
+    () => null,
+    callback
   );
 };
 
 export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): (() => void) => {
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED"])
-    ),
+  const q = query(
+    collection(db, "orders"),
+    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED"]),
+    orderBy("createdAt", "desc"),
+    limit(50)
+  );
+  const fallbackQ = query(
+    collection(db, "orders"),
+    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED"]),
+    limit(50)
+  );
+
+  return safeListener(
+    'cashier-pending-orders',
+    q,
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      // Sort client-side to avoid index requirements
-      const sorted = orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      callback(sorted);
+      return orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     },
-    (error) => {
-      console.error("Error listening to pending cash orders:", error);
-      callback([]);
-    }
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
@@ -1661,7 +1672,7 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
           sendDirectedPush({
               userId: orderData.userId,
               title: '💳 Payment Confirmed!',
-              message: `Your #${orderId.slice(-4).toUpperCase()} is now ACTIVE. Check your QR code at the counter!`,
+              message: `Paid! Check QR.`,
               url: 'https://joecafebrand.netlify.app'
           });
        }
@@ -1782,44 +1793,45 @@ export interface PendingItem {
 }
 
 export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() => void) => {
-  // Use a query that fetches the orders currently circulating at the counter
-  // 🛡️ [KITCHEN-GATE] Strictly show confirmed 'SUCCESS' payments only
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      orderBy("createdAt", "desc"),
-      limit(50)
-    ),
+  const q = query(
+    collection(db, "orders"),
+    orderBy("createdAt", "desc"),
+    limit(50)
+  );
+
+  return safeListener(
+    'counter-active-orders',
+    q,
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      
-      // 🛡️ [KITCHEN-GATE] JS Filter to bypass composite indexes.
-      // We pull the absolute latest 300 orders and then quickly filter for active, successful ones.
       const activeStats = ["PAID", "PROCESSING", "PENDING", "SERVED", "ACTIVE"];
       const filtered = orders.filter(o => 
          o.paymentStatus === "SUCCESS" && 
          activeStats.includes(o.orderStatus)
       );
-      
-      // Provide stable FIFO ordering to the UI
-      const sorted = filtered.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-      callback(sorted);
+      return filtered.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     },
-    (error) => {
-      console.error("Error listening to active orders:", error);
-      callback([]);
-    }
+    () => [],
+    callback
   );
 };
 
 export const listenToPendingItems = (callback: (items: PendingItem[]) => void): (() => void) => {
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      where("qrState", "==", "SCANNED"),
-      orderBy("createdAt", "asc"),
-      limit(50)
-    ),
+  const q = query(
+    collection(db, "orders"),
+    where("qrState", "==", "SCANNED"),
+    orderBy("createdAt", "asc"),
+    limit(50)
+  );
+  const fallbackQ = query(
+    collection(db, "orders"),
+    where("qrState", "==", "SCANNED"),
+    limit(100)
+  );
+
+  return safeListener(
+    'counter-pending-items',
+    q,
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
       const sortedOrders = orders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -1843,12 +1855,11 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
           }
         });
       });
-      callback(pendingItems);
+      return pendingItems;
     },
-    (error) => {
-      console.error("Error listening to pending items:", error);
-      callback([]);
-    }
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
@@ -1861,26 +1872,25 @@ export const listenToReadyItems = (callback: (items: any[]) => void): (() => voi
     collectionGroup(db, "items"), 
     where("status", "==", "READY"), 
     orderBy("readyAt", "asc"),
-    limit(20) // 🛡️ [ANTI-CHAOS] Only show top 20 items internally
+    limit(20)
   );
-  return onSnapshot(
+  const fallbackQ = query(
+    collectionGroup(db, "items"), 
+    where("status", "==", "READY"), 
+    limit(20)
+  );
+
+  return safeListener(
+    'counter-ready-items',
     q,
-    (snap) => {
-      const items = snap.docs.map((d) => ({
-        ...d.data(),
-        itemId: d.id,
-        orderId: d.ref.parent.parent?.id,
-      }));
-      callback(items);
-    },
-    (error: any) => {
-      if (error?.code === "failed-precondition") {
-        console.warn("⚠️ [INDEX-REQUIRED]: Please create the Collection Group index for 'items.status'.");
-      } else {
-        console.error("[SONIC-MANIFEST-ERROR]:", error);
-      }
-      callback([]);
-    }
+    (snap: any) => snap.docs.map((d: any) => ({
+      ...d.data(),
+      itemId: d.id,
+      orderId: d.ref.parent.parent?.id,
+    })),
+    () => [],
+    callback,
+    fallbackQ
   );
 };
 
@@ -2989,33 +2999,30 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
  * Returns orders sorted by createdAt ASC (oldest first = highest priority).
  */
 export const listenToKitchenOrders = (callback: (orders: Order[]) => void): (() => void) => {
-  return onSnapshot(
-    query(
-      collection(db, "orders"),
-      where("paymentStatus", "==", "SUCCESS"),
-      limit(200) // Increased limit since we sort in JS
-    ),
-    (snapshot) => {
-      const orders = snapshot.docs.map(d => firestoreToOrder(d.id, d.data()));
-      // Filter: only orders with at least one PREPARATION_ITEM that is not yet SERVED
-      const kitchenOrders = orders.filter(o => {
+  const q = query(
+    collection(db, "orders"),
+    where("paymentStatus", "==", "SUCCESS"),
+    limit(100)
+  );
+
+  return safeListener(
+    'kitchen-pending-orders',
+    q,
+    (snapshot: any) => {
+      const orders = snapshot.docs.map((d: any) => firestoreToOrder(d.id, d.data()));
+      const kitchenOrders = orders.filter((o: any) => {
         if (o.orderStatus === 'COMPLETED' || o.orderStatus === 'SERVED' || o.orderStatus === 'CANCELLED') return false;
         if (o.serveFlowStatus === 'SERVED') return false;
-        const hasCookablePrepItem = (o.items || []).some(it =>
+        const hasCookablePrepItem = (o.items || []).some((it: any) =>
           it.orderType === 'PREPARATION_ITEM' &&
           (it.status === 'PENDING' || it.status === 'PREPARING')
         );
         return hasCookablePrepItem;
       });
-      // Sort oldest first (FIFO for Kitchen)
-      kitchenOrders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-      
-      callback(kitchenOrders);
+      return kitchenOrders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     },
-    (error) => {
-      console.error("[COOK-CONSOLE] Error listening to kitchen orders:", error);
-      callback([]);
-    }
+    () => [],
+    callback
   );
 };
 
@@ -3220,32 +3227,17 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
      limit(50)
   );
 
-  let fallbackUnsub: (() => void) | null = null;
-
-  const unsub = onSnapshot(
+  return safeListener(
+    'staff-prep-batches',
     qOptimized,
-    (snapshot) => {
-      const allBatches = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PrepBatch));
-      callback(allBatches);
+    (snap: any) => snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as PrepBatch)),
+    () => [],
+    (live) => {
+       const sorted = live.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+       callback(sorted);
     },
-    (error) => {
-      if (error.code === 'failed-precondition' || (error.message || '').includes('index')) {
-          console.warn("⚠️ [INDEX-PENDING] Using fallback batch listener...");
-          fallbackUnsub = onSnapshot(qFallback, (s) => {
-             const batches = s.docs.map(doc => ({ ...doc.data(), id: doc.id } as PrepBatch));
-             callback(batches);
-          });
-      } else {
-          console.error("Error listening to batches:", error);
-          callback([]);
-      }
-    }
+    qFallback
   );
-
-  return () => {
-     unsub();
-     if (fallbackUnsub) fallbackUnsub();
-  };
 };
 
 export const startBatchPreparation = async (batchId: string): Promise<void> => {
@@ -3743,3 +3735,38 @@ export const getOrderById = async (orderId: string): Promise<Order | null> => {
     return null;
   }
 };
+
+/**
+ * 🐕 [WATCHDOG] Self-Healing Maintenance Cycle
+ * Consolidates Batch Generation, Stuck Batch Recovery, and Missed Pickup Flushing.
+ * Uses leader election (nodeId lock) to ensure work is not duplicated.
+ */
+export const runMaintenanceCycle = async (nodeId: string): Promise<{ restored: number }> => {
+  const isLeader = await tryAcquireMaintenanceLock(nodeId);
+  if (!isLeader) return { restored: 0 };
+  
+  console.log("🛠️ [WATCHDOG] Acquired lock. Running maintenance...");
+  let restored = 0;
+  
+  try {
+    // 1. Recover Stuck Batches (PREPARING > 120s with no interaction)
+    await runKitchenWatchdog();
+    
+    // 2. Aggressive Batch Generator Pulse
+    await runBatchGenerator(nodeId);
+    
+    // 3. Periodic flush of missed pickups (Abandoned ready food)
+    const flushedCount = await flushMissedPickups(nodeId);
+    if (flushedCount > 0) {
+       console.log(`🛠️ [WATCHDOG] Flushed ${flushedCount} missed pickups.`);
+       restored += flushedCount;
+    }
+    
+    return { restored };
+  } catch (error) {
+    console.error("❌ [WATCHDOG] Maintenance failed:", error);
+    return { restored: 0 };
+  }
+};
+
+
