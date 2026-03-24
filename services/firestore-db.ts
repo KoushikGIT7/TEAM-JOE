@@ -1387,13 +1387,13 @@ export const listenToLatestActiveQR = (userId: string, callback: (order: Order |
 export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): (() => void) => {
   const q = query(
     collection(db, "orders"),
-    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED"]),
+    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED", "AWAITING_CONFIRMATION"]),
     orderBy("createdAt", "desc"),
     limit(50)
   );
   const fallbackQ = query(
     collection(db, "orders"),
-    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED"]),
+    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED", "AWAITING_CONFIRMATION"]),
     limit(50)
   );
 
@@ -1735,7 +1735,8 @@ export const rejectCashPayment = async (orderId: string, _cashierUid: string): P
     const orderRef = doc(db, "orders", orderId);
     await updateDoc(orderRef, {
       paymentStatus: 'REJECTED',
-      orderStatus: 'CANCELLED',
+      orderStatus: 'REJECTED',
+      rejectionReason: 'PAYMENT_FAILED',
       rejectedAt: serverTimestamp(),
       rejectedBy: _cashierUid,
       qrStatus: 'REJECTED',
@@ -2321,6 +2322,16 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
         servedAt: serverTimestamp(),
         serveFlowStatus: 'SERVED'
       });
+      
+      // 📡 [UI-SYNC] Synchronize ALL items to subcollection so Server Console updates instantly
+      updatedItems.forEach(it => {
+         const itRef = doc(db, 'orders', orderId, 'items', it.id);
+         tx.update(itRef, { 
+            status: 'SERVED', 
+            servedAt: serverTimestamp(),
+            updatedAt: serverTimestamp() 
+         });
+      });
 
       // 🔄 SYNC ALL RELATED BATCHES
       for (const bSnap of batchSnaps) {
@@ -2404,7 +2415,7 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
         throw new Error("Order already served");
       }
 
-      if (order.paymentStatus !== 'SUCCESS') {
+      if (order.paymentStatus !== 'SUCCESS' && order.paymentStatus !== 'VERIFIED') {
         throw new Error("Payment not verified");
       }
 
@@ -2457,6 +2468,14 @@ export const serveItem = async (orderId: string, itemId: string, servedBy: strin
         qrStatus: allItemsServed ? 'DESTROYED' : order.qrStatus,
         qrState: allItemsServed ? 'SERVED' : 'IN_PROGRESS',
         servedAt: allItemsServed ? serverTimestamp() : order.servedAt ? Timestamp.fromMillis(order.servedAt) : null
+      });
+      
+      // 📡 [UI-SYNC] Synchronize state to subcollection so Server Console updates instantly
+      const subItemRef = doc(db, 'orders', orderId, 'items', itemId);
+      tx.update(subItemRef, { 
+        status: 'SERVED', 
+        servedAt: serverTimestamp(),
+        updatedAt: serverTimestamp() 
       });
 
       // Create serve log

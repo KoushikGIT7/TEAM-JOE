@@ -373,6 +373,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
              const hasConflict = conflictMap[order.totalAmount] > 1;
              const isAutoVerified = order.paymentStatus === 'SUCCESS';
              const isUtrSubmitted = order.paymentStatus === 'UTR_SUBMITTED';
+             const isCashRequest = order.paymentStatus === 'AWAITING_CONFIRMATION';
 
              return (
                <div key={order.id} className={`bg-white rounded-[2.5rem] border-4 transition-all duration-300 ${
@@ -399,6 +400,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                          {isUtrSubmitted && !isAutoVerified && (
                             <span className="text-[9px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-sm">
                               <Zap className="w-3 h-3" /> UTR SENT
+                            </span>
+                         )}
+                         {isCashRequest && (
+                            <span className="text-[9px] font-black bg-amber-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                              <Banknote className="w-3 h-3" /> CASH REQUEST
                             </span>
                          )}
                       </div>
@@ -452,7 +458,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                        {confirming === order.id ? <RefreshCw className="w-6 h-6 animate-spin" /> : (
                           <>
                              {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? <CheckCircle className="w-8 h-8" /> : <Zap className="w-8 h-8" />}
-                             {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? "PAID" : order.paymentStatus === 'UTR_SUBMITTED' ? "VERIFY & QUEUE" : conflictMap[order.totalAmount] > 1 ? "SOLVE CONFLICT" : "APPROVE CASH"}
+                             {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? "PAID" : isCashRequest ? "CONFIRM CASH" : order.paymentStatus === 'UTR_SUBMITTED' ? "VERIFY & QUEUE" : conflictMap[order.totalAmount] > 1 ? "SOLVE CONFLICT" : "APPROVE CASH"}
                           </>
                        )}
                     </button>
@@ -551,6 +557,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
           {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).map(order => {
              const hasConflict = conflictMap[order.totalAmount] > 1;
              const isUtrSubmitted = order.paymentStatus === 'UTR_SUBMITTED';
+             const isCashRequest = order.paymentStatus === 'AWAITING_CONFIRMATION';
 
              return (
                <div key={order.id} className={`bg-white rounded-2xl p-4 border transition-all duration-300 ${
@@ -570,12 +577,18 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   </div>
 
                   {/* UTR Highlights (Gen-Z Minimalist) */}
-                  {(order.utrLast4 || order.utr) && (
+                  {(order.paymentStatus === 'UTR_SUBMITTED' || order.utrLast4 || order.utr) && (
                      <div className="bg-slate-900 rounded-xl p-3 mb-3 border border-white/5 flex items-center justify-between">
                         <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">UTR KEY</span>
                         <p className="font-mono font-black text-white text-lg tracking-widest leading-none">
                            {order.utrLast4 || (order.utr?.length === 4 ? order.utr : order.utr?.slice(-4)) || '----'}
                         </p>
+                     </div>
+                  )}
+                  {isCashRequest && (
+                     <div className="bg-amber-500 rounded-xl p-3 mb-3 border border-white/5 flex items-center justify-between">
+                        <span className="text-[8px] font-black text-amber-900 uppercase tracking-widest">STATUS</span>
+                        <p className="font-black text-white text-sm uppercase tracking-widest leading-none">CASH REQUEST</p>
                      </div>
                   )}
 
@@ -598,7 +611,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                         }`}
                      >
                         <Zap className="w-3.5 h-3.5" />
-                        {isUtrSubmitted ? "Verify & Pay" : "Accept Cash"}
+                        {isUtrSubmitted ? "Verify & Pay" : isCashRequest ? "Confirm Cash" : "Accept Cash"}
                      </button>
                      <button 
                         onClick={() => handleReject(order.id)}

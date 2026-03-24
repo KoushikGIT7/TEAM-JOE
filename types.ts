@@ -55,10 +55,12 @@ export interface Order {
   items: CartItem[];
   totalAmount: number;
   paymentType: 'UPI' | 'CARD' | 'CASH' | 'NET';
-  paymentStatus: 'INITIATED' | 'UTR_SUBMITTED' | 'VERIFIED' | 'FAILED' | 'SUCCESS' | 'REJECTED' | 'PENDING';
+  paymentStatus: 'INITIATED' | 'UTR_SUBMITTED' | 'VERIFIED' | 'FAILED' | 'SUCCESS' | 'REJECTED' | 'PENDING' | 'AWAITING_CONFIRMATION';
   queueStatus: 'NOT_IN_QUEUE' | 'IN_QUEUE';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
+  rejectionReason?: string;
+  cashRequestedAt?: any;
   utrLast4?: string;
   paidAt?: number;
   /** 🍳 [SONIC-JIT] Pre-order Arrival Signal */

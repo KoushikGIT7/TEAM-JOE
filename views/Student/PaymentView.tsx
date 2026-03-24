@@ -3,7 +3,7 @@ import { ChevronLeft, CreditCard, Smartphone, Landmark, Banknote, ShieldCheck, L
 import { UserProfile, CartItem } from '../../types';
 import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../services/firestore-db';
 import { db } from '../../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { submitOrderUTR } from '../../services/firestore-db';
 import { QRCodeSVG } from 'qrcode.react';
 import { joeSounds } from '../../utils/audio';
@@ -110,13 +110,12 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           return;
         }
 
-        if (order.paymentStatus === 'REJECTED' && !hasNavigated) {
-          hasNavigated = true;
-          localStorage.removeItem('activeOrderId');
+        if ((order.paymentStatus === 'REJECTED' || order.orderStatus === 'REJECTED') && !hasNavigated) {
+          console.log('❌ [REJECTED] Payment failed. Resetting state...');
           setOrderStatus(null);
-          setRejectionMessage('Your payment was rejected by the cashier.');
-          setState('REJECTED');
-          setTimeout(() => onBack(), 3000);
+          setUtr(''); // Clear previous UTR for retry
+          setRejectionMessage('❌ Payment Rejected. Please pay again.');
+          setState('IDLE'); // Stay on page, allow retry
         }
       });
       return unsubscribe;
@@ -188,10 +187,11 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         items: cart,
         totalAmount: total,
         paymentType: selectedMethod as any,
-        paymentStatus: 'INITIATED',
-        queueStatus: 'NOT_IN_QUEUE', // Ensures kitchen doesn't see it yet
+        paymentStatus: isCash ? 'AWAITING_CONFIRMATION' : 'INITIATED',
+        queueStatus: 'NOT_IN_QUEUE',
         arrivalTime: undefined, 
         orderStatus: 'PENDING',
+        cashRequestedAt: isCash ? serverTimestamp() : undefined,
         qrStatus: 'PENDING_PAYMENT',
         cafeteriaId: 'MAIN_CAFE',
         idempotencyKey

@@ -4,7 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder, listenToSystemSettings } from '../../services/firestore-db';
 import { Order } from '../../types';
 import { shouldShowQR, getOrderUIState } from '../../utils/orderLifecycle';
-import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { updateDoc, doc, serverTimestamp, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { generateQRPayloadSync } from '../../services/qr';
 import QuoteDisplay from '../../components/QuoteDisplay';
@@ -53,6 +53,8 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     return () => clearInterval(timer);
   }, []);
 
+  const [items, setItems] = useState<any[]>([]);
+
   useEffect(() => {
     isMounted.current = true;
     return () => {
@@ -61,6 +63,17 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       setIsGenerating(false);
     };
   }, []);
+
+  useEffect(() => {
+    if (!orderId) return;
+    const q = query(collection(db, 'orders', orderId, 'items'), where('status', 'in', ['READY', 'SERVED']));
+    const unsub = onSnapshot(q, (snap) => {
+       if (!isMounted.current) return;
+       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+       setItems(docs);
+    });
+    return unsub;
+  }, [orderId]);
 
   useEffect(() => {
     if (!orderId) return;
@@ -215,7 +228,8 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
   const s = STATUS[statusKey] || STATUS.DEFAULT;
   const isReady = statusKey === 'READY' && !isTimeExpired;
-  const qrVisible = shouldShowQR(order);
+  const isUnlocked = items.some(it => it.status === 'READY') || (order.items || []).some(it => it.orderType === 'FAST_ITEM') || order.serveFlowStatus === 'READY';
+  const qrVisible = shouldShowQR(order) || isUnlocked;
 
   return (
     <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans overflow-x-hidden">

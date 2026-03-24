@@ -28,12 +28,6 @@ service cloud.firestore {
              (getRawRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier']);
     }
 
-    function isServer() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             (getRawRole() in ['ADMIN', 'SERVER', 'admin', 'server']);
-    }
-
     match /menu/{itemId} {
       allow read, write: if true;
     }
