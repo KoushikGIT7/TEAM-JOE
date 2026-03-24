@@ -85,13 +85,9 @@ export const shouldShowQR = (order: Order): boolean => {
 
   if (unservedCount === 0) return false;
 
-  // [PRINCIPAL-FIX] QR Visibility Lockdown logic
-  // 1. If it's pure FAST_ITEM (static), show immediately
-  // 2. If it has PREPARATION_ITEM (dynamic), only show if:
-  //    - At least one item is READY
-  //    - OR it has static items that can be picked up immediately
-  const hasStatic = order.items.some(it => it.orderType === 'FAST_ITEM');
-  const hasReady = order.items.some(it => it.status === 'READY');
+  const isPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
+  const hasStatic = order.items?.some(it => it.orderType === 'FAST_ITEM');
+  const hasReady = order.items?.some(it => it.status === 'READY');
   const isScanned = order.qrState === 'SCANNED' || order.qrStatus === 'SCANNED';
 
   // If order is purely dynamic and nothing is ready yet, keep locked (unless already scanned/manifested at counter)
@@ -104,7 +100,7 @@ export const shouldShowQR = (order: Order): boolean => {
     return false;
   }
 
-  return order.paymentStatus === 'SUCCESS' && (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED');
+  return isPaid && (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED');
 };
 
 /**

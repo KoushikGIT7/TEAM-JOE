@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { ChevronLeft, Loader2, AlertCircle, XCircle, CheckCircle2, ChefHat, Clock, Zap, Check, Banknote, PackageCheck } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder, listenToSystemSettings } from '../../services/firestore-db';
@@ -28,6 +28,20 @@ const STATUS: Record<string, { label: string; sub: string; icon: React.FC<any>; 
 
 const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const [order, setOrder] = useState<Order | null>(null);
+  const [items, setItems] = useState<any[]>([]);
+
+  const mergedOrder = useMemo(() => {
+    if (!order) return null;
+    if (items.length === 0) return order;
+    return {
+      ...order,
+      items: (order.items || []).map(rootItem => {
+        const fresh = items.find(it => it.id === rootItem.id || it.itemId === rootItem.id);
+        return fresh ? { ...rootItem, ...fresh } : rootItem;
+      })
+    };
+  }, [order, items]);
+
   const [loading, setLoading] = useState(true);
   const [qrLoading, setQrLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -52,8 +66,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     const timer = setInterval(() => setTick(t => t + 1), 5000);
     return () => clearInterval(timer);
   }, []);
-
-  const [items, setItems] = useState<any[]>([]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -87,6 +99,9 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       setIsGenerating(false);
       
       if (!data) return;
+      
+      // Initial items hydration
+      if (data.items) setItems(data.items);
 
       const qr = data.qr?.token || generateQRPayloadSync(data);
       setQrString(qr);
@@ -200,36 +215,31 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       );
   }
 
-  if (!order) return (
-    <div className="h-screen w-full flex flex-col items-center justify-center bg-white p-8 text-center uppercase tracking-widest">
-      <AlertCircle className="w-10 h-10 text-red-100 mb-4" />
-      <p className="text-xs font-black text-gray-400">Order Missing</p>
-      <button onClick={onBack} className="mt-8 px-8 py-3 bg-gray-900 text-white rounded-2xl text-[10px] font-black">Back to Menu</button>
-    </div>
-  );
+  const orderForUI = mergedOrder;
+  if (!orderForUI) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
 
-  const uiState = getOrderUIState(order);
-  const flow = order.serveFlowStatus || 'NEW';
-  const isTimeExpired = order.pickupWindow?.endTime ? Date.now() > order.pickupWindow.endTime : false;
-  const isQrScanned = (order.qrStatus as string) === 'USED' || (order.qrStatus as string) === 'DESTROYED';
-  const isServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || (order.serveFlowStatus as string) === 'SERVED' || isQrScanned;
+  const uiState = getOrderUIState(orderForUI);
+  const flow = orderForUI.serveFlowStatus || 'NEW';
+  const isTimeExpired = orderForUI.pickupWindow?.endTime ? Date.now() > orderForUI.pickupWindow.endTime : false;
+  const isQrScanned = (orderForUI.qrStatus as string) === 'USED' || (orderForUI.qrStatus as string) === 'DESTROYED';
+  const isServed = orderForUI.orderStatus === 'SERVED' || orderForUI.orderStatus === 'COMPLETED' || (orderForUI.serveFlowStatus as string) === 'SERVED' || isQrScanned;
   if (isServed) terminalLatch.current = true;
   const isTerminal = terminalLatch.current;
-  const isMissed = !isTerminal && (uiState === 'MISSED' || order.orderStatus === 'MISSED' || isTimeExpired);
+  const isMissed = !isTerminal && (uiState === 'MISSED' || orderForUI.orderStatus === 'MISSED' || isTimeExpired);
 
   let statusKey = 'SCHEDULED';
   if (isTerminal) statusKey = 'SERVED';
   else if (isMissed) statusKey = 'MISSED';
-  else if (order.paymentType === 'CASH' && order.paymentStatus === 'PENDING') statusKey = 'CASH_PENDING';
+  else if (orderForUI.paymentType === 'CASH' && orderForUI.paymentStatus === 'AWAITING_CONFIRMATION') statusKey = 'CASH_PENDING';
   else if (flow === 'READY') statusKey = 'READY';
   else if (flow === 'SERVED_PARTIAL') statusKey = 'PREPARING';
   else if (flow === 'PREPARING' || flow === 'ALMOST_READY') statusKey = 'PREPARING';
-  else if (order.paymentStatus === 'SUCCESS') statusKey = 'SCHEDULED';
+  else if (orderForUI.paymentStatus === 'SUCCESS' || orderForUI.paymentStatus === 'VERIFIED') statusKey = 'SCHEDULED';
 
   const s = STATUS[statusKey] || STATUS.DEFAULT;
-  const isReady = statusKey === 'READY' && !isTimeExpired;
-  const isUnlocked = items.some(it => it.status === 'READY') || (order.items || []).some(it => it.orderType === 'FAST_ITEM') || order.serveFlowStatus === 'READY';
-  const qrVisible = shouldShowQR(order) || isUnlocked;
+  const isReady = (statusKey === 'READY' || (orderForUI.items || []).some(i => i.status === 'READY')) && !isTimeExpired;
+  const isUnlocked = isReady || (orderForUI.items || []).some(it => it.orderType === 'FAST_ITEM') || orderForUI.serveFlowStatus === 'READY';
+  const qrVisible = shouldShowQR(orderForUI) || isUnlocked;
 
   return (
     <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans overflow-x-hidden">
@@ -367,16 +377,16 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
           )}
         </div>
         <p className="mt-8 text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] text-center px-10">
-          {(isReady || isServed || order.items.some(i => i.orderType === 'FAST_ITEM')) ? 'Point this at counter scanner' : `Cooking in progress - #${order.id.slice(-6).toUpperCase()}`}
+          {(isReady || isServed || (orderForUI.items || []).some(i => i.orderType === 'FAST_ITEM')) ? 'Point this at counter scanner' : `Cooking in progress - #${orderForUI.id.slice(-6).toUpperCase()}`}
         </p>
       </div>
 
       <div className="px-6 py-4 border-t border-gray-50">
         <div className="flex items-center gap-3 mb-6">
-          <QuoteDisplay order={order} orderCount={orderCount} />
+          <QuoteDisplay order={orderForUI} orderCount={orderCount} />
         </div>
         <div className="space-y-3">
-          {order.items.map((item, idx) => {
+          {(orderForUI.items || []).map((item, idx) => {
             const isItemServed = item.status === 'SERVED' || item.status === 'COMPLETED' || (item.remainingQty === 0 && item.servedQty === item.quantity);
             const isItemReady = item.status === 'READY';
             return (
