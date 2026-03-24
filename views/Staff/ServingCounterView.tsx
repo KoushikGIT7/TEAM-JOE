@@ -734,18 +734,15 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                 </div>
               ) : (
                 (() => {
-                  const orderIds      = Array.from(new Set(readyItems.map((i) => i.orderId)));
-                  const sortedOrders  = orderIds.map((oid) => {
-                    const items = readyItems.filter((i) => i.orderId === oid);
-                    return { orderId: oid, orderNumber: items[0].orderNumber, userName: items[0].userName, items };
-                  });
+                  // [STRICT-HUMAN-FLOW] Sliced to 3 focus items for zero-congestion counter
+                  const displayItems = readyItems.slice(0, 3);
 
                   return (
-                    <div className="space-y-12 animate-slide-in pb-20">
-                      {sortedOrders.map((order, idx) => {
+                    <div className="space-y-8 animate-slide-in pb-20">
+                      {displayItems.map((item, idx) => {
                         const isPrimary = idx === 0;
                         return (
-                          <div key={order.orderId} className={`relative transition-all duration-500 ${isPrimary ? 'z-10' : 'opacity-40 scale-x-[0.98]'}`}>
+                          <div key={`${item.orderId}_${item.itemId}_${idx}`} className={`relative transition-all duration-500 ${isPrimary ? 'z-10' : 'opacity-40 scale-x-[0.98]'}`}>
                              {isPrimary && <div className="absolute -inset-2 bg-primary/20 blur-3xl rounded-full" />}
                              
                              <div className={`relative bg-[#0c0c0c] border rounded-[2.5rem] sm:rounded-[3.5rem] p-8 sm:p-12 shadow-2xl overflow-hidden ${isPrimary ? 'border-primary/40' : 'border-white/5'}`}>
@@ -755,8 +752,8 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                                       {idx + 1}
                                    </div>
                                    <div>
-                                      <h3 className="text-5xl sm:text-7xl font-black tracking-tighter mb-1 italic">#{order.orderNumber}</h3>
-                                      <p className="text-xl sm:text-2xl font-bold text-gray-500">{order.userName}</p>
+                                      <h3 className="text-5xl sm:text-7xl font-black tracking-tighter mb-1 italic">#{item.orderNumber}</h3>
+                                      <p className="text-xl sm:text-2xl font-bold text-gray-500">{item.userName}</p>
                                    </div>
                                  </div>
                                  
@@ -769,38 +766,32 @@ const ServingCounterView: React.FC<ServingCounterViewProps> = ({ profile, onLogo
                                </div>
 
                                <div className="space-y-6">
-                                 {order.items.map((item) => {
-                                   const key = `${item.orderId}_${item.itemId}`;
-                                   const isBusy = servingKey?.startsWith(key);
-                                   return (
-                                     <div key={key} className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 bg-black/40 border border-white/5 rounded-[2rem] sm:rounded-[3rem] p-6 transition-all hover:bg-black/60 group">
-                                       <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-[1.5rem] sm:rounded-[2.5rem] overflow-hidden border-2 border-white/5 flex-shrink-0">
-                                         <img src={item.imageUrl} className="w-full h-full object-cover" />
+                                  <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 bg-black/40 border border-white/5 rounded-[2rem] sm:rounded-[3rem] p-6 transition-all hover:bg-black/60 group">
+                                    <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-[1.5rem] sm:rounded-[2.5rem] overflow-hidden border-2 border-white/5 flex-shrink-0">
+                                      <img src={item.imageUrl} className="w-full h-full object-cover" />
+                                    </div>
+                                    
+                                    <div className="flex-1 min-w-0">
+                                       <h4 className="text-3xl sm:text-5xl font-black truncate mb-4">{item.itemName}</h4>
+                                       <div className="flex items-center gap-4">
+                                          <span className="px-4 py-2 bg-white/5 rounded-xl text-lg font-black text-primary">×{item.remainingQty}</span>
+                                          <div className="h-px flex-1 bg-white/5" />
                                        </div>
-                                       
-                                       <div className="flex-1 min-w-0">
-                                          <h4 className="text-3xl sm:text-5xl font-black truncate mb-4">{item.itemName}</h4>
-                                          <div className="flex items-center gap-4">
-                                             <span className="px-4 py-2 bg-white/5 rounded-xl text-lg font-black text-primary">×{item.remainingQty}</span>
-                                             <div className="h-px flex-1 bg-white/5" />
-                                          </div>
-                                       </div>
+                                    </div>
 
-                                       <button
-                                         disabled={!!servingKey}
-                                         onClick={() => handleServeReadyItem(item, true)}
-                                         className="h-20 sm:h-24 w-full sm:w-auto px-10 sm:px-14 rounded-3xl sm:rounded-[2rem] bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest text-sm flex items-center justify-center gap-4 shadow-xl active:scale-95 disabled:opacity-50 transition-all"
-                                       >
-                                         {isBusy ? <RefreshCw className="w-6 h-6 animate-spin" /> : <><CheckCircle className="w-6 h-6" /> Serve</>}
-                                       </button>
-                                     </div>
-                                   );
-                                 })}
+                                    <button
+                                      disabled={!!servingKey}
+                                      onClick={() => handleServeReadyItem(item, true)}
+                                      className="h-20 sm:h-24 w-full sm:w-auto px-10 sm:px-14 rounded-3xl sm:rounded-[2rem] bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest text-sm flex items-center justify-center gap-4 shadow-xl active:scale-95 disabled:opacity-50 transition-all"
+                                    >
+                                      {servingKey === `${item.orderId}_${item.itemId}` ? <RefreshCw className="w-6 h-6 animate-spin" /> : <><CheckCircle className="w-6 h-6" /> Serve</>}
+                                    </button>
+                                  </div>
                                </div>
 
                                <div className="mt-8 pt-8 border-t border-white/5 flex justify-between items-center">
-                                  <p className="text-[10px] sm:text-xs font-black text-white/10 uppercase tracking-[0.4em]">{order.orderId}</p>
-                                  <button onClick={() => handleRejectOrderAction(order.orderId)} className="text-red-500/30 hover:text-red-500 font-bold uppercase text-[10px] tracking-widest transition-all">Reject Order</button>
+                                  <p className="text-[10px] sm:text-xs font-black text-white/10 uppercase tracking-[0.4em]">{item.orderId}</p>
+                                  <button onClick={() => handleRejectOrderAction(item.orderId)} className="text-red-500/30 hover:text-red-500 font-bold uppercase text-[10px] tracking-widest transition-all">Reject Order</button>
                                </div>
                              </div>
                           </div>

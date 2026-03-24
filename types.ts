@@ -1,4 +1,4 @@
-export const PICKUP_TIMEOUT_MS = 180000; // ⏱️ TEST MODE: 3 Minutes (was 60s)
+export const PICKUP_TIMEOUT_MS = 200000; // ⏱️ [SENTINEL-TIMING] 3 Minutes + 20s Buffer (180s + 20s)
 export const ROLES = {
   ADMIN: 'ADMIN',
   CASHIER: 'CASHIER',
@@ -55,9 +55,12 @@ export interface Order {
   items: CartItem[];
   totalAmount: number;
   paymentType: 'UPI' | 'CARD' | 'CASH' | 'NET';
-  paymentStatus: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REJECTED' | 'INITIATED' | 'UTR_SUBMITTED';
+  paymentStatus: 'INITIATED' | 'UTR_SUBMITTED' | 'VERIFIED' | 'FAILED' | 'SUCCESS' | 'REJECTED' | 'PENDING';
+  queueStatus: 'NOT_IN_QUEUE' | 'IN_QUEUE';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
+  utrLast4?: string;
+  paidAt?: number;
   /** 🍳 [SONIC-JIT] Pre-order Arrival Signal */
   arrivalSignal?: 'ARRIVED' | 'PENDING';
   arrivalSignalAt?: any;

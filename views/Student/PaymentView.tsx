@@ -7,6 +7,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { submitOrderUTR } from '../../services/firestore-db';
 import { QRCodeSVG } from 'qrcode.react';
 import { joeSounds } from '../../utils/audio';
+import { sonicVoice } from '../../services/voice-engine';
 
 
 interface PaymentViewProps {
@@ -72,29 +73,46 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     getOrderingEnabled().then((enabled) => setOrderingDisabled(!enabled)).catch(() => setOrderingDisabled(false));
   }, []);
 
+  // 🔄 HYDRATION LOGIC: Restore orphaned payment sessions (Fixes BUG 1)
+  useEffect(() => {
+    const savedOrderId = localStorage.getItem('activeOrderId');
+    if (savedOrderId && !orderId) {
+      console.log('🔄 [HYDRATION] Restoring active payment session:', savedOrderId);
+      setOrderId(savedOrderId);
+      setState('CASH_WAITING');
+    }
+  }, [orderId]);
+
   useEffect(() => {
     if (orderId) {
       let hasNavigated = false;
+      console.log('📡 [LISTENER] Subscribing to order state machine:', orderId);
+      
       const unsubscribe = listenToOrder(orderId, (order) => {
-        if (order) {
-          setPayStatus(order.paymentStatus);
-          if (order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE') {
-            setOrderStatus('APPROVED');
-            joeSounds.playPaymentConfirmed(); // 💳 Cashier confirmed — bright C-major success chord
-          } else if (order.paymentStatus === 'UTR_SUBMITTED' || order.paymentStatus === 'PENDING') {
-            setOrderStatus('PENDING');
+        if (!order) return;
+        
+        console.log('📟 [STATUS-PULSE] New status:', order.paymentStatus);
+        setPayStatus(order.paymentStatus);
+        
+        // 🔒 STRICT NAVIGATION RULE (Fixes BUG 3)
+        // Only redirect to success/QR if cashier has VERIFIED 
+        if (order.paymentStatus === 'VERIFIED') {
+          console.log('✅ [HANDSHAKE] Verification received. Clearing session...');
+          localStorage.removeItem('activeOrderId');
+          setOrderStatus('APPROVED');
+          joeSounds.playPaymentConfirmed();
+          sonicVoice.announceOrderComplete();
+          
+          if (!hasNavigated) {
+            hasNavigated = true;
+            onSuccess(orderId);
           }
-        }
-
-        // For cash waiting, we still auto-navigate to QR once approved because it's a "gate"
-        if (order && order.paymentStatus === 'SUCCESS' && order.qrStatus === 'ACTIVE' && !hasNavigated) {
-          hasNavigated = true;
-          onSuccess(orderId);
           return;
         }
 
-        if (order && order.paymentStatus === 'REJECTED' && !hasNavigated) {
+        if (order.paymentStatus === 'REJECTED' && !hasNavigated) {
           hasNavigated = true;
+          localStorage.removeItem('activeOrderId');
           setOrderStatus(null);
           setRejectionMessage('Your payment was rejected by the cashier.');
           setState('REJECTED');
@@ -103,15 +121,22 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       });
       return unsubscribe;
     }
-  }, [state, orderId, onSuccess, onBack]);
+  }, [orderId, onSuccess, onBack]);
 
   const handleUTRSubmit = async () => {
     if (!orderId || utr.length < 4) return;
     setIsSubmittingUtr(true);
     try {
-      await submitOrderUTR(orderId, utr);
-      // Logic handles the move to UTR_SUBMITTED
+      console.log('📤 [UTR-SYNC] Submitting last 4 digits:', utr);
+      const orderRef = doc(db, "orders", orderId);
+      await updateDoc(orderRef, { 
+        paymentStatus: 'UTR_SUBMITTED', 
+        utrLast4: utr,
+        utrSubmittedAt: Date.now()
+      });
+      console.log('✅ [UTR-SYNC] Firestore persistent.');
     } catch (err: any) {
+      console.error('❌ [UTR-SYNC] Submission error:', err);
       if (!err?.message?.includes('permission-denied')) {
         alert(err.message || 'Verification failed. Contact staff.');
       }
@@ -163,17 +188,19 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         items: cart,
         totalAmount: total,
         paymentType: selectedMethod as any,
-        paymentStatus: 'PENDING',
-        arrivalTime: undefined, // Let the backend auto-assign the 5-minute Micro-Slot
+        paymentStatus: 'INITIATED',
+        queueStatus: 'NOT_IN_QUEUE', // Ensures kitchen doesn't see it yet
+        arrivalTime: undefined, 
         orderStatus: 'PENDING',
-        qrStatus: 'PENDING_PAYMENT',     // Correct type: waiting for cashier/UPISync
+        qrStatus: 'PENDING_PAYMENT',
         cafeteriaId: 'MAIN_CAFE',
         idempotencyKey
       });
 
       setOrderId(newOrderId);
+      localStorage.setItem('activeOrderId', newOrderId); // 🛡️ Anchor the session
       localStorage.removeItem('joe_cart');
-      joeSounds.playOrderPlaced(); // 🛒 Order submitted — warm ascending tone
+      joeSounds.playOrderPlaced(); 
       setState('CASH_WAITING');
       return;
 

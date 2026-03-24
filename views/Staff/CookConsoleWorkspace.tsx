@@ -90,21 +90,50 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
   }, [batches]);
 
   // ── FIFO sort on client (guarantees order even without cloud index) ──────────
-  const sorted = useMemo(() => {
-    return batches
+  const sortedItems = useMemo(() => {
+    const activeBatches = batches
       .map(b => ({ ...b, status: optimisticStatus[b.id] ?? b.status }))
       .filter(b =>
         (activeStation === 'ALL' || b.stationId === activeStation) &&
         (b.status === 'QUEUED' || b.status === 'PREPARING')
-      )
-      .sort((a, b) => {
-        if (a.status === 'PREPARING' && b.status !== 'PREPARING') return -1;
-        if (b.status === 'PREPARING' && a.status !== 'PREPARING') return 1;
-        const tA = (a.createdAt as any)?.toMillis?.() ?? (a.createdAt as number) ?? 0;
-        const tB = (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0;
-        return tA - tB;
-      });
+      );
+
+    const flattened = activeBatches.flatMap(b => 
+      (b.items || []).flatMap((it: any) => {
+          const units = it.quantity || 1;
+          const result = [];
+          for (let i = 0; i < units; i++) {
+              result.push({
+                ...it,
+                unitIndex: i,
+                batchId: b.id,
+                batchStatus: b.status,
+                batchCreatedAt: (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0,
+                stationId: b.stationId,
+                fullBatchItems: b.items 
+              });
+          }
+          return result;
+      })
+    );
+
+    const stationCounts: Record<string, number> = {};
+    flattened.forEach(it => { stationCounts[it.stationId] = (stationCounts[it.stationId] || 0) + 1; });
+
+    return flattened.sort((a, b) => {
+      if (a.batchStatus === 'PREPARING' && b.batchStatus !== 'PREPARING') return -1;
+      if (b.batchStatus === 'PREPARING' && a.batchStatus !== 'PREPARING') return 1;
+
+      const aRarity = 1 / (stationCounts[a.stationId] || 1);
+      const bRarity = 1 / (stationCounts[b.stationId] || 1);
+      const aScore = a.batchCreatedAt - (aRarity * 60000); 
+      const bScore = b.batchCreatedAt - (bRarity * 60000);
+
+      return aScore - bScore;
+    });
   }, [batches, optimisticStatus, activeStation]);
+
+  const activeItemsSlice = useMemo(() => sortedItems.slice(0, 2), [sortedItems]);
 
   // Reconcile optimistic overrides when Firestore confirms
   useEffect(() => {
@@ -116,7 +145,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
     });
   }, [batches]);
 
-  const focus = sorted[0];
+  const focus = activeItemsSlice[0];
 
   const handleStart = async (batchId: string, items: any[]) => {
     if (processingMap[batchId]) return;
@@ -149,7 +178,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
   };
 
   // ── EMPTY STATE ────────────────────────────────────────────────────────────
-  if (sorted.length === 0) {
+  if (sortedItems.length === 0) {
     return (
       <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] relative">
         <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={!indexReady} />
@@ -186,22 +215,22 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
         <div className="w-80 border-r border-white/5 flex flex-col bg-white/[0.01]">
           <div className="p-6 border-b border-white/5">
             <h2 className="text-white font-black uppercase italic tracking-tight text-lg">Active Queue</h2>
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">{sorted.length} units</p>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">{sortedItems.length} units</p>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {sorted.map((b, i) => (
+            {sortedItems.map((it, i) => (
               <div
-                key={b.id}
-                className={`p-5 rounded-[1.5rem] border transition-all ${i === 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/[0.02] border-white/5 opacity-40'}`}
+                key={`${it.batchId}-${it.id}-${i}`}
+                className={`p-5 rounded-[1.5rem] border transition-all ${i < 2 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/[0.02] border-white/5 opacity-40'}`}
               >
                 <div className="flex items-center justify-between mb-3 text-[9px] font-black uppercase tracking-widest">
-                  <span className={b.status === 'PREPARING' ? 'text-emerald-400' : 'text-white/40'}>{b.status}</span>
-                  <span className="text-white/20">{b.stationId}</span>
+                  <span className={it.batchStatus === 'PREPARING' ? 'text-emerald-400' : 'text-white/40'}>{it.batchStatus}</span>
+                  <span className="text-white/20">{it.stationId}</span>
                 </div>
-                <h3 className="text-white font-bold text-base">
-                  {b.items?.[0]?.name}
-                  {b.items?.length > 1 ? ` +${b.items.length - 1}` : ''}
+                <h3 className="text-white font-bold text-base truncate">
+                  {it.name}
                 </h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">#{it.orderId?.slice(-4).toUpperCase()}</p>
               </div>
             ))}
           </div>
@@ -221,26 +250,29 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
 
               <div className="bg-white/[0.03] border border-white/5 rounded-[3rem] p-10">
                 <div className="space-y-4 mb-10">
-                  {focus.items.map((it: any, i: number) => (
-                    <div key={i} className="flex items-center justify-between p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-                      <h4 className="text-xl font-bold text-white">{it.name}</h4>
-                      <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest">#{it.orderId?.slice(-4).toUpperCase()}</span>
+                  {activeItemsSlice.map((it: any, i: number) => (
+                    <div key={`${it.batchId}-${i}`} className="flex items-center justify-between p-6 bg-white/[0.04] border border-white/10 rounded-[2rem] shadow-xl">
+                      <div>
+                        <h4 className="text-2xl font-black text-white italic">{it.name}</h4>
+                        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mt-1">Item Unit</p>
+                      </div>
+                      <span className="text-slate-500 text-xs font-black uppercase tracking-widest bg-white/5 px-4 py-2 rounded-xl border border-white/5">#{it.orderId?.slice(-4).toUpperCase()}</span>
                     </div>
                   ))}
                 </div>
 
-                {focus.status === 'QUEUED' ? (
+                {focus.batchStatus === 'QUEUED' ? (
                   <button
-                    onClick={() => handleStart(focus.id, focus.items)}
-                    disabled={!!processingMap[focus.id]}
+                    onClick={() => handleStart(focus.batchId, focus.fullBatchItems)}
+                    disabled={!!processingMap[focus.batchId]}
                     className="w-full h-20 bg-white text-black rounded-[1.5rem] font-black text-lg uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] disabled:opacity-50"
                   >
                     <Zap className="w-7 h-7 fill-current" /> Start Cooking
                   </button>
                 ) : (
                   <button
-                    onClick={() => handleFinalize(focus.id, focus.items)}
-                    disabled={!!processingMap[focus.id]}
+                    onClick={() => handleFinalize(focus.batchId, focus.fullBatchItems)}
+                    disabled={!!processingMap[focus.batchId]}
                     className="w-full h-20 bg-emerald-500 text-white rounded-[1.5rem] font-black text-lg uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20 disabled:opacity-50"
                   >
                     <CheckCircle2 className="w-7 h-7" /> Finalize Batch

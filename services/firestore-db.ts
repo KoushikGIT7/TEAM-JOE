@@ -27,6 +27,7 @@ import {
   arrayRemove
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { notifyOrderUpdate, sendDirectedPush } from "./onesignal-api";
 
 import {
   UserProfile,
@@ -52,7 +53,7 @@ import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SER
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
-export const PICKUP_WINDOW_DURATION_MS = 180 * 1000; // ⏱️ TEST MODE: 3 Minutes Pickup Window
+export const PICKUP_WINDOW_DURATION_MS = 200000; // ⏱️ 3 Minutes + 20s Buffer (180s + 20s)
 import { parseQRPayload, parseServingQR, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import {
   useCallables,
@@ -120,6 +121,8 @@ const orderToFirestore = (order: Order) => ({
   paymentStatus: order.paymentStatus || 'PENDING',
   orderStatus: order.orderStatus || 'PENDING',
   qrStatus: order.qrStatus || 'PENDING',
+  queueStatus: order.queueStatus || 'NOT_IN_QUEUE',
+  utrLast4: order.utrLast4 || '',
   qrRedeemable: order.qrRedeemable ?? null,
   qr: order.qr ? {
     token: order.qr.token,
@@ -180,9 +183,11 @@ const firestoreToOrder = (id: string, data: any): Order => {
     })),
     totalAmount: data.totalAmount,
     paymentType: data.paymentType,
-    paymentStatus: data.paymentStatus,
-    orderStatus: data.orderStatus,
-    qrStatus: data.qrStatus,
+    paymentStatus: data.paymentStatus || 'PENDING',
+    queueStatus: data.queueStatus || 'NOT_IN_QUEUE',
+    orderStatus: data.orderStatus || 'PENDING',
+    qrStatus: data.qrStatus || 'PENDING',
+    utrLast4: data.utrLast4,
     qr: data.qr ? {
       token: data.qr.token,
       status: data.qr.status,
@@ -376,6 +381,16 @@ export const rejectOrder = async (orderId: string, rejectedBy: string, reason: s
     rejectedAt: serverTimestamp(),
     rejectionReason: reason
   });
+
+  // 📣 [ONESIGNAL-STRIKE] Notify student of REJECTION
+  try {
+    const snap = await getDoc(orderRef);
+    if (snap.exists() && snap.data()?.userId) {
+       notifyOrderUpdate(snap.data().userId, 'REJECTED', 'Your order items');
+    }
+  } catch (err) {
+    console.warn("REJECT push failed:", err);
+  }
 };
 
 export const updateMenuItem = async (id: string, updates: Partial<MenuItem>): Promise<void> => {
@@ -1627,7 +1642,8 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
 
     await runTransaction(db, async (transaction) => {
        transaction.update(orderRef, {
-          paymentStatus: 'SUCCESS',
+          paymentStatus: 'VERIFIED',
+          queueStatus: 'IN_QUEUE',
           qrStatus: 'ACTIVE',
           qr: { 
             token: `v1.${orderId}.QR_AUTO_${Date.now()}`, 
@@ -1639,6 +1655,16 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
           paidAt: serverTimestamp(),
           updatedAt: serverTimestamp()
        });
+
+       // 📣 [ONESIGNAL-STRIKE] Notify student of PAYMENT SUCCESS
+       if (orderData.userId) {
+          sendDirectedPush({
+              userId: orderData.userId,
+              title: '💳 Payment Confirmed!',
+              message: `Your #${orderId.slice(-4).toUpperCase()} is now ACTIVE. Check your QR code at the counter!`,
+              url: 'https://joecafebrand.netlify.app'
+          });
+       }
 
        // Now we use the specific docId we found earlier to lock the record atomically
        if (depositDocId) {
@@ -2845,6 +2871,12 @@ export const startBatch = async (batchId: string, items: any[]) => {
                 serveFlowStatus: allItemsPreparing ? 'PREPARING' : oData.serveFlowStatus,
                 updatedAt: serverTimestamp() 
             });
+
+            // 📣 [ONESIGNAL-STRIKE] Notify student that cooking started
+            if (oData.userId) {
+                const preparedItem = newItems.find((ni: any) => affectedItemIds.includes(ni.id));
+                notifyOrderUpdate(oData.userId, 'PREPARING', preparedItem?.name || 'Order Item');
+            }
         }
     });
 
@@ -2929,8 +2961,20 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
             tx.update(oSnap.ref, { 
                items: newItems, 
                serveFlowStatus: hasReady ? 'READY' : oData.serveFlowStatus,
+               pickupWindow: {
+                  startTime: now,
+                  endTime: now + PICKUP_WINDOW_DURATION_MS,
+                  durationMs: PICKUP_WINDOW_DURATION_MS,
+                  status: 'COLLECTING'
+               },
                updatedAt: serverTimestamp() 
             });
+
+            // 📣 [ONESIGNAL-STRIKE] Notify student that food is READY!
+            if (oData.userId) {
+                const readyItem = newItems.find((ni: any) => affectedItemIds.includes(ni.id));
+                notifyOrderUpdate(oData.userId, 'READY', readyItem?.name || 'Meal');
+            }
         }
     });
   });
@@ -3588,6 +3632,12 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
           "items": reQueuedItems,
           "updatedAt": serverTimestamp()
         });
+
+        // 📣 [ONESIGNAL-STRIKE] Notify student they are bumped to next batch
+        if (data.userId) {
+            const missedItem = (data.items || []).find((it: any) => it.status === 'READY' || it.status === 'COLLECTING');
+            notifyOrderUpdate(data.userId, 'MISSED', missedItem?.name || 'Item');
+        }
 
         // 2. Aggregate for NEW batches (only for items now marked PENDING)
         reQueuedItems.forEach((it: any) => {

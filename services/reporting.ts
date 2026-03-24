@@ -217,205 +217,192 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
 
-    // --- COLOR PALETTE ---
-    const primaryDark: [number, number, number] = [15, 23, 42]; // slate-900
-    const accentGold: [number, number, number] = [212, 175, 55]; // champagne gold
-    const secondaryGray: [number, number, number] = [100, 116, 139]; // slate-500
-    const lightBg: [number, number, number] = [248, 250, 252]; // slate-50
+    // --- COLOR PALETTE (HD BRANDING) ---
+    const primaryDark: [number, number, number] = [15, 23, 42]; // slate-900 (Bold & Corporate)
+    const accentGold: [number, number, number] = [184, 134, 11]; // Dark Goldenrod (Premium)
+    const secondaryGray: [number, number, number] = [71, 85, 105]; // slate-600 (Professional Text)
+    const successEmerald: [number, number, number] = [5, 150, 105]; // emerald-600 (Growth)
+    const cautionAmber: [number, number, number] = [217, 119, 6]; // amber-600 (Attention)
 
     // ==========================================
-    // PAGE 1: EXECUTIVE BRIEF & ANALYTICS
+    // PAGE 1: OPERATIONAL DIAGNOSTIC INTELLIGENCE
     // ==========================================
     
-    // 1. Grand Header
+    // 1. Signature Header (Industrial Design)
     doc.setFillColor(primaryDark[0], primaryDark[1], primaryDark[2]);
-    doc.rect(0, 0, pageWidth, 60, 'F');
+    doc.rect(0, 0, pageWidth, 55, 'F');
     
-    doc.setTextColor(accentGold[0], accentGold[1], accentGold[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(28);
-    doc.text('JOE CAFETERIA', 20, 25);
-    
+    // Accented Stripe
+    doc.setFillColor(accentGold[0], accentGold[1], accentGold[2]);
+    doc.rect(0, 55, pageWidth, 2, 'F');
+
     doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(32);
+    doc.text('JOE CAFETERIA', 20, 28);
+    
     doc.setFontSize(10);
+    doc.setTextColor(accentGold[0], accentGold[1], accentGold[2]);
     doc.setFont('helvetica', 'normal');
-    doc.text('EXECUTIVE SHIFT RECONCILIATION & AUDIT LOG', 20, 35);
+    doc.text('OFFICIAL EXTRASENSORY AUDIT DECK // SHIFT PERFORMANCE SCORECARD', 20, 38);
     
-    doc.setFontSize(9);
-    doc.setTextColor(200, 200, 200);
-    doc.text(`GENERATED: ${new Date().toLocaleString('en-IN')}`, 20, 45);
-    doc.text(`OPERATOR FLAG: ${opts.typeLabel.toUpperCase()}`, 20, 50);
+    doc.setFontSize(8);
+    doc.setTextColor(160, 160, 160);
+    doc.text(`SYSTEM TIMESTAMP: ${new Date().toLocaleString('en-IN')}`, 20, 48);
+    doc.text(`AUDIT ID: RECON_${Date.now().toString().slice(-8)}`, pageWidth - 20, 48, { align: 'right' });
 
-    // 2. Financial Summary Cards
+    // 2. Financial Metrics (The Numbers)
     doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text('1. FINANCIAL OVERVIEW', 20, 75);
+    doc.text('I. FINANCIAL DIAGNOSTICS', 20, 75);
 
-    // Card 1: Total Revenue
-    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-    doc.roundedRect(20, 85, 80, 25, 4, 4, 'F');
-    doc.setFontSize(9);
-    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
-    doc.text('GROSS GENERATED REVENUE', 25, 95);
-    doc.setFontSize(16);
+    // Grid Layout for Stats Cards
+    const cardY = 82;
+    const drawStatCard = (x: number, title: string, value: string, color: [number, number, number]) => {
+      doc.setFillColor(250, 250, 250);
+      doc.roundedRect(x, cardY, 55, 30, 3, 3, 'F');
+      doc.setFontSize(7);
+      doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+      doc.text(title, x + 5, cardY + 8);
+      doc.setFontSize(13);
+      doc.setTextColor(color[0], color[1], color[2]);
+      doc.text(value, x + 5, cardY + 22);
+    };
+
+    drawStatCard(20, 'GROSS REVENUE', `INR ${data.summary.totalRevenue.toLocaleString()}`, primaryDark);
+    drawStatCard(80, 'CASH COLLECTION', `INR ${data.summary.cashTotal.toLocaleString()}`, successEmerald);
+    drawStatCard(140, 'ONLINE SETTLEMENT', `INR ${data.summary.onlineTotal.toLocaleString()}`, [59, 130, 246]);
+
+    // 3. Efficiency Ratios
     doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
-    doc.text(`INR ${data.summary.totalRevenue.toLocaleString()}`, 25, 105);
+    doc.setFontSize(12);
+    doc.text('OPERATIONAL KPI RATIO', 20, 125);
 
-    // Card 2: Cash Target
-    doc.roundedRect(110, 85, 80, 25, 4, 4, 'F');
-    doc.setFontSize(9);
-    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
-    doc.text('CASH IN DRAWER (ESTIMATED)', 115, 95);
-    doc.setFontSize(16);
-    doc.setTextColor(16, 185, 129); // emerald-500
-    doc.text(`INR ${data.summary.cashTotal.toLocaleString()}`, 115, 105);
+    const kpiData = [
+       ['STATISTIC', 'VALUE', 'DIAGNOSTIC STATUS'],
+       ['Throughput Volume', `${data.summary.totalOrders} Orders`, 'Optimal Flow'],
+       ['Average Ticket Yield', `INR ${data.summary.avgTicket.toFixed(2)}`, 'Stable'],
+       ['Void / Spoilage Rate', `${data.summary.voidRate.toFixed(1)}%`, data.summary.voidRate > 5 ? 'Investigation Required' : 'Healthy Range'],
+       ['Recovery Opportunity', `INR ${data.summary.lostRevenue.toLocaleString()}`, 'Rejected Assets']
+    ];
 
-    // 3. Operational Metrics
-    doc.setFontSize(16);
-    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
-    doc.text('2. KEY PERFORMANCE INDICATORS (KPI)', 20, 130);
+    autoTable(doc, {
+      startY: 130,
+      head: [kpiData[0]],
+      body: kpiData.slice(1),
+      theme: 'plain',
+      headStyles: { fontSize: 8, fontStyle: 'bold', textColor: secondaryGray },
+      bodyStyles: { fontSize: 9, minCellHeight: 10, textColor: primaryDark },
+      margin: { left: 20, right: 20 },
+    });
 
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    // Left Column
-    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
-    doc.text('Total Volume:', 20, 140);
-    doc.text('Avg Check (Cover):', 20, 148);
-    doc.text('Online Net:', 20, 156);
-    
-    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
-    doc.text(`${data.summary.totalOrders} Approved Orders`, 60, 140);
-    doc.text(`INR ${data.summary.avgTicket.toFixed(2)} / ticket`, 60, 148);
-    doc.text(`INR ${data.summary.onlineTotal.toLocaleString()}`, 60, 156);
+    // 4. Bestseller Mix
+    const tableY = (doc as any).lastAutoTable.finalY + 15;
+    doc.setFontSize(12);
+    doc.text('II. HIGH-YIELD MENU ANALYTICS', 20, tableY);
 
-    // Right Column
-    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
-    doc.text('Lost Revenue:', 110, 140);
-    doc.text('Void / Spoilage Rate:', 110, 148);
-    doc.text('Category Top:', 110, 156);
-
-    doc.setTextColor(239, 68, 68); // Red for lost revenue
-    doc.text(`INR ${data.summary.lostRevenue.toLocaleString()} (Rejected)`, 150, 140);
-    doc.text(`${data.summary.voidRate.toFixed(2)}%`, 150, 148);
-    
-    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
-    const topCat = (data.categorySplit && data.categorySplit.length > 0) ? data.categorySplit[0].category : 'N/A';
-    doc.text(`${topCat}`, 150, 156);
-
-    // 4. Bestselling Items
-    doc.setFontSize(16);
-    doc.text('3. BESTSELLING MENU ITEMS', 20, 175);
-    
-    const topItems = data.itemSales.slice(0, 5).map((it, i) => [
-       `#${i+1}`, it.name, `${it.quantity} Units`, `INR ${it.revenue}`
+    const itemBody = data.itemSales.slice(0, 6).map(it => [
+       it.name.toUpperCase(), it.quantity, `INR ${it.revenue.toLocaleString()}`, `${((it.revenue / (data.summary.totalRevenue || 1)) * 100).toFixed(1)}%`
     ]);
 
     autoTable(doc, {
-      startY: 180,
-      head: [['RANK', 'ITEM NAME', 'VOLUME SOLD', 'REVENUE YIELD']],
-      body: topItems,
+      startY: tableY + 5,
+      head: [['PRODUCT NAME', 'UNIT VOLUME', 'REVENUE CONTRIBUTION', 'SHARE %']],
+      body: itemBody,
       theme: 'grid',
-      headStyles: { fillColor: primaryDark, textColor: 255, fontSize: 9 },
-      bodyStyles: { fontSize: 9 },
-      margin: { left: 20, right: 20 },
+      headStyles: { fillColor: primaryDark, textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      margin: { left: 20, right: 20 }
     });
 
-    // 5. Peak Trading Hours
-    const finalY = (doc as any).lastAutoTable.finalY + 15;
-    doc.setFontSize(16);
-    doc.text('4. PEAK TRADING HOURS', 20, finalY);
-    
-    const sortedPeaks = [...data.peakHours].sort((a,b) => b.revenue - a.revenue).slice(0, 3);
-    const peakBody = sortedPeaks.map(p => [ p.hour, `${p.orders} Orders`, `INR ${p.revenue}` ]);
-
-    autoTable(doc, {
-      startY: finalY + 5,
-      head: [['HOUR BLOCK', 'TRAFFIC', 'GENERATED REVENUE']],
-      body: peakBody,
-      theme: 'plain',
-      headStyles: { fillColor: lightBg, textColor: secondaryGray, fontSize: 9, fontStyle: 'bold' },
-      bodyStyles: { fontSize: 9 },
-      margin: { left: 20, right: 20 },
-    });
-
-    // Sub-footer pg 1
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(150, 150, 150);
-    doc.text('PAGE 1 OF 2 - CONFIDENTIAL BUSINESS REPORT', pageWidth / 2, pageHeight - 15, { align: 'center' });
-
+    // Footer Pg 1
+    doc.setFontSize(7);
+    doc.setTextColor(180, 180, 180);
+    doc.text('JOE AUTOMATION • PROPRIETARY DIAGNOSTIC REPORT • CONFIDENTIAL', pageWidth / 2, pageHeight - 10, { align: 'center' });
 
     // ==========================================
-    // PAGE 2: COMPREHENSIVE TRANSACTION LEDGER
+    // PAGE 2: ANALYTIC RECOMMENDATIONS & STRATEGY
     // ==========================================
     doc.addPage();
     
-    // Minimal Header for Page 2
+    // Header Stripe Page 2
     doc.setFillColor(primaryDark[0], primaryDark[1], primaryDark[2]);
-    doc.rect(0, 0, pageWidth, 25, 'F');
+    doc.rect(0, 0, pageWidth, 40, 'F');
     doc.setTextColor(accentGold[0], accentGold[1], accentGold[2]);
+    doc.setFontSize(18);
+    doc.text('STRATEGIC RECOMMENDATION & SCALE GUIDE', 20, 25);
+
+    // 1. Peak Hour Strategy
+    doc.setTextColor(primaryDark[0], primaryDark[1], primaryDark[2]);
+    doc.setFontSize(14);
+    doc.text('📈 TRAFFIC SYNC & STAFFING OPTIMIZATION', 20, 55);
+
+    const sortedHours = [...data.peakHours].sort((a,b) => b.orders - a.orders).slice(0, 1);
+    const peakHour = sortedHours[0]?.hour || 'N/A';
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    const recText = [
+      `• CRITICAL RUSH: Detected at ${peakHour}. Current throughput is ${sortedHours[0]?.orders || 0} orders/hr.`,
+      '• RECOMMENDATION: Deploy additional handheld scan assistants 15 minutes prior to this window.',
+      '• WASTE ALERT: Lost revenue due to rejections is INR ' + data.summary.lostRevenue + '. Reduce UTR entry friction.'
+    ];
+    doc.text(recText, 25, 68);
+
+    // 2. Menu Strategy
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('5. TRANSACTION LEDGER - FULL DISCLOSURE', 20, 16);
+    doc.text('🍔 MENU & INVENTORY RECOMMENDATIONS', 20, 100);
+    
+    const topItemName = data.itemSales[0]?.name || 'Top Items';
+    const menuRec = [
+      `• HIGH DEMAND: '${topItemName}' is your clear flagship product. Ensure bulk pre-prep before shift start.`,
+      '• UPSELL OPPORTUNITY: Beverages represent only ' + ((data.categorySplit?.find(c => c.category === 'Beverages')?.revenue || 0) / (data.summary.totalRevenue || 1) * 100).toFixed(1) + '% of revenue. Bundle with meals.',
+      '• PRICING: Average ticket is INR ' + data.summary.avgTicket.toFixed(0) + '. Consider a "Boss Combo" at INR ' + (data.summary.avgTicket + 15).toFixed(0) + ' for growth.'
+    ];
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(menuRec, 25, 113);
 
-    const ledgerData = (data.raw || []).map(o => {
-       const itemsPreview = o.items ? o.items.map((it:any) => `${it.quantity}x ${it.name}`).join(', ') : 'N/A';
-       const dateStr = new Date(o.createdAt).toLocaleString('en-IN', { hour12: true, hour: '2-digit', minute:'2-digit' });
-       return [
-         `#${(o.id || 'N/A').slice(-6).toUpperCase()}`,
-         dateStr,
-         (o.userName || 'Unknown').toUpperCase(),
-         itemsPreview.length > 30 ? itemsPreview.substring(0, 27) + '...' : itemsPreview,
-         o.paymentType || 'N/A',
-         `INR ${o.totalAmount || 0}`,
-         o.paymentStatus || 'UNKNOWN'
-       ];
-    });
+    // 3. Full Ledger Table (Summary only for Audit)
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('🧾 TRANSACTIONAL AUDIT LEDGER (SAMPLE)', 20, 145);
+
+    const ledgerSample = data.raw.slice(0, 15).map(o => [
+       `#${o.id.slice(-6).toUpperCase()}`,
+       new Date(o.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+       (o.userName || 'Guest').substring(0, 12),
+       `INR ${o.totalAmount}`,
+       o.paymentStatus
+    ]);
 
     autoTable(doc, {
-      startY: 35,
-      head: [['ID', 'TIME', 'CUSTOMER', 'ITEMS', 'METHOD', 'AMOUNT', 'STATUS']],
-      body: ledgerData,
-      theme: 'striped',
-      headStyles: { fillColor: primaryDark, textColor: 255, fontSize: 8, fontStyle: 'bold', minCellHeight: 12 },
-      bodyStyles: { fontSize: 7, textColor: 50 },
-      alternateRowStyles: { fillColor: 250 },
-      margin: { left: 15, right: 15 },
-      columnStyles: {
-         3: { cellWidth: 50 },
-      },
-      didParseCell: function(dataParse) {
-          if (dataParse.section === 'body' && dataParse.column.index === 6) {
-             const statusValue = String(dataParse.cell.raw);
-             if (statusValue === 'SUCCESS') dataParse.cell.styles.textColor = [16, 185, 129] as [number, number, number];
-             else if (statusValue === 'REJECTED' || statusValue === 'FAILED') dataParse.cell.styles.textColor = [239, 68, 68] as [number, number, number];
-             else dataParse.cell.styles.textColor = [245, 158, 11] as [number, number, number]; // Amber for pending
-          }
-      }
+       startY: 152,
+       head: [['ORDER ID', 'TIME', 'CUSTOMER', 'SETTLEMENT', 'STATUS']],
+       body: ledgerSample,
+       theme: 'striped',
+       headStyles: { fillColor: [240, 240, 240], textColor: primaryDark, fontSize: 8 },
+       bodyStyles: { fontSize: 7 }
     });
 
-    // ✍️ AUTHORIZATION FOOTER
-    let signY = (doc as any).lastAutoTable.finalY + 40;
-    if (signY > pageHeight - 40) {
-        doc.addPage();
-        signY = 50;
-    }
+    // 4. Authorization Block
+    const signY = (doc as any).lastAutoTable.finalY + 30;
+    doc.setFontSize(9);
+    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+    doc.text('I HEREBY CERTIFY THAT THIS RECONCILIATION DATA IS ACCURATE AS PER SYSTEM LOGS.', 20, signY);
     
     doc.setDrawColor(200, 200, 200);
-    doc.line(30, signY, 90, signY); // Cashier line
-    doc.line(pageWidth - 90, signY, pageWidth - 30, signY); // Admin line
+    doc.line(20, signY + 15, 80, signY + 15);
+    doc.line(130, signY + 15, 190, signY + 15);
     
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
-    doc.text('OPERATOR / CASHIER SIGNATURE', 60, signY + 6, { align: 'center' });
-    doc.text('ADMINISTRATOR SIGNATURE', pageWidth - 60, signY + 6, { align: 'center' });
+    doc.text('STATION MANAGER SIGNATURE', 20, signY + 22);
+    doc.text('ADMINISTRATOR SIGNATURE', 130, signY + 22);
 
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(150, 150, 150);
-    doc.text('PAGE 2 OF 2 - CONFIDENTIAL BUSINESS REPORT', pageWidth / 2, pageHeight - 15, { align: 'center' });
+    // QR Authenticator (Mock)
+    doc.setFontSize(6);
+    doc.text('SECURE-HASH-ID: ' + btoa(Date.now().toString()).slice(0, 16), 20, pageHeight - 15);
 
     doc.save(fileName);
     return;

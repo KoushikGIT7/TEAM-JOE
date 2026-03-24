@@ -3,6 +3,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc, getDoc } from 'fi
 import { db } from '../firebase';
 import { Order, PrepBatch } from '../types';
 import { joeSounds } from '../utils/audio';
+import { sonicVoice } from '../services/voice-engine';
 
 /**
  * Hook to listen for updates across ALL active orders for the student.
@@ -77,6 +78,7 @@ export const useOrderNotifications = (userId: string | null) => {
                         if (!sessionDedupeRef.current.has(dedupeKey)) {
                             sessionDedupeRef.current.add(dedupeKey);
                             joeSounds.playFoodReady(); 
+                            sonicVoice.announceMealReady(data.userName);
                             triggerLocalNotification(
                                 '🍽️ Order Ready!',
                                 `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
@@ -121,6 +123,7 @@ export const useOrderNotifications = (userId: string | null) => {
                                 if (!sessionDedupeRef.current.has(dKey)) {
                                     sessionDedupeRef.current.add(dKey);
                                     joeSounds.playFoodReady(); 
+                                    sonicVoice.announceMealReady(freshData.userName);
                                     triggerLocalNotification(
                                         '🍽️ Order Ready!',
                                         `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`

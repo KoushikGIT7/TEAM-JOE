@@ -8,10 +8,11 @@ import {
 import { UserProfile, Order } from '../../types';
 import { 
   listenToPendingCashOrders, confirmCashPayment, rejectCashPayment, 
-  listenToAllOrders, listenToMenu, registerBankDeposit 
+  listenToAllOrders, listenToMenu, registerBankDeposit, flushMissedPickups
 } from '../../services/firestore-db';
 import Logo from '../../components/Logo';
 import { joeSounds } from '../../utils/audio';
+import { sonicVoice } from '../../services/voice-engine';
 import { offlineDetector } from '../../utils/offlineDetector';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
@@ -56,15 +57,16 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       listenToPendingCashOrders((data) => {
         // 🚀 SMART NOTIFICATION: Check for NEW UTR submissions
         data.forEach(order => {
-           if (order.paymentStatus === 'UTR_SUBMITTED' && order.utr && !notifiedUtrs.current.has(order.id + '_' + order.utr)) {
-              notifiedUtrs.current.add(order.id + '_' + order.utr);
+           const finalUtr = order.utrLast4 || order.utr;
+           if (order.paymentStatus === 'UTR_SUBMITTED' && finalUtr && !notifiedUtrs.current.has(order.id + '_' + finalUtr)) {
+              notifiedUtrs.current.add(order.id + '_' + finalUtr);
               
               // 🔊 Audio Alert
               if (audioRef.current) audioRef.current.play().catch(() => {});
               
               // 📝 Notification Card
               if ('Notification' in window && Notification.permission === 'granted') {
-                 new Notification('💸 UTR RECEIVED: ' + order.utr, {
+                 new Notification('💸 UTR RECEIVED: ' + finalUtr, {
                     body: `${order.userName} submitted a ₹${order.totalAmount} payment for verification.`,
                     icon: '/JeoLogoFinal.png',
                     requireInteraction: true
@@ -88,7 +90,21 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
         offlineDetector.recordPing();
       }),
     ];
-    return () => unsubs.forEach(fn => fn());
+
+    // 🕵️ [SENTINEL-WATCHDOG] Periodically cleanup missed pickups every 30s
+    // Ensures food is recycled into next batches even if no one is manually triggering.
+    const sentinelId = setInterval(async () => {
+       console.log('🕵️ [SENTINEL] Patrolling for missed pickups...');
+       const count = await flushMissedPickups('WATCHDOG');
+       if (count > 0) {
+          console.log(`⚡ [SENTINEL] Recycled ${count} missed orders.`);
+       }
+    }, 30000);
+
+    return () => { 
+        unsubs.forEach(fn => fn()); 
+        clearInterval(sentinelId);
+    };
   }, []);
 
   // Conflict Intelligence: Detect multiple orders for the same amount
@@ -124,7 +140,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
     // ⚡ OPTIMISTIC STROKE: Clear from UI in <50ms
     setOptimisticClearedIds(prev => new Set(prev).add(orderId));
     joeSounds.playPaymentConfirmed(); 
-
+    sonicVoice.announceOrderComplete(); // 🎙️ [SONIC-AUDIT] Handshake Confirmation
     // Background Execution (Silent)
     confirmCashPayment(orderId, profile.uid).catch((err: any) => {
        // Rollback only on hard failure
@@ -157,7 +173,14 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       alert('Data still syncing, please wait...');
       return;
     }
-    await exportReport(reportData, { typeLabel: 'Daily Audit', format: 'pdf' });
+    try {
+      console.log('📄 [AUDIT] Generating Strategy Report...');
+      await exportReport(reportData, { typeLabel: 'Daily Audit', format: 'pdf' });
+      console.log('✅ [AUDIT] Report Delivered.');
+    } catch (err) {
+      console.error('❌ [AUDIT] PDF Error:', err);
+      alert('Could not generate PDF. Please check data.');
+    }
   };
 
   const handleBulkSync = async () => {
@@ -399,16 +422,22 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                  </div>
                  
                  <div className="flex flex-wrap gap-2 mb-8">
-                    {order.paymentStatus === 'UTR_SUBMITTED' && (
-                      <div className="w-full bg-indigo-900 shadow-xl shadow-indigo-900/20 px-8 py-6 rounded-[2rem] mb-6 animate-in slide-in-from-top-2 border border-indigo-400/20">
-                         <div className="flex items-center justify-between mb-3">
-                            <span className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.4em] italic">Audit Reference No</span>
-                            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                    {(order.paymentStatus === 'UTR_SUBMITTED' || order.utrLast4 || order.utr) && (
+                      <div className="w-full bg-slate-900 shadow-xl shadow-slate-900/20 px-10 py-10 rounded-[3rem] mb-6 animate-in slide-in-from-top-2 border-4 border-indigo-500/30">
+                         <div className="flex items-center justify-between mb-4">
+                            <span className="text-[12px] font-black text-indigo-400 uppercase tracking-[0.5em] italic">UTR VERIFICATION</span>
+                            <div className="flex items-center gap-2">
+                               <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                               <span className="text-[10px] font-black text-emerald-500 uppercase">Live Sync</span>
+                            </div>
                          </div>
-                         <p className="font-mono font-black text-white tracking-[0.2em] text-4xl leading-none drop-shadow-sm">{order.utr}</p>
-                         <div className="mt-4 flex items-center gap-2">
-                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                           <p className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em]">Match with Bank Statement</p>
+                         {/* 🚨 [STRICT-UTR] 5XL FONT FOR INSTANT RECONCILIATION */}
+                         <p className="font-mono font-black text-white tracking-[0.3em] text-7xl leading-none text-center py-4 drop-shadow-2xl">
+                            {order.utrLast4 || order.utr || '----'}
+                         </p>
+                         <div className="mt-8 pt-8 border-t border-white/5 flex items-center justify-between">
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Ref: #{order.id.slice(-8).toUpperCase()}</p>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">{formatTime(order.createdAt)}</p>
                          </div>
                       </div>
                     )}
@@ -424,17 +453,17 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                  <div className="flex gap-4 relative z-10">
                     <button 
                        onClick={() => handleConfirm(order.id)} 
-                       disabled={!!confirming || order.paymentStatus === 'SUCCESS'} 
-                       className={`flex-[2] h-20 rounded-[1.5rem] font-black text-sm uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3 ${
-                         order.paymentStatus === 'SUCCESS' ? 'bg-emerald-100 text-emerald-900 opacity-50 shadow-none' :
-                         order.paymentStatus === 'UTR_SUBMITTED' ? 'bg-indigo-600 text-white shadow-indigo-900/30' : 
+                       disabled={!!confirming || order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS'} 
+                       className={`flex-[2] h-24 rounded-[2rem] font-black text-lg uppercase tracking-[0.3em] shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-4 ${
+                         (order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? 'bg-emerald-100 text-emerald-900 opacity-50 shadow-none' :
+                         order.paymentStatus === 'UTR_SUBMITTED' ? 'bg-emerald-600 text-white shadow-emerald-900/40 border-b-8 border-emerald-800 active:border-b-0' : 
                          conflictMap[order.totalAmount] > 1 ? 'bg-amber-500 text-white shadow-amber-900/30' : 'bg-slate-900 text-white shadow-black/20'
                        }`}
                     >
                        {confirming === order.id ? <RefreshCw className="w-6 h-6 animate-spin" /> : (
                           <>
-                             {order.paymentStatus === 'SUCCESS' ? <CheckCircle className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
-                             {order.paymentStatus === 'SUCCESS' ? "PAID" : order.paymentStatus === 'UTR_SUBMITTED' ? "APPROVE UTR" : conflictMap[order.totalAmount] > 1 ? "SOLVE CONFLICT" : "APPROVE CASH"}
+                             {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? <CheckCircle className="w-8 h-8" /> : <Zap className="w-8 h-8" />}
+                             {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? "PAID" : order.paymentStatus === 'UTR_SUBMITTED' ? "VERIFY & QUEUE" : conflictMap[order.totalAmount] > 1 ? "SOLVE CONFLICT" : "APPROVE CASH"}
                           </>
                        )}
                     </button>
