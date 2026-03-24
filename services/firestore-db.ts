@@ -1625,7 +1625,7 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
     let depositDocId: string | null = null;
     if (orderData.utr) {
        try {
-          const ledgerQuery = query(collection(db, "payments_ledger"), where("status", "==", "AVAILABLE"));
+          const ledgerQuery = query(collection(db, "payments_ledger"), where("status", "==", "AVAILABLE"), limit(20));
           const ledgerSnap = await getDocs(ledgerQuery);
           const depositMatch = ledgerSnap.docs.find(d => {
              const dep = d.data();
@@ -1788,7 +1788,7 @@ export const listenToActiveOrders = (callback: (orders: Order[]) => void): (() =
     query(
       collection(db, "orders"),
       orderBy("createdAt", "desc"),
-      limit(100)
+      limit(50)
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
@@ -1817,7 +1817,8 @@ export const listenToPendingItems = (callback: (items: PendingItem[]) => void): 
     query(
       collection(db, "orders"),
       where("qrState", "==", "SCANNED"),
-      limit(100)
+      orderBy("createdAt", "asc"),
+      limit(50)
     ),
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));

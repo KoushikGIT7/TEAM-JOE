@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { PrepBatch } from '../../types';
 import { startBatch, finalizeBatch } from '../../services/firestore-db';
+import { safeListener } from '../../services/safeListener';
 import {
   collection, query, where, orderBy, onSnapshot,
   collectionGroup, limit
@@ -34,39 +35,39 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
   const [indexReady, setIndexReady] = useState(true); // assume ready; flip on error
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // PRIMARY LISTENER — exactly as specified: where status IN [...] + orderBy createdAt
+  // PRIMARY LISTENER — status IN [QUEUED, PREPARING] + orderBy createdAt
+  // Uses safeListener: auto-detects missing index, retries on transient errors,
+  // falls back to simplified query (no orderBy) while index builds.
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    console.log(`🔥 [COOK-CONSOLE] Activating listener [mode: ${indexReady ? 'ORDERED' : 'FALLBACK'}]...`);
+    console.log('🔥 [COOK-CONSOLE] Activating safe listener...');
 
-    const base = [
+    const primaryQ = query(
       collection(db, 'prepBatches'),
       where('status', 'in', ['QUEUED', 'PREPARING']),
-    ] as const;
+      orderBy('createdAt', 'asc'),
+      limit(50)
+    );
+    const fallbackQ = query(
+      collection(db, 'prepBatches'),
+      where('status', 'in', ['QUEUED', 'PREPARING']),
+      limit(50)
+    );
 
-    // Use orderBy only if index confirmed ready; otherwise fall through to fallback below
-    const q = indexReady
-      ? query(collection(db, 'prepBatches'), where('status', 'in', ['QUEUED', 'PREPARING']), orderBy('createdAt', 'asc'))
-      : query(collection(db, 'prepBatches'), where('status', 'in', ['QUEUED', 'PREPARING']));
-
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const live = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as PrepBatch[];
+    const unsub = safeListener(
+      'cook-console-batches',
+      primaryQ,
+      (snapshot) => snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as PrepBatch[],
+      () => [] as PrepBatch[],
+      (live) => {
         console.log(`🔥 [COOK-CONSOLE] Live batches: ${live.length}`);
         setBatches(live);
+        if (!indexReady) setIndexReady(true); // recover once index is ready
       },
-      (err) => {
-        console.error('❌ [COOK-CONSOLE] Listener error:', err.message);
-        if (err.message.includes('index') || err.code === 'failed-precondition') {
-          console.warn('⚠️ [COOK-CONSOLE] Index missing — switching to fallback query (no orderBy)');
-          setIndexReady(false); // triggers re-subscribe without orderBy
-        }
-      }
+      fallbackQ
     );
 
     // ── STATUS DOCTOR ─────────────────────────────────────────────────────────
-    // Watches raw items to surface "zombie" items (paid but not yet batched)
     const unsubDoctor = onSnapshot(
       query(collectionGroup(db, 'items'), where('status', 'in', ['PENDING', 'RESERVED', 'QUEUED']), limit(100)),
       (snap) => {
@@ -77,11 +78,12 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
         }, {} as Record<string, number>);
         if (Object.keys(counts).length > 0)
           console.log('🔬 [STATUS-DOCTOR] Item census:', counts);
-      }
+      },
+      (err) => { console.warn('[STATUS-DOCTOR] Non-critical error:', err.code); }
     );
 
     return () => { unsub(); unsubDoctor(); };
-  }, [indexReady]); // re-run on fallback switch
+  }, []); // single mount — safeListener handles all index/retry logic internally
 
   // ── Available stations from live data ──────────────────────────────────────
   const stations = useMemo(() => {

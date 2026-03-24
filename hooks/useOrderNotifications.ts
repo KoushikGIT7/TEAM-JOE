@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Order, PrepBatch } from '../types';
 import { joeSounds } from '../utils/audio';
@@ -26,7 +26,9 @@ export const useOrderNotifications = (userId: string | null) => {
         const q = query(
             collection(db, 'orders'),
             where('userId', '==', userId),
-            where('orderStatus', 'in', ['PENDING', 'PAID', 'REJECTED'])
+            where('orderStatus', 'in', ['PENDING', 'PAID', 'REJECTED']),
+            orderBy('createdAt', 'desc'),
+            limit(5)
         );
 
         const unsub = onSnapshot(q, (snapshot) => {
