@@ -82,23 +82,23 @@ export const sendDirectedPush = async ({
 export const notifyOrderUpdate = (userId: string, status: string, itemName: string) => {
     const alerts: Record<string, { title: string, body: string, sound: string }> = {
         'PREPARING': {
-            title: '🥣 Prep Starting',
-            body: `Chef started cooking.`,
+            title: '🥣 Cooking',
+            body: `Kitchen is busy.`,
             sound: 'pulse'
         },
         'READY': {
-            title: '🎉 Meal Ready',
-            body: `Collect at counter.`,
+            title: '🎉 Ready',
+            body: `Come get it!`,
             sound: 'ready'
         },
         'MISSED': {
-            title: '⚠️ Missed Pickup',
-            body: `Next batch soon.`,
+            title: '⚠️ Missed',
+            body: `Check next batch.`,
             sound: 'pulse'
         },
         'REJECTED': {
-            title: '🚫 Order Notice',
-            body: `Contact cashier now.`,
+            title: '🚫 Issue',
+            body: `See cashier now.`,
             sound: 'pulse'
         }
     };

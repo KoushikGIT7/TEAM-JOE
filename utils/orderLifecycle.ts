@@ -50,19 +50,22 @@ export const getOrderUIState = (order: Order): OrderUIState => {
   }
 
   // 💰 PAYMENT STATES
-  if (order.paymentStatus === 'PENDING') return 'PENDING_PAYMENT';
+  if (order.paymentStatus === 'PENDING' || order.paymentStatus === 'INITIATED') return 'PENDING_PAYMENT';
 
   // 📱 ACTIVE QR
-  if (order.paymentStatus === 'SUCCESS' && (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED')) {
+  const isPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
+  const hasActiveQR = order.qrStatus === 'ACTIVE' || order.qr?.status === 'ACTIVE' || !!order.qr?.token;
+  
+  if (isPaid && (hasActiveQR || order.qrStatus === 'SCANNED')) {
     return 'QR_ACTIVE';
   }
 
   // ⏳ INITIAL STATES
-  if (order.paymentStatus === 'SUCCESS' && order.orderStatus === 'PENDING') {
+  if (isPaid && order.orderStatus === 'PENDING') {
     return 'AWAITING_QR';
   }
 
-  return 'AWAITING_QR';
+  return isPaid ? 'AWAITING_QR' : 'PENDING_PAYMENT';
 };
 
 /**

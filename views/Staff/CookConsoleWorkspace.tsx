@@ -135,10 +135,11 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
     });
   }, [batches, optimisticStatus, activeStation]);
 
-  const activeItemsSlice = useMemo(() => sortedItems.slice(0, 2), [sortedItems]);
+  const activeItemsSlice = useMemo(() => (sortedItems || []).slice(0, 2), [sortedItems]);
 
   // Reconcile optimistic overrides when Firestore confirms
   useEffect(() => {
+    if (!batches) return;
     setOptimisticStatus(prev => {
       const next = { ...prev };
       let changed = false;
@@ -232,7 +233,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
                 <h3 className="text-white font-bold text-base truncate">
                   {it.name}
                 </h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">#{it.orderId?.slice(-4).toUpperCase()}</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">#{it.orderId?.slice(-4).toUpperCase() || '####'}</p>
               </div>
             ))}
           </div>
@@ -247,7 +248,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
                   <span className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[10px] mb-1 block">{focus.stationId} STATION</span>
                   <h1 className="text-5xl font-black text-white uppercase italic tracking-tighter">Kitchen Batch</h1>
                 </div>
-                <span className="text-3xl font-black text-white/10 font-mono">#{focus.id.slice(-4).toUpperCase()}</span>
+                <span className="text-3xl font-black text-white/10 font-mono">#{focus?.id?.slice(-4).toUpperCase() || '####'}</span>
               </div>
 
               <div className="bg-white/[0.03] border border-white/5 rounded-[3rem] p-10">
@@ -258,7 +259,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({ initialStat
                         <h4 className="text-2xl font-black text-white italic">{it.name}</h4>
                         <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mt-1">Item Unit</p>
                       </div>
-                      <span className="text-slate-500 text-xs font-black uppercase tracking-widest bg-white/5 px-4 py-2 rounded-xl border border-white/5">#{it.orderId?.slice(-4).toUpperCase()}</span>
+                      <span className="text-slate-500 text-xs font-black uppercase tracking-widest bg-white/5 px-4 py-2 rounded-xl border border-white/5">#{it.orderId?.slice(-4).toUpperCase() || '####'}</span>
                     </div>
                   ))}
                 </div>

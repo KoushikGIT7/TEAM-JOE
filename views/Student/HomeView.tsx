@@ -157,8 +157,8 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       if (o.paymentStatus === 'PENDING') return true;
 
       // 🥗 Paid orders are ACTIVE if they are still preparing or waiting for scan
-      // We also check for 'SCANNED' because dynamic orders stay active after scan until fully served
-      if (o.paymentStatus === 'SUCCESS' && (o.qrStatus === 'ACTIVE' || o.qrStatus === 'SCANNED')) return true;
+      const isPaid = o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED';
+      if (isPaid && (o.qrStatus === 'ACTIVE' || o.qrStatus === 'SCANNED' || o.qr?.status === 'ACTIVE')) return true;
       
       return false;
     });
@@ -167,12 +167,12 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const isPrepWaiting =
     !!activeOrder &&
     activeOrder.orderType === 'PREPARATION_ITEM' &&
-    activeOrder.paymentStatus === 'SUCCESS' &&
+    (activeOrder.paymentStatus === 'SUCCESS' || activeOrder.paymentStatus === 'VERIFIED') &&
     ['NEW', 'QUEUED', 'PREPARING'].includes(activeOrder.serveFlowStatus || 'NEW');
   const { visible: showHeadline, headline } = useMotivationalHeadline(isPrepWaiting);
 
   // Derive flow for Haptic Feedback + UI, safe when activeOrder is null
-  const activeOrderFlow = activeOrder?.serveFlowStatus || (activeOrder?.paymentStatus === 'SUCCESS' ? 'PAID' : 'NEW');
+  const activeOrderFlow = activeOrder?.serveFlowStatus || ( (activeOrder?.paymentStatus === 'SUCCESS' || activeOrder?.paymentStatus === 'VERIFIED') ? 'PAID' : 'NEW');
 
   // Haptic Feedback for READY state (triggered by flow change), moved to top level
   useEffect(() => {
@@ -561,8 +561,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
                     <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary opacity-60">Real-time Order Tracking</p>
                     <h4 className="text-xl font-black text-textMain tracking-tighter">
                       {activeOrder.paymentStatus === 'PENDING' ? 'Pay to Start Cooking' : 
-                       activeOrderFlow === 'READY' ? '🎉 Food is Ready!' : 
-                       activeOrderFlow === 'ALMOST_READY' ? '🔥 Almost Ready...' : '🥣 Preparing Meal'}
+                       activeOrder.serveFlowStatus === 'READY' ? '🎉 Food is Ready!' : 
+                       activeOrder.serveFlowStatus === 'ALMOST_READY' ? '🔥 Almost Ready...' : 
+                       (activeOrder.serveFlowStatus === 'PREPARING' || activeOrder.serveFlowStatus === 'SERVED_PARTIAL') ? '🥣 Preparing Meal' : 
+                       '📅 Order Scheduled'}
                     </h4>
                   </div>
                 </div>

@@ -26,7 +26,7 @@ import {
   collectionGroup,
   arrayRemove
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { notifyOrderUpdate, sendDirectedPush } from "./onesignal-api";
 
 import {
@@ -1319,7 +1319,7 @@ export const listenToUserOrders = (userId: string, callback: (orders: Order[]) =
   const q = query(
     collection(db, "orders"),
     where("userId", "==", userId),
-    where("paymentStatus", "in", ["SUCCESS", "PENDING", "UTR_SUBMITTED"]),
+    where("paymentStatus", "in", ["SUCCESS", "PENDING", "UTR_SUBMITTED", "VERIFIED"]),
     orderBy("createdAt", "desc"),
     limit(10)
   );
@@ -1671,8 +1671,8 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
        if (orderData.userId) {
           sendDirectedPush({
               userId: orderData.userId,
-              title: '💳 Payment Confirmed!',
-              message: `Paid! Check QR.`,
+              title: '💳 Paid',
+              message: `Check QR.`,
               url: 'https://joecafebrand.netlify.app'
           });
        }
@@ -3033,6 +3033,7 @@ let lastPulseAt = 0;
 let lastProcessedItemFingerprint = "";
 
 export const runBatchGenerator = async (nodeId: string) => {
+  if (!auth.currentUser) return;
   const now = Date.now();
   
   // 🏎️ [PULSE-JITTER] Prevent atomic collision of multiple nodes on the same snapshot
