@@ -1992,7 +1992,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             throw new Error("ALREADY_CONSUMED");
          }
          
-         if (order.paymentStatus !== 'SUCCESS') {
+         if (order.paymentStatus !== 'SUCCESS' && order.paymentStatus !== 'VERIFIED') {
             return { order, result: 'AWAITING_PAYMENT' as const };
          }
 
@@ -2565,7 +2565,7 @@ export const atomicValidateAndRelease = async (qrPayload: string, staffId: strin
          if (!isValid) throw new Error("INVALID_SIGNATURE");
       }
 
-      if (order.paymentStatus !== 'SUCCESS') throw new Error("PAYMENT_PENDING");
+      if (order.paymentStatus !== 'SUCCESS' && order.paymentStatus !== 'VERIFIED') throw new Error("PAYMENT_PENDING");
       if (order.qrStatus === 'DESTROYED')     throw new Error("ALREADY_COMPLETED");
       if (order.qrStatus !== 'ACTIVE')        throw new Error("QR_INACTIVE");
 
