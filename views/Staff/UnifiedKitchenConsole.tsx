@@ -100,7 +100,8 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
   );
 };
 
-const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
+// ── INNER COMPONENT (all hooks live here, profile is guaranteed non-null) ────
+const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void; onBack?: () => void }> = ({ profile, onLogout, onBack }) => {
   const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MIRROR'>('COOK');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -316,6 +317,20 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
      </div>
     </div>
   );
+};
+
+// ── OUTER SHELL: null-guard before any hooks run ──────────────────────────────
+const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
+        <div className="text-white/20 font-black uppercase tracking-widest text-sm animate-pulse">
+          Reconnecting to kitchen...
+        </div>
+      </div>
+    );
+  }
+  return <KitchenConsoleInner profile={profile} onLogout={onLogout} onBack={onBack} />;
 };
 
 export default UnifiedKitchenConsole;

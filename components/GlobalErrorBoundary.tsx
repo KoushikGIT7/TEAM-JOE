@@ -68,9 +68,11 @@ class GlobalErrorBoundary extends Component<Props, State> {
                </button>
             </div>
 
-            {process.env.NODE_ENV === 'development' && (
+            {(import.meta.env?.DEV || window.location.hostname === 'localhost') && (
               <div className="mt-8 pt-8 border-t border-white/5 text-left overflow-auto max-h-40">
                 <code className="text-[10px] text-rose-400 font-mono block whitespace-pre-wrap">
+                  {this.state.error?.name}: {this.state.error?.message}
+                  {"\n\n"}
                   {this.state.error?.stack}
                 </code>
               </div>

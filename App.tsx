@@ -110,7 +110,8 @@ const App: React.FC = () => {
     switch (r) {
       case 'ADMIN': return 'ADMIN';
       case 'CASHIER': return 'CASHIER';
-      case 'SERVER': return 'KITCHEN';
+      case 'SERVER':
+      case 'COOK': return 'KITCHEN';
       case 'GUEST': 
       case 'STUDENT': return 'STUDENT_HOME';
       default: return 'WELCOME';
