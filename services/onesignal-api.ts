@@ -5,7 +5,7 @@
  * Strategy: Targeted UID strikes via OneSignal REST API
  */
 
-const ONESIGNAL_APP_ID = "c7140793-2586-4d5c-9f38-b6fb98815c3b";
+const ONESIGNAL_APP_ID = "2561939d-5fe5-4311-b95c-c12b7ee9ded0";
 
 // 🛡️ [SECURITY-WARNING] Storing REST API Key on client is risky. 
 // However, for this automated deployment context, we inject it via VITE_ env var.
