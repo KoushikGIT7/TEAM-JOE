@@ -19,6 +19,7 @@ import UnifiedKitchenConsole from './views/Staff/UnifiedKitchenConsole';
 import LoginView from './views/Auth/LoginView';
 
 import FoodLoader from './components/Common/FoodLoader';
+import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 
 // Lazy load student views to improve initial bundle size
 const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
@@ -311,7 +312,9 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {renderView()}
+      <GlobalErrorBoundary>
+        {renderView()}
+      </GlobalErrorBoundary>
     </div>
   );
 };

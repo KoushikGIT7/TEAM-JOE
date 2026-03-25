@@ -49,11 +49,37 @@ import {
   PrepBatchStatus,
   SystemMaintenance
 } from "../types";
-import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT, FAST_ITEM_CATEGORIES, STATION_ID_BY_ITEM_ID } from "../constants";
+import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SERVING_RATE_PER_MIN, INVENTORY_SHARD_COUNT, FAST_ITEM_CATEGORIES, STATION_ID_BY_ITEM_ID, PREPARATION_STATIONS } from "../constants";
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
-export const PICKUP_WINDOW_DURATION_MS = 200000; // ⏱️ 3 Minutes + 20s Buffer (180s + 20s)
+export const PICKUP_WINDOW_DURATION_MS = 200000;
+import { offlineDetector } from '../utils/offlineDetector';
+
+const RETRY_QUEUE: Array<{ fn: () => Promise<any>, retries: number }> = [];
+
+// 📡 [NETWORK-RECOVERY] Auto-retry loop for transient failures
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', async () => {
+      console.log("📡 [NETWORK] Reconnected. Syncing...");
+      while (RETRY_QUEUE.length > 0) {
+          const item = RETRY_QUEUE.shift();
+          if (item) {
+              try { 
+                 console.log("[RETRY] Attempting sync...");
+                 await item.fn(); 
+              } catch (e) {
+                 if (item.retries < 3) {
+                    item.retries++;
+                    RETRY_QUEUE.push(item);
+                 }
+              }
+          }
+      }
+      // Final pulse recovery
+      runBatchGenerator("network-recovery");
+  });
+}
 import { parseQRPayload, parseServingQR, verifySecureHash, verifySecureHashSync, generateQRPayload, generateQRPayloadSync, isQRExpired, QR_EXPIRY_MS } from "./qr";
 import { safeListener } from "./safeListener";
 import {
@@ -559,7 +585,7 @@ export const broadcastSystemMessage = async (text: string): Promise<void> => {
 // Inventory
 export const getInventory = async (): Promise<InventoryItem[]> => {
   try {
-    const snapshot = await getDocs(collection(db, "inventory"));
+    const snapshot = await getDocs(query(collection(db, "inventory"), limit(100)));
     const toMillis = (ts: any): number => {
       if (!ts) return Date.now();
       if (typeof ts.toMillis === 'function') return ts.toMillis();
@@ -641,7 +667,7 @@ export const updateInventoryItem = async (itemId: string, data: Partial<Inventor
 
 export const listenToInventory = (callback: (items: InventoryItem[]) => void): (() => void) => {
   return onSnapshot(
-    collection(db, "inventory"),
+    query(collection(db, "inventory"), limit(100)),
     (snapshot) => {
       const toMillis = (ts: any): number => {
         if (!ts) return Date.now();
@@ -681,7 +707,7 @@ export const getInventoryMetaOnce = async (force: boolean = false): Promise<Inve
     return cachedInventoryMeta;
   }
   try {
-    const snapshot = await getDocs(collection(db, "inventory_meta"));
+    const snapshot = await getDocs(query(collection(db, "inventory_meta"), limit(100)));
     const items = snapshot.docs.map((d: any) => {
       const data = d.data();
       return {
@@ -709,7 +735,7 @@ export const listenToInventoryMeta = (
   callback: (items: InventoryMetaItem[]) => void,
   options?: { includeMetadataChanges?: boolean }
 ): (() => void) => {
-  const colRef = collection(db, "inventory_meta");
+  const colRef = query(collection(db, "inventory_meta"), limit(100));
 
   const onNext = (snapshot: any) => {
     const items: InventoryMetaItem[] = snapshot.docs.map((d: any) => {
@@ -885,35 +911,35 @@ export const getQueueEstimate = async (): Promise<{ minutes: number; pendingCoun
  */
 export const getAggregatedInventory = async (): Promise<InventoryItem[]> => {
   try {
-    const invSnap = await getDocs(collection(db, "inventory"));
+    const invSnap = await getDocs(query(collection(db, "inventory"), limit(100)));
     const toMillis = (ts: any): number => {
       if (!ts) return Date.now();
       if (typeof ts.toMillis === "function") return ts.toMillis();
       if (typeof ts === "number") return ts;
       return Date.now();
     };
-    const items: InventoryItem[] = [];
-    for (const d of invSnap.docs) {
+    
+    // 🛡️ [PERFORMANCE-STRIKE] Parallel shard aggregation
+    const items = await Promise.all(invSnap.docs.map(async (d) => {
       const itemId = d.id;
       const data = d.data();
       let consumed = data.consumed ?? 0;
       try {
-        const shardsSnap = await getDocs(collection(db, "inventory_shards", itemId, "shards"));
+        const shardsSnap = await getDocs(query(collection(db, "inventory_shards", itemId, "shards"), limit(20)));
         shardsSnap.docs.forEach((s) => {
           consumed += s.data().count ?? 0;
         });
-      } catch (_) {
-        // no shards
-      }
-      items.push({
+      } catch (_) {}
+      
+      return {
         itemId,
         itemName: data.itemName ?? "",
         openingStock: data.openingStock ?? 0,
         consumed,
         lastUpdated: toMillis(data.lastUpdated),
         category: data.category ?? ""
-      } as InventoryItem);
-    }
+      } as InventoryItem;
+    }));
     return items;
   } catch (error) {
     console.error("Error getAggregatedInventory:", error);
@@ -1433,7 +1459,6 @@ export const registerBankDeposit = async (utr: string, amount: number, meta: any
     });
     console.log(`[LEDGER] New deposit indexed: ${cleanUTR} | ₹${amount}`);
 
-    // 2. ⚡ SONIC-MATCH ENGINE
     let targetOrderId: string | null = null;
     const note = (meta.note || "").toUpperCase();
 
@@ -1615,6 +1640,10 @@ export const submitOrderUTR = async (orderId: string, utr: string): Promise<void
 };
 
 export const confirmCashPayment = async (orderId: string, _cashierUid: string): Promise<void> => {
+  if (!offlineDetector.isOnline()) {
+     console.warn("🛑 [NETWORK] Offline. Blocking payment confirmation.");
+     throw new Error("Waiting for connection...");
+  }
   if (useCallables()) {
     try {
       await confirmPaymentCallable({ orderId });
@@ -1693,28 +1722,30 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
       invalidateReportsCache();
     } catch (_e) {}
 
-    // 🍱 [KITCHEN-TRIGGER] High-Speed Handover
-    try {
-        const items = orderData.items || [];
-        if (items.length > 0) {
-            const stamp = Date.now();
-            await Promise.all(items.map((it: any) => {
-               const itRef = doc(db, "orders", orderId, "items", it.id);
-               const isFast = it.orderType === 'FAST_ITEM' || ['Lunch', 'Beverages', 'Snacks'].includes(it.category);
-               
-               // 🛡️ [SUBDOC-MATERIALIZATION] Force creation of the subdoc
-               return setDoc(itRef, { 
-                 ...it, 
-                 status: isFast ? 'READY' : 'PENDING', 
-                 paidAt: stamp, 
-                 readyAt: isFast ? serverTimestamp() : null, // 🏎️ FAST items are ready instantly
-                 updatedAt: serverTimestamp() 
-               }, { merge: true });
-            }));
+        // 🍱 [KITCHEN-TRIGGER] High-Speed Handover
+        try {
+            const items = orderData.items || [];
+            if (items.length > 0) {
+                const stamp = Date.now();
+                await Promise.all(items.map((it: any) => {
+                   const itRef = doc(db, "orders", orderId, "items", it.id);
+                   const isFast = it.orderType === 'FAST_ITEM' || ['Lunch', 'Beverages', 'Snacks'].includes(it.category);
+                   
+                   return setDoc(itRef, { 
+                     ...it, 
+                     status: isFast ? 'READY' : 'PENDING', 
+                     paidAt: stamp, 
+                     readyAt: isFast ? serverTimestamp() : null,
+                     updatedAt: serverTimestamp() 
+                   }, { merge: true });
+                }));
+
+                // 🏎️ [INSTANT-FIRE] Trigger batcher immediately on cashier device for zero-lag
+                runBatchGenerator(_cashierUid).catch(() => {});
+            }
+        } catch (e) {
+            console.error("Failed to sync items to serving queue:", e);
         }
-    } catch (e) {
-        console.error("Failed to sync items to serving queue:", e);
-    }
   } catch (error) {
     console.error("Error confirming payment:", error);
     throw error;
@@ -1947,37 +1978,49 @@ export const serveSingleItem = async (orderId: string, itemId: string) => {
 };
 
 
-
 /**
- * ⚡ [SONIC-ATOMIC] SUPERSONIC INTAKE ENGINE
+ * ⚡ [SUPERSONIC-INTAKE] QR validation fast-path: <300ms direct document lookup
  */
+const QR_VALIDATION_CACHE: Record<string, { time: number, result: any }> = {};
+
 export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
-    // 1. LIGHTWEIGHT SYNC RESOLUTION
+    // 🛡️ [CACHE-LOCK] Reject rapid redundant scans (2s TTL)
+    const now = Date.now();
+    if (QR_VALIDATION_CACHE[qrPayload] && (now - QR_VALIDATION_CACHE[qrPayload].time < 2000)) {
+       console.log("⚡ [FAST-PATH] Serving cached validation result.");
+       return QR_VALIDATION_CACHE[qrPayload].result;
+    }
+
+    if (!offlineDetector.isOnline()) {
+       console.warn("🛑 [NETWORK] Offline. Blocking atomic intake.");
+       throw new Error("Cannot verify QR offline");
+    }
+
+    // 1. LIGHTWEIGHT SYNC RESOLUTION (No collection scan)
     const intake = parseServingQR(qrPayload);
     let orderId = intake.orderId;
     
     if (!orderId) throw new Error("INVALID_QR_FORMAT");
 
-    // 2. FAST-PATH: If we have a full Firestore ID, skip the "probe" and go direct to transaction
-    // Full order IDs are usually 'order_' followed by 9 chars
-    const isFullId = orderId.startsWith('order_') && orderId.length >= 15;
-    let orderRef = doc(db, "orders", orderId);
-
-    if (!isFullId) {
-       // Manual entry or suffix scanner support — need one probe read
-       const q = query(collection(db, "orders"), where("orderStatus", "==", "PENDING"), limit(50));
+    // 2. FAST-PATH: Direct document lookup (locks scan per scan)
+    const orderRefDirect = doc(db, "orders", orderId);
+    let finalOrderRef = orderRefDirect;
+    
+    const orderSnap = await getDoc(orderRefDirect); // Direct lookup is O(1) vs Query O(N)
+    if (!orderSnap.exists()) {
+       // Only fallback to scan if suffix support is actually needed (rare)
+       const suffix = orderId.toUpperCase();
+       const q = query(collection(db, "orders"), where("orderStatus", "==", "PENDING"), limit(20));
        const snaps = await getDocs(q);
-       const found = snaps.docs.find(d => d.id.toLowerCase().endsWith(orderId.toLowerCase()));
-       if (found) {
-          orderId = found.id;
-          orderRef = doc(db, "orders", orderId);
-       }
+       const match = snaps.docs.find(d => d.id.endsWith(suffix));
+       if (!match) throw new Error("ORDER_NOT_FOUND");
+       finalOrderRef = match.ref;
     }
 
     try {
       return await runTransaction(db, async (tx) => {
          // 🛡️ [STATE-LATCH] READ PHASE
-         const orderSnap = await tx.get(orderRef);
+         const snap = await tx.get(finalOrderRef);
          if (!orderSnap.exists()) throw new Error("ORDER_NOT_FOUND");
          
          const orderData = orderSnap.data();
@@ -1996,7 +2039,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             return { order, result: 'AWAITING_PAYMENT' as const };
          }
 
-         if (order.qrStatus === 'SCANNED' || order.qrState === 'SCANNED') {
+         if (order.qrStatus === 'SCANNED') {
             return { order, result: 'ALREADY_MANIFESTED' as const };
          }
 
@@ -2010,74 +2053,72 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             if (!isValid) throw new Error("SECURITY_BREACH");
          }
 
-         // 5. INTAKE LOGIC
+         // 5. INTAKE LOGIC (Intelligent Guard)
          const now = Date.now();
-         const isStatic = order.items.every(it => isStaticItem(it));
+         const servableItems = order.items.filter(it => (it.status === 'READY' || isStaticItem(it)) && it.status !== 'SERVED' && it.status !== 'COMPLETED');
+         
+         if (servableItems.length === 0) {
+            return { order, result: 'AWAITING_COOKING' as const };
+         }
+
+         const isFullyServable = order.items.every(it => it.status === 'READY' || isStaticItem(it) || it.status === 'SERVED' || it.status === 'COMPLETED');
+
          const updateData: any = {
             scannedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-            lastScannedBy: staffId
+            lastScannedBy: staffId,
+            items: (order.items || []).map(it => {
+               const shouldServe = (it.status === 'READY' || isStaticItem(it)) && it.status !== 'SERVED' && it.status !== 'COMPLETED';
+               if (shouldServe) {
+                  return { ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity, servedAt: now };
+               }
+               return it;
+            })
          };
 
-         if (isStatic) {
-            // ⚡ [SUPERSPEED] Static Unlock
+         const allServed = updateData.items.every((it: any) => it.status === 'SERVED' || it.status === 'COMPLETED');
+         
+         if (allServed) {
             updateData.qrStatus = 'DESTROYED';
             updateData.qrState = 'SERVED';
             updateData.orderStatus = 'COMPLETED';
             updateData.serveFlowStatus = 'SERVED';
             updateData.servedAt = now;
-            updateData.items = order.items.map(it => ({ 
-               ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity, servedAt: now 
-            }));
-
-            // Sync subcollection status for static orders
-            (order.items || []).forEach(it => {
-               const itRef = doc(db, 'orders', order.id, 'items', it.id);
-               tx.update(itRef, { status: 'SERVED', remainingQty: 0, servedQty: it.quantity, servedAt: now, updatedAt: serverTimestamp() });
-            });
          } else {
-            // [HYBRID-INTAKE] Manifest dynamic items, auto-serve static/ready ones
             updateData.qrStatus = 'ACTIVE';
             updateData.qrState = 'SCANNED';
-            updateData.items = (order.items || []).map(it => {
-               if (isStaticItem(it) || it.status === 'READY') {
-                  return { ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity, servedAt: now };
-               }
-               return it;
-            });
-
-            if (updateData.items.every((it: any) => it.status === 'SERVED')) {
-               updateData.qrStatus = 'DESTROYED';
-               updateData.orderStatus = 'COMPLETED';
-            }
-
-            // 📡 [SONIC-SUBCOLLECTION-PULSE]
-            (order.items || []).forEach(it => {
-               const itRef = doc(db, 'orders', order.id, 'items', it.id);
-               const isAutoServed = isStaticItem(it) || it.status === 'READY';
-               if (isAutoServed) {
-                  tx.update(itRef, { 
-                     status: 'SERVED', 
-                     remainingQty: 0, 
-                     servedQty: it.quantity, 
-                     servedAt: now, 
-                     updatedAt: serverTimestamp() 
-                  });
-               }
-            });
+            updateData.orderStatus = 'IN_PROGRESS';
+            updateData.serveFlowStatus = 'SERVED_PARTIAL';
          }
 
+         // 📡 [SONIC-SUBCOLLECTION-PULSE]
+         (order.items || []).forEach(it => {
+            const itRef = doc(db, 'orders', order.id, 'items', it.id);
+            const shouldServe = (it.status === 'READY' || isStaticItem(it)) && it.status !== 'SERVED' && it.status !== 'COMPLETED';
+            if (shouldServe) {
+               tx.update(itRef, { 
+                  status: 'SERVED', 
+                  remainingQty: 0, 
+                  servedQty: it.quantity, 
+                  servedAt: now, 
+                  updatedAt: serverTimestamp() 
+               });
+            }
+         });
+
          // ⚡ [ATOMIC-COMMIT]
-         tx.update(orderRef, updateData);
+         tx.update(finalOrderRef, updateData);
          
          // Audit Log (Set and forget)
          const logRef = doc(collection(db, "scanLogs"));
          tx.set(logRef, { orderId, scannedBy: staffId, scanTime: serverTimestamp(), result: 'SUCCESS' });
 
-         return { 
-            order: { ...order, ...updateData, scannedAt: now }, 
-            result: (updateData.qrStatus === 'DESTROYED') ? ('CONSUMED' as const) : ('MANIFESTED' as const)
-         };
+          const result = (updateData.qrStatus === 'DESTROYED') ? ('CONSUMED' as const) : ('MANIFESTED' as const);
+          const finalResult = { order: { ...order, ...updateData, scannedAt: now }, result };
+          
+          // Seed cache
+          QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
+          return finalResult;
       });
     } catch (error: any) {
       console.error('❌ [ATOMIC-INTAKE-ERROR]:', error.message);
@@ -2335,7 +2376,7 @@ export const serveFullOrder = async (orderId: string, servedBy: string): Promise
 
       // 🔄 SYNC ALL RELATED BATCHES
       for (const bSnap of batchSnaps) {
-         if (!bSnap.exists()) continue;
+         if (!bSnap.exists()) return;
          const bData = bSnap.data() as PrepBatch;
 
          // Force complete all batches associated with this full order
@@ -2387,6 +2428,10 @@ export const toggleQrRedeemable = async (orderId: string, redeemable: boolean, s
 };
 
 export const serveItem = async (orderId: string, itemId: string, servedBy: string): Promise<void> => {
+  if (!offlineDetector.isOnline()) {
+     console.warn("🛑 [NETWORK] Offline. Blocking serve.");
+     throw new Error("Waiting for connection...");
+  }
   if (useCallables()) {
     try {
       await serveItemCallable({ orderId, itemId, servedBy });
@@ -2916,11 +2961,24 @@ export const startBatch = async (batchId: string, items: any[]) => {
 /**
  * [SONIC-FINALIZE] PREPARING -> READY
  */
-export const finalizeBatch = async (batchId: string, items: any[]) => {
+let lastReleaseAt = 0; // 🛑 [ANTI-SPAM] Controlled Release Buffer
+
+export const finalizeBatch = async (batchId: string, items: any[], limitCount?: number) => {
+  if (!offlineDetector.isOnline()) {
+     console.warn("🛑 [NETWORK] Offline. Blocking finalize.");
+     throw new Error("Waiting for connection...");
+  }
   const batchRef = doc(db, 'prepBatches', batchId);
   const metricsRef = doc(db, 'system_status', 'metrics');
   const now = Date.now();
   
+  // 🛡️ [ANTI-SPAM] Reject rapid-fire releases to protect the counter
+  if (now - lastReleaseAt < 1500) {
+     console.warn("🛑 [CONTROL] Release rate-limited. Serving too fast.");
+     return;
+  }
+  lastReleaseAt = now;
+
   await runTransaction(db, async (tx) => {
     // 🔍 [PHASE 1: READS] - Must happen before any writes
     const [snap, mSnap] = await Promise.all([
@@ -2931,8 +2989,13 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
     if (snap.data()?.status !== 'PREPARING') return;
 
     // Group items by order to read root order documents
-    const itemsByOrder: Record<string, any[]> = {};
-    (items ?? []).forEach(it => {
+    let targetItems = items ?? [];
+    if (limitCount && targetItems.length > limitCount) {
+       targetItems = targetItems.slice(0, limitCount);
+    }
+
+    const itemsByOrder: Record<string, string[]> = {};
+    targetItems.forEach(it => {
         if (!itemsByOrder[it.orderId]) itemsByOrder[it.orderId] = [];
         itemsByOrder[it.orderId].push(it.itemId);
     });
@@ -2951,23 +3014,29 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
     }
 
     // ✍️ [PHASE 3: WRITES]
+    const isFullFinalize = !limitCount || targetItems.length >= (items?.length || 0);
+    const remainingItems = isFullFinalize ? [] : items.filter((it: any) => !targetItems.find((t: any) => t.itemId === it.itemId));
+
     tx.update(batchRef, { 
-       status: 'READY', 
-       readyAt: now, 
+       status: isFullFinalize ? 'READY' : 'PREPARING',
+       readyAt: now,
+       items: remainingItems,
        updatedAt: serverTimestamp(),
        lastActionAt: serverTimestamp(),
        prepDurationMs
     });
 
-    (items ?? []).forEach(it => {
+    targetItems.forEach((it: any) => {
       const itRef = doc(db, 'orders', it.orderId, 'items', it.itemId);
       tx.set(itRef, { status: 'READY', readyAt: now, updatedAt: serverTimestamp() }, { merge: true });
     });
 
-    tx.set(metricsRef, { 
-       avgPrepTimeMs: currentEma, 
-       lastUpdated: serverTimestamp()
-    }, { merge: true });
+    if (isFullFinalize) {
+      tx.set(metricsRef, { 
+         avgPrepTimeMs: currentEma, 
+         lastUpdated: serverTimestamp()
+      }, { merge: true });
+    }
 
     // 📡 [STUDENT-PULSE] Propagate READY status to root orders so student UI updates instantly
     orderSnaps.forEach(oSnap => {
@@ -2988,9 +3057,12 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
         const hasReady = newItems.some((i: any) => i.status === 'READY');
 
         if (changed) {
+            const allReady = (newItems || []).every((it: any) => it.status === 'READY' || it.status === 'SERVED' || it.orderType !== 'PREPARATION_ITEM');
+            const wasEmpty = !(oItems || []).some((it: any) => it.status === 'READY' || it.status === 'SERVED');
+
             tx.update(oSnap.ref, { 
                items: newItems, 
-               serveFlowStatus: hasReady ? 'READY' : oData.serveFlowStatus,
+               serveFlowStatus: hasReady ? 'READY' : (oData.serveFlowStatus || 'PENDING'),
                pickupWindow: {
                   startTime: now,
                   endTime: now + PICKUP_WINDOW_DURATION_MS,
@@ -3000,10 +3072,10 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
                updatedAt: serverTimestamp() 
             });
 
-            // 📣 [ONESIGNAL-STRIKE] Notify student that food is READY!
-            if (oData.userId) {
-                const readyItem = newItems.find((ni: any) => affectedItemIds.includes(ni.id));
-                notifyOrderUpdate(oData.userId, 'READY', readyItem?.name || 'Meal');
+            // 📣 [SMART-SIGNAL] FIX 6: Group notifications to avoid spam
+            if (oData.userId && (allReady || wasEmpty)) {
+                const msg = allReady ? "All your items are ready! 🚀" : "The first item of your order is ready! ⚡";
+                notifyOrderUpdate(oData.userId, 'READY', msg);
             }
         }
     });
@@ -3020,7 +3092,7 @@ export const finalizeBatch = async (batchId: string, items: any[]) => {
 export const listenToKitchenOrders = (callback: (orders: Order[]) => void): (() => void) => {
   const q = query(
     collection(db, "orders"),
-    where("paymentStatus", "==", "SUCCESS"),
+    where("paymentStatus", "in", ["SUCCESS", "VERIFIED"]),
     limit(100)
   );
 
@@ -3034,11 +3106,11 @@ export const listenToKitchenOrders = (callback: (orders: Order[]) => void): (() 
         if (o.serveFlowStatus === 'SERVED') return false;
         const hasCookablePrepItem = (o.items || []).some((it: any) =>
           it.orderType === 'PREPARATION_ITEM' &&
-          (it.status === 'PENDING' || it.status === 'PREPARING')
+          (it.status === 'PENDING' || it.status === 'PREPARING' || it.status === 'QUEUED')
         );
         return hasCookablePrepItem;
       });
-      return kitchenOrders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      return kitchenOrders;
     },
     () => [],
     callback
@@ -3050,13 +3122,23 @@ export const listenToKitchenOrders = (callback: (orders: Order[]) => void): (() 
  */
 let lastPulseAt = 0; 
 let lastProcessedItemFingerprint = "";
+let dosaCycleCount = 0; 
+
+// 🛡️ SAFETY 1: FAILSAFE GENERATOR PULSE (Ensure generator never stalls)
+setInterval(() => {
+   const now = Date.now();
+   if (now - lastPulseAt > 8000) {
+      console.log("🛡️ [SAFETY-1] Fail-safe pulse triggered.");
+      runBatchGenerator("failsafe-pulse-" + now);
+   }
+}, 8000);
 
 export const runBatchGenerator = async (nodeId: string) => {
   if (!auth.currentUser) return;
   const now = Date.now();
   
-  // 🏎️ [PULSE-JITTER] Prevent atomic collision of multiple nodes on the same snapshot
-  if (now - lastPulseAt < (2000 + Math.random() * 1500)) return; 
+  // 🛡️ [ANTI-THRASH] Cooldown to stabilize background logic
+  if (now - lastPulseAt < 1500) return; 
   lastPulseAt = now;
 
   const lockRef = doc(db, "system_locks", "batch_generator");
@@ -3084,20 +3166,46 @@ export const runBatchGenerator = async (nodeId: string) => {
 
     if (!shouldRun) return;
 
-    // 1. Get all pending items (Attempt Optimized Index Scan first)
+    // 🛡️ SAFETY 5: STALE READY CLEANUP (Items > 180s moved to RECALL)
+    const staleReadySnap = await getDocs(query(
+       collection(db, "prepBatches"), 
+       where("status", "==", "READY"),
+       limit(10)
+    ));
+    const staleCutoff = now - 180000;
+    for (const b of staleReadySnap.docs) {
+       const bd = b.data();
+       const rAt = bd.readyAt?.toMillis?.() || bd.readyAt || 0;
+       if (rAt > 0 && rAt < staleCutoff) {
+          console.warn(`🛡️ [SAFETY-5] Recalling stale batch ${b.id}`);
+          await updateDoc(b.ref, { status: 'RECALL', recalledAt: serverTimestamp(), updatedAt: serverTimestamp() });
+       }
+    }
+    const activeBatchesSnap = await getDocs(query(
+      collection(db, "prepBatches"), 
+      where("status", "in", ["QUEUED", "PREPARING"]),
+      limit(50)
+    ));
+    const stationLoad: Record<string, number> = {};
+    activeBatchesSnap.forEach(d => {
+      const b = d.data();
+      const sId = b.stationId || 'default';
+      stationLoad[sId] = (stationLoad[sId] || 0) + (b.items?.length || 0);
+    });
+
+    // 2. GET PENDING CANDIDATES
     let candidateDocs = [];
     try {
       const q = query(
         collectionGroup(db, "items"), 
         where("status", "in", ["PENDING", "RESERVED"]),
         orderBy("paidAt", "asc"),
-        limit(50) // Increased to 50 for rush-handling
+        limit(100) 
       );
       const snap = await getDocs(q);
       candidateDocs = snap.docs;
     } catch (e) {
-      console.warn("⚠️ [INDEX-PENDING] Using fallback deep-scan while composite index builds...");
-      // Fallback: still scan recent orders to keep the line moving
+      console.warn("⚠️ [INDEX-PENDING] Fallback deep-scan active...");
       const recentOrders = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(20)));
       for (const orderDoc of recentOrders.docs) {
          const itemsSnap = await getDocs(query(collection(db, "orders", orderDoc.id, "items"), where("status", "in", ["PENDING", "RESERVED"])));
@@ -3105,56 +3213,72 @@ export const runBatchGenerator = async (nodeId: string) => {
       }
     }
 
-    if (candidateDocs.length === 0) {
-       lastProcessedItemFingerprint = ""; 
+    if (candidateDocs.length === 0) return;
+
+    // 📉 [LOAD-SHEDDING] If system is throttled by heavy backend load, skip generation pulse
+    if (candidateDocs.length > 100) {
+       console.warn(`📉 [LOAD-SHEDDING] Heavy load detected (${candidateDocs.length} pending items). Pausing generator.`);
        return;
     }
 
-    // Map & Normalize
+    // 3. NORMALIZE & APPLY HEAD CHEF PRIORITY (Anti-Starvation)
     const pendingItems = candidateDocs.map(d => {
       const data = d.data();
+      const stationId = STATION_ID_BY_ITEM_ID[d.id] || 'default';
+      const paidAt = data.paidAt?.toMillis?.() || data.paidAt || Date.now();
+      const waitTimeBonus = (Date.now() - paidAt) / 60000; // 1 min wait = 1 min bonus
+      const scarcityWeight = stationId !== 'dosa' ? 2 : 1; // Non-dosa items get 2x presence weight 
+      
       return {
         ...data,
-        status: data.status,
-        createdAt: data.createdAt?.toMillis?.() || data.createdAt || 0,
-        paidAt: data.paidAt?.toMillis?.() || data.paidAt || 0,
-        itemId: d.id,
-        orderId: d.ref.parent.parent?.id || ''
+        id: d.id,
+        orderId: d.ref.parent.parent?.id || '',
+        stationId,
+        score: paidAt - (waitTimeBonus * 30000 * scarcityWeight) // Pull 30s per min wait, weighted by scarcity
       };
-    });
+    }).sort((a, b) => a.score - b.score);
 
-    // Map & Normalize
-    const itemsWithStation = pendingItems.map(it => ({
-       ...it,
-       stationId: STATION_ID_BY_ITEM_ID[it.itemId] || 'GENERAL'
-    }));
+    // 4. MICRO-BATCH ALLOCATION (Station-Aware)
+    const processedFingerprint: string[] = [];
+    dosaCycleCount++;
 
-    // Grouping
-    const stationGroups: Record<string, any[]> = {};
-    itemsWithStation.forEach(it => {
-       if (!stationGroups[it.stationId]) stationGroups[it.stationId] = [];
-       stationGroups[it.stationId].push(it);
-    });
+    for (const sId of Object.keys(PREPARATION_STATIONS)) {
+       const config = PREPARATION_STATIONS[sId];
+       const currentLoad = stationLoad[sId] || 0;
+       const maxPipeline = config.maxConcurrentPreparation * 2; 
 
-    // Commit batches
-    for (const [stationId, items] of Object.entries(stationGroups)) {
-        const prioritizedForStation = getPrioritizedItems(items, 10);
-        if (prioritizedForStation.length === 0) continue;
+       // 🧠 [HARD-STARVATION] Force 1 non-dosa item into active every 3 dosa cycles
+       const isStarvationCycle = dosaCycleCount % 3 === 0;
+       const stationItemsFull = pendingItems.filter(it => it.stationId === sId);
+       
+       let stationItems = stationItemsFull;
+       if (sId === 'dosa' && isStarvationCycle && pendingItems.some(it => it.stationId !== 'dosa')) {
+          // In dosa station loop, but it's a starvation cycle?
+          // We yield priority to the main kitchen for one micro-slot
+          console.log("🚦 [STARVATION-GUARD] Yielding dosa slot to non-dosa item.");
+          continue; 
+       }
 
-        const manifest = prioritizedForStation.map(i => ({ 
-          orderId: i.orderId, 
-          itemId: i.itemId, 
-          name: i.name 
-        }));
+       if (currentLoad >= maxPipeline) continue;
+       if (stationItems.length === 0) continue;
 
-        await lockItemsToPrepBatch(manifest, stationId);
+       // 🏎️ [CONTINUOUS-FLOW] Fill the current gap up to the next micro-batch size
+       const gap = maxPipeline - currentLoad;
+       const batchItems = stationItems.slice(0, Math.min(gap, config.maxConcurrentPreparation));
+       
+       if (batchItems.length > 0) {
+          const manifest = batchItems.map(i => ({ 
+            orderId: i.orderId, 
+            itemId: i.id, 
+            name: i.name 
+          }));
+          
+          await lockItemsToPrepBatch(manifest, sId);
+          processedFingerprint.push(...batchItems.map(b => b.id));
+       }
     }
     
-    // 🛡️ UPDATE STATE AFTER LOCK
-    // Fix: was p.id (undefined) — must be p.itemId which is the subcollection doc ID
-    const currentFingerprint = pendingItems.map(p => p.itemId).sort().join(",");
-    lastProcessedItemFingerprint = currentFingerprint;
-    console.log(`🏁 [GENERATOR] Finished — ${Object.keys(stationGroups).length} station(s) batched.`);
+    console.log(`🧠 [HEAD-CHEF] Station re-fill pulse complete. Batched ${processedFingerprint.length} units.`);
     
   } catch (error) {
     console.error("🔥 [CORE-ERROR] Batch generator failed:", error);
@@ -3212,7 +3336,7 @@ export const runKitchenWatchdog = async () => {
  * One-time use to clear the pipeline blockage.
  */
 export const migrateReservedToPending = async (): Promise<void> => {
-   const q = query(collectionGroup(db, "items"), where("status", "==", "RESERVED"));
+   const q = query(collectionGroup(db, "items"), where("status", "==", "RESERVED"), limit(50));
    const snap = await getDocs(q);
    console.log(`👷 [MIGRATOR] Found ${snap.docs.length} RESERVED items. starting migration...`);
    
@@ -3253,14 +3377,28 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
     (snap: any) => snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as PrepBatch)),
     () => [],
     (live) => {
-       const sorted = live.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
-       callback(sorted);
+       // --- FIX 7: PRIORITY SORT (READY_AT) ---
+       const sorted = live.sort((a, b) => {
+          if (a.status === 'READY' && b.status === 'READY') {
+             return (a.readyAt || a.updatedAt || 0) - (b.readyAt || b.updatedAt || 0);
+          }
+          return (a.updatedAt || 0) - (b.updatedAt || 0);
+       });
+
+       // --- FIX 2: MAX_READY_VISIBLE = 5 (READY_HOLD) ---
+       const ready = sorted.filter(b => b.status === 'READY' || b.status === 'ALMOST_READY');
+       const prep = sorted.filter(b => b.status === 'QUEUED' || b.status === 'PREPARING');
+       callback([...prep, ...ready.slice(0, 5)]);
     },
     qFallback
   );
 };
 
 export const startBatchPreparation = async (batchId: string): Promise<void> => {
+  if (!offlineDetector.isOnline()) {
+     console.warn("🛑 [NETWORK] Offline. Blocking start.");
+     throw new Error("Waiting for connection...");
+  }
   const batchRef = doc(db, "prepBatches", batchId);
   try {
     await runTransaction(db, async (tx) => {
@@ -3274,14 +3412,23 @@ export const startBatchPreparation = async (batchId: string): Promise<void> => {
       const orderSnaps = await Promise.all(orderRefs.map(r => tx.get(r)));
 
       // PHASE 2: WRITE
-      tx.update(batchRef, { status: 'PREPARING', updatedAt: serverTimestamp() });
+      const ownerId = auth.currentUser?.uid || 'unknown';
+      tx.update(batchRef, { 
+        status: 'PREPARING', 
+        ownerId,
+        startedAt: serverTimestamp(),
+        updatedAt: serverTimestamp() 
+      });
+
       orderSnaps.forEach((snap, i) => {
         if (snap.exists()) {
           const oData = snap.data() as Order;
           tx.update(orderRefs[i], { 
             serveFlowStatus: 'PREPARING',
             items: (oData.items || []).map(it => {
-               if (it.id === data.itemId && it.status !== 'SERVED') return { ...it, status: 'PREPARING' as any };
+               if (it.id === data.itemId && it.status !== 'SERVED') {
+                  return { ...it, status: 'PREPARING' as any, assignedCook: ownerId };
+               }
                return it;
             }),
             updatedAt: serverTimestamp()
@@ -3712,8 +3859,6 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
     // 2.2 CLEANUP OLD BATCHES (Decrement)
     Object.entries(oldBatchDecrements).forEach(([bId, qty]) => {
        const bRef = doc(db, "prepBatches", bId);
-       // We use increment(-qty). If quantity hits 0, the Cook Console handles the hidden state 
-       // Or we could try to set status to COMPLETED if it hits 0, but increment is safer.
        masterBatch.update(bRef, {
           quantity: increment(-qty),
           updatedAt: serverTimestamp()
@@ -3758,8 +3903,6 @@ export const getOrderById = async (orderId: string): Promise<Order | null> => {
 
 /**
  * 🐕 [WATCHDOG] Self-Healing Maintenance Cycle
- * Consolidates Batch Generation, Stuck Batch Recovery, and Missed Pickup Flushing.
- * Uses leader election (nodeId lock) to ensure work is not duplicated.
  */
 export const runMaintenanceCycle = async (nodeId: string): Promise<{ restored: number }> => {
   const isLeader = await tryAcquireMaintenanceLock(nodeId);
@@ -3788,5 +3931,4 @@ export const runMaintenanceCycle = async (nodeId: string): Promise<{ restored: n
     return { restored: 0 };
   }
 };
-
 

@@ -11,6 +11,7 @@ interface ServerConsoleWorkspaceProps {
   scanQueue: string[];
   setScanQueue?: (fn: (prev: string[]) => string[]) => void;
   setIsCameraOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isMobile?: boolean;
 }
 
 interface LiveItem {
@@ -41,6 +42,7 @@ interface LiveItem {
 const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   scanQueue,
   setIsCameraOpen,
+  isMobile = false,
 }) => {
   // Map: orderId → live items from Firestore subcollection
   const [orderItemsMap, setOrderItemsMap] = useState<Record<string, LiveItem[]>>({});
@@ -162,27 +164,25 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
     <div className="flex-1 flex flex-col h-full bg-[#fdfdfd] font-sans select-none overflow-hidden">
 
       {/* ── HEADER ─────────────────────────────────────────────────── */}
-      <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white shadow-sm z-10">
-        <div className="flex items-center gap-5">
-          <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg">
-            <PackageCheck className="w-6 h-6 text-white" />
+      <div className={`${isMobile ? 'px-4 py-3' : 'px-8 py-5'} border-b border-slate-100 flex items-center justify-between shrink-0 bg-white shadow-sm z-10`}>
+        <div className="flex items-center gap-3 lg:gap-5">
+          <div className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} bg-slate-900 rounded-xl lg:rounded-2xl flex items-center justify-center shadow-lg`}>
+            <PackageCheck className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">Serving Counter</h2>
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-              {activeScannedOrders.length > 0
-                ? `${activeScannedOrders.length} Active Order${activeScannedOrders.length > 1 ? 's' : ''} on Manifest`
-                : 'Scan a student QR to begin'}
+            <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-black text-slate-900 uppercase italic tracking-tighter`}>Serving</h2>
+            <p className="text-[8px] lg:text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">
+              {activeScannedOrders.length === 0 ? 'Protocol Idle' : `${activeScannedOrders.length} Manifests Active`}
             </p>
           </div>
         </div>
 
         <button
           onClick={() => setIsCameraOpen(true)}
-          className="h-12 px-8 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center gap-3 hover:bg-black"
+          className={`${isMobile ? 'h-10 px-4 text-[10px]' : 'h-12 px-8 text-[11px]'} bg-slate-900 text-white rounded-xl lg:rounded-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center gap-2 hover:bg-black`}
         >
-          <Camera className="w-4 h-4 text-emerald-400" />
-          SCAN QR
+          <Camera className="w-3.5 h-3.5 text-emerald-400" />
+          SCAN
         </button>
       </div>
 
@@ -203,23 +203,27 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
             const pendingCount = items.filter(it => it.status !== 'SERVED' && !servedKeys.has(`${orderId}-${it.itemId}`)).length;
 
             return (
-              <div key={orderId} className="bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-xl overflow-hidden">
+              <div key={orderId} className={`rounded-[2.5rem] border-2 transition-all duration-500 overflow-hidden shadow-2xl ${
+                pendingCount === 0 
+                ? 'bg-emerald-600 border-emerald-500 scale-[1.02] active:scale-[0.98]' 
+                : 'bg-white border-slate-100'
+              }`}>
                 
                 {/* Order Header */}
-                <div className="px-8 py-5 bg-slate-900 flex items-center justify-between">
+                <div className={`${isMobile ? 'px-4 py-3' : 'px-8 py-5'} ${pendingCount === 0 ? 'bg-transparent' : 'bg-slate-900'} flex items-center justify-between`}>
                   <div>
-                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Manifest ID</p>
-                    <h3 className="text-xl font-black text-white font-mono tracking-tighter">#{orderId.slice(-6).toUpperCase()}</h3>
+                    <p className={`text-[8px] font-black uppercase tracking-widest ${pendingCount === 0 ? 'text-white/60' : 'text-slate-500'}`}>Manifest ID</p>
+                    <h3 className={`${isMobile ? 'text-base' : 'text-xl'} font-black text-white font-mono tracking-tighter`}>#{orderId.slice(-6).toUpperCase()}</h3>
                   </div>
-                  <div className={`px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                    pendingCount === 0 ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'
+                  <div className={`px-4 py-1.5 rounded-full text-[8px] lg:text-[9px] font-black uppercase tracking-widest ${
+                    pendingCount === 0 ? 'bg-white text-emerald-600' : 'bg-white/10 text-white'
                   }`}>
-                    {pendingCount === 0 ? '✓ Complete' : `${pendingCount} Remaining`}
+                    {pendingCount === 0 ? '✓ READY' : `${pendingCount} Left`}
                   </div>
                 </div>
 
                 {/* Items List */}
-                <div className="p-6 space-y-4">
+                <div className={`${isMobile ? 'p-3 space-y-2' : 'p-6 space-y-4'} ${pendingCount === 0 ? 'bg-emerald-600/10' : ''}`}>
                   {items.map(item => {
                     const cfg = getStatusConfig(item);
                     const key = `${orderId}-${item.itemId}`;
@@ -228,21 +232,21 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                     return (
                       <div
                         key={item.itemId}
-                        className={`flex items-center justify-between p-5 rounded-[1.5rem] border-2 transition-all duration-300 ${cfg.cardClass}`}
+                        className={`flex items-center justify-between ${isMobile ? 'p-3 rounded-xl' : 'p-5 rounded-[1.5rem]'} border-2 transition-all duration-300 ${cfg.cardClass}`}
                       >
                         {/* Item Info */}
-                        <div className="flex items-center gap-5">
-                          <div className="w-12 h-12 bg-white rounded-2xl shadow flex items-center justify-center border border-slate-100">
-                            {cfg.icon}
+                        <div className="flex items-center gap-3 lg:gap-5">
+                          <div className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} bg-white rounded-xl lg:rounded-2xl shadow flex items-center justify-center border border-slate-100`}>
+                            {React.cloneElement(cfg.icon as React.ReactElement, { className: isMobile ? 'w-4 h-4' : 'w-5 h-5' })}
                           </div>
                           <div>
-                            <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest w-fit mb-1.5 ${cfg.badgeClass}`}>
+                            <div className={`px-2 py-0.5 rounded-full text-[7px] lg:text-[8px] font-black uppercase tracking-widest w-fit mb-1 ${cfg.badgeClass}`}>
                               {cfg.badge}
                             </div>
-                            <h4 className="text-lg font-black text-slate-900 uppercase italic tracking-tight leading-none">
+                            <h4 className={`${isMobile ? 'text-sm' : 'text-lg'} font-black text-slate-900 uppercase italic tracking-tight leading-none truncate max-w-[120px] lg:max-w-none`}>
                               {item.name}
                             </h4>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                            <p className="text-[8px] lg:text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
                               Qty: {item.quantity}
                             </p>
                           </div>
@@ -253,17 +257,18 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                           <button
                             onClick={() => handleServe(orderId, item.itemId)}
                             disabled={!!isServing}
-                            className="h-14 px-8 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all hover:bg-emerald-600 shadow-lg flex items-center gap-2 shrink-0"
+                            className={`${isMobile ? 'h-10 px-4 text-[9px]' : 'h-14 px-8 text-[10px]'} bg-slate-900 text-white rounded-xl lg:rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-all hover:bg-emerald-600 shadow-lg flex items-center gap-2 shrink-0 ${!isServing ? 'animate-[pulse_2s_infinite] ring-2 ring-emerald-500/30' : ''}`}
                           >
                             {isServing
-                              ? <Loader2 className="w-4 h-4 animate-spin" />
-                              : <><CheckCircle2 className="w-4 h-4" /> SERVE</>
+                              ? <Loader2 className="w-3 h-3 lg:w-4 lg:h-4 animate-spin" />
+                              : <CheckCircle2 className="w-3 h-3 lg:w-4 lg:h-4" />
                             }
+                            {!isServing && <span>SERVE</span>}
                           </button>
                         ) : item.status !== 'SERVED' && !servedKeys.has(key) ? (
-                          <div className="h-14 px-8 bg-slate-50 text-slate-300 rounded-2xl font-black text-[9px] uppercase tracking-widest flex items-center gap-2 border-2 border-slate-100 shrink-0">
-                            <Lock className="w-4 h-4" />
-                            {item.status === 'PREPARING' ? 'COOKING...' : 'WAITING'}
+                          <div className={`${isMobile ? 'h-10 px-4 text-[8px]' : 'h-14 px-8 text-[9px]'} bg-slate-50 text-slate-300 rounded-xl lg:rounded-2xl font-black uppercase tracking-widest flex items-center gap-2 border-2 border-slate-100 shrink-0`}>
+                            <Lock className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} />
+                            <span>{item.status === 'PREPARING' ? 'COOKING' : 'WAIT'}</span>
                           </div>
                         ) : null}
                       </div>

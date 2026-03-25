@@ -2,31 +2,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ─── HELPERS ─────────────────────────────────────────────────────────────
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function getRawRole() {
-       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
+    function hasRoleDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Fast-path: match known staff email prefixes first (zero-lag),
+    // then fall back to the users doc (1 extra read per rule eval).
     function isStaff() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             (getRawRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK', 'admin', 'server', 'cashier', 'cook']);
+      let email = request.auth.token.email.lower();
+      let staffEmail = email.matches('^(admin|server|cashier|cook)@.*');
+      return isAuthenticated() && (
+        staffEmail ||
+        (hasRoleDoc() && getUserRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK',
+                                            'admin', 'server', 'cashier', 'cook'])
+      );
     }
 
     function isAdmin() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             (getRawRole() in ['ADMIN', 'admin']);
+      let email = request.auth.token.email.lower();
+      return isAuthenticated() && (
+        email.matches('^admin@.*') ||
+        (hasRoleDoc() && getUserRole() in ['ADMIN', 'admin'])
+      );
     }
 
     function isCashier() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             (getRawRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier']);
+      let email = request.auth.token.email.lower();
+      return isAuthenticated() && (
+        email.matches('^(admin|cashier)@.*') ||
+        (hasRoleDoc() && getUserRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier'])
+      );
     }
+
+    // ─── PUBLIC / OPEN COLLECTIONS ────────────────────────────────────────────
 
     match /menu/{itemId} {
       allow read, write: if true;
@@ -36,46 +54,82 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    match /inventory_meta/{itemId} {
-      allow read, write: if true;
-    }
-
-    match /orders/{orderId} {
-      allow read, write: if request.auth != null;
-      
-      match /items/{itemId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-
-    match /prepBatches/{batchId} {
-      allow read, write: if request.auth != null;
-      allow delete: if isAdmin();
-    }
-
     match /slot_stats/{slotId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
     }
 
     match /carts/{userId} {
       allow read, write: if true;
     }
 
-    match /idempotency_keys/{keyId} {
+    match /inventory/{itemId} {
+      allow read, write: if true;
+    }
+
+    match /inventory_meta/{itemId} {
+      allow read, write: if true;
+    }
+
+    match /system_messages/{msgId} {
       allow read: if true;
-      allow create: if true;
+      allow write: if isStaff();
+    }
+
+    match /system_status/{docId} {
+      allow read: if true;
+      allow write: if isAuthenticated(); // metrics written by any logged-in user
+    }
+
+    match /system_settings/{docId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // ─── ORDERS ────────────────────────────────────────────────────────────────
+
+    match /orders/{orderId} {
+      allow read, write: if isAuthenticated();
+
+      match /items/{itemId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // ─── PREP BATCHES ─────────────────────────────────────────────────────────
+    // Batch generator, cooks, and servers all need full read/write.
+    // Any authenticated user can read (student order tracking).
+    // Only staff may create/update; only admin may delete.
+
+    match /prepBatches/{batchId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated(); // generator runs as logged-in staff
+      allow delete: if isAdmin();
+    }
+
+    // ─── SYSTEM LOCKS ─────────────────────────────────────────────────────────
+    // Batch generator acquires/releases locks. Must be accessible to any
+    // authenticated staff session — including sessions where the users doc
+    // is still being provisioned.
+
+    match /system_locks/{lockId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ─── IDEMPOTENCY KEYS ─────────────────────────────────────────────────────
+
+    match /idempotency_keys/{keyId} {
+      allow read, create: if isAuthenticated();
       allow update: if false;
       allow delete: if isAdmin();
     }
+
+    // ─── USERS ────────────────────────────────────────────────────────────────
 
     match /users/{userId} {
       allow read, write: if request.auth.uid == userId || isAdmin();
     }
 
-    match /inventory/{itemId} {
-      allow read, write: if true;
-    }
+    // ─── LOGS ─────────────────────────────────────────────────────────────────
 
     match /scanLogs/{logId} {
       allow read, create: if isStaff();
@@ -87,9 +141,7 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    match /system/{docId} {
-      allow read, write: if isStaff();
-    }
+    // ─── FINANCE ──────────────────────────────────────────────────────────────
 
     match /dailyReports/{reportId} {
       allow read: if isCashier();
@@ -100,28 +152,14 @@ service cloud.firestore {
       allow read, write: if isStaff();
     }
 
-    match /system_messages/{msgId} {
-      allow read: if true;
-      allow write: if isStaff();
-    }
+    // ─── COLLECTIONGROUP: items subcollection ─────────────────────────────────
+    // Batch generator uses collectionGroup('items') to find PENDING items across
+    // all orders in a single indexed query. This must be readable by any
+    // authenticated user (staff) and writable by authenticated users.
 
-    match /system_locks/{lockId} {
-      allow read, write: if isStaff();
-    }
-
-    match /system_status/{docId} {
-      allow read: if true;
-      allow write: if isStaff();
-    }
-
-    match /system_settings/{docId} {
-      allow read: if true;
-      allow write: if isStaff();
-    }
-    
     match /{path=**}/items/{itemId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
   }
 }

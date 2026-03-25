@@ -376,9 +376,21 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
             <div className="absolute inset-0 border-4 border-green-500/20 rounded-[2.5rem] animate-pulse pointer-events-none z-30" />
           )}
         </div>
-        <p className="mt-8 text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] text-center px-10">
-          {(isReady || isServed || (orderForUI.items || []).some(i => i.orderType === 'FAST_ITEM')) ? 'Point this at counter scanner' : `Cooking in progress - #${orderForUI.id.slice(-6).toUpperCase()}`}
-        </p>
+        <div className="mt-8 flex flex-col items-center gap-2 px-10">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] text-center">
+            {isServed ? 'Order Completed' : 
+             (isReady || (orderForUI.items || []).some(i => i.orderType === 'FAST_ITEM' || ['Lunch', 'Beverages', 'Snacks'].includes(i.category || ''))) ? 
+             'Point this at counter scanner' : 
+             `Cooking in progress - #${orderForUI.id.slice(-6).toUpperCase()}`}
+          </p>
+          {!isServed && (orderForUI.items || []).length > 1 && (
+             <div className="flex items-center gap-2">
+                <div className="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                   { (orderForUI.items || []).filter(i => i.status === 'READY' || i.status === 'SERVED').length } of { (orderForUI.items || []).length } items ready 🚀
+                </div>
+             </div>
+          )}
+        </div>
       </div>
 
       <div className="px-6 py-4 border-t border-gray-50">

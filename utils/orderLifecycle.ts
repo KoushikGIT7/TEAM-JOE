@@ -86,21 +86,20 @@ export const shouldShowQR = (order: Order): boolean => {
   if (unservedCount === 0) return false;
 
   const isPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
-  const hasStatic = order.items?.some(it => it.orderType === 'FAST_ITEM');
+  
+  // 🏎️ [INTELLIGENT-UNLOCK] Identify if any item is collectable
+  const hasStatic = order.items?.some(it => 
+     it.orderType === 'FAST_ITEM' || 
+     ['Lunch', 'Beverages', 'Snacks'].includes(it.category || '')
+  );
   const hasReady = order.items?.some(it => it.status === 'READY');
   const isScanned = order.qrState === 'SCANNED' || order.qrStatus === 'SCANNED';
 
-  // If order is purely dynamic and nothing is ready yet, keep locked (unless already scanned/manifested at counter)
-  if (!hasStatic && !hasReady && !isScanned) {
-    return false;
-  }
+  // Release QR if it's paid and either has something to collect or was already scanned
+  if (!isPaid) return false;
+  if (!hasStatic && !hasReady && !isScanned) return false;
 
-  // Lock QR if window expired (unless re-queued)
-  if (order.pickupWindow?.endTime && Date.now() > order.pickupWindow.endTime) {
-    return false;
-  }
-
-  return isPaid && (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED');
+  return (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED');
 };
 
 /**

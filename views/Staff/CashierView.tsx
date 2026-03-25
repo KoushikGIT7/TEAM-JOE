@@ -3,7 +3,7 @@ import {
   LogOut, CheckCircle, Clock, Banknote, RefreshCw, Search, LayoutDashboard, 
   FileText, BarChart3, Settings, X, AlertCircle, TrendingUp, DollarSign,
   Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon,
-  Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid, Zap
+  Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid, Zap, AlertTriangle
 } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
 import { 
@@ -40,6 +40,18 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [syncInput, setSyncInput] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const onOnline = () => setIsOffline(false);
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+       window.removeEventListener('online', onOnline);
+       window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
@@ -126,6 +138,10 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
 
   // --- ⚙️ HANDLERS ---
   const handleConfirm = (orderId: string) => {
+    if (!offlineDetector.isOnline()) {
+       alert("Waiting for connection...");
+       return;
+    }
     // ⚡ OPTIMISTIC STROKE: Clear from UI in <50ms
     setOptimisticClearedIds(prev => new Set(prev).add(orderId));
     joeSounds.playPaymentConfirmed(); 
@@ -145,6 +161,10 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   };
 
   const handleReject = async (orderId: string) => {
+    if (!offlineDetector.isOnline()) {
+       alert("Waiting for connection...");
+       return;
+    }
     if (!confirm('Reject request?')) return;
     setRejecting(orderId);
     try {
@@ -829,6 +849,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   // --- 🎨 MAIN RENDER ---
   return (
     <div className="min-h-screen bg-slate-50/50 select-none font-sans text-slate-900">
+      {isOffline && (
+        <div className="bg-red-600 text-white px-8 py-2 text-center font-black text-[10px] uppercase tracking-widest animate-pulse flex items-center justify-center gap-3 shrink-0 z-50">
+           <AlertTriangle className="w-3 h-3" /> Connection unstable. Waiting for cashier database...
+        </div>
+      )}
       
       {/* 💻 DESKTOP DUAL-LAYOUT (hidden lg:flex) */}
       <div className="hidden lg:flex min-h-screen">

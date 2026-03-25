@@ -61,14 +61,14 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       if (res === 'ALREADY_MANIFESTED' || res === 'ALREADY_CONSUMED') {
          // Silent re-scan gate
          return;
-      }
-
-      if (res === 'AWAITING_PAYMENT') {
-        triggerStrobe('ERROR', 'UNPAID ORDER', 'Send student to cashier');
+      } else if (res === 'AWAITING_PAYMENT') {
+        triggerStrobe('ERROR', 'UNPAID ORDER', 'Direct student to cashier');
+      } else if (res === 'AWAITING_COOKING') {
+        triggerStrobe('ERROR', 'NOT READY', 'Meal still in preparation');
       } else if (res === 'CONSUMED') {
         triggerStrobe('SUCCESS', 'VERIFIED ✅', 'RELEASE MEAL NOW');
       } else if (res === 'MANIFESTED') {
-        triggerStrobe('SUCCESS', 'CONFIRMED ✅', 'MANIFEST CREATED IN KITCHEN');
+        triggerStrobe('SUCCESS', 'PARTIAL RELEASE ✅', 'ITEMS LOADED ON SCREEN');
       }
       
       refreshLogs();

@@ -83,21 +83,21 @@ export interface PreparationStationConfig {
 export const PREPARATION_STATIONS: Record<string, PreparationStationConfig> = {
   dosa: {
     id: 'dosa',
-    maxConcurrentPreparation: 3,
+    maxConcurrentPreparation: 4, // 🍳 4 pans / items at once
     name: 'Dosa Counter',
     nameKn: 'ದೋಸೆ ಕೌಂಟರ್',
     avgPrepTimeSeconds: 60,
   },
   kitchen: {
     id: 'kitchen',
-    maxConcurrentPreparation: 4,
+    maxConcurrentPreparation: 10, // 🍲 Bulk Handi/Rice cooking
     name: 'Main Kitchen',
     nameKn: 'ಮುಖ್ಯ ಅಡುಗೆಮನೆ',
     avgPrepTimeSeconds: 90,
   },
   default: {
     id: 'default',
-    maxConcurrentPreparation: 5,
+    maxConcurrentPreparation: 10, // 🍱 Instant Service capacity
     name: 'Instant Service',
     nameKn: 'ತಕ್ಷಣದ ಸೇವೆ',
     avgPrepTimeSeconds: 30,

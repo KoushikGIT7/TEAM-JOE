@@ -28,8 +28,8 @@ interface UnifiedHeaderProps {
   onLogout: () => void;
   onBack?: () => void;
   currentTime: Date;
-  activeWorkspace: 'COOK' | 'SERVER' | 'MARKETING';
-  setActiveWorkspace: (workspace: 'COOK' | 'SERVER' | 'MARKETING') => void;
+  activeWorkspace: 'COOK' | 'SERVER' | 'MIRROR';
+  setActiveWorkspace: (workspace: 'COOK' | 'SERVER' | 'MIRROR') => void;
 }
 
 const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack, currentTime, activeWorkspace, setActiveWorkspace }) => {
@@ -40,24 +40,32 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
             <span className="text-white font-bold text-sm lg:text-lg tracking-tight uppercase">JOE CAFE</span>
          </div>
          
-         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full lg:w-auto overflow-x-auto custom-scrollbar flex-nowrap">
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full lg:w-auto overflow-x-auto custom-scrollbar flex-nowrap">
             <button 
               onClick={() => setActiveWorkspace('COOK')}
-              className={`px-4 lg:px-8 h-10 lg:h-12 rounded-full font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
+              className={`px-4 lg:px-6 h-9 lg:h-12 rounded-lg lg:rounded-full font-black text-[9px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
                 activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              Cook Station
+              Cook
             </button>
             <button 
               onClick={() => setActiveWorkspace('SERVER')}
-              className={`px-4 lg:px-8 h-10 lg:h-12 rounded-full font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
+              className={`px-4 lg:px-6 h-9 lg:h-12 rounded-lg lg:rounded-full font-black text-[9px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
                 activeWorkspace === 'SERVER' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              Server Center
+              Server
             </button>
-         </div>
+            <button 
+              onClick={() => setActiveWorkspace('MIRROR')}
+              className={`px-4 lg:px-6 h-9 lg:h-12 rounded-lg lg:rounded-full font-black text-[9px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
+                activeWorkspace === 'MIRROR' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Mirror
+            </button>
+          </div>
       </div>
 
       <div className="flex items-center justify-between lg:justify-end w-full lg:w-auto gap-4 lg:gap-8 overflow-x-auto flex-nowrap pb-1 lg:pb-0">
@@ -93,9 +101,28 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
 };
 
 const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
-  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MARKETING'>('COOK');
+  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MIRROR'>('COOK');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setIsOffline(false);
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+       window.removeEventListener('online', onOnline);
+       window.removeEventListener('offline', onOffline);
+    };
+  }, []);
   
   // scanQueue drives the entire Server Manifest loop now
   const [scanQueue, setScanQueue] = useState<string[]>([]);
@@ -129,16 +156,42 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     const clockInterval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
+    
+    // 🛡️ [LISTENER-LOAD-SHEDDING] 
+    // If pendingItems > 60, we stop the auto-pulse to let the kitchen catch up
+    let lastKnownCount = 0;
+    let isThrottled = false;
 
-    // ⚡ [REAL-TIME-GENERATOR] Triggered by data changes, no polling needed for instant response
     const unsubGenerator = onSnapshot(
-       query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(50)),
-       () => runBatchGenerator(profile.uid)
+       query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(100)),
+       (snap) => {
+          const count = snap.docs.length;
+          lastKnownCount = count;
+          
+          if (count > 60) {
+             if (!isThrottled) {
+                console.warn(`📉 [LOAD-SHEDDING] Kitchen overloaded (${count} items). Throttling generator.`);
+                isThrottled = true;
+             }
+             return; // Shed the load: do not trigger generator
+          }
+          
+          isThrottled = false;
+          runBatchGenerator(profile.uid);
+       }
     );
+
+    // 🛰️ [NETWORK-MONITOR]
+    const onOnline = () => {
+       console.log("📡 [NETWORK] Reconnected");
+       runBatchGenerator(profile.uid);
+    };
+    window.addEventListener('online', onOnline);
 
     return () => {
       clearInterval(clockInterval);
       if (unsubGenerator) unsubGenerator();
+      window.removeEventListener('online', onOnline);
     };
   }, [profile.uid]);
 
@@ -167,9 +220,11 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
             triggerSonicPulse('SUCCESS', 'ORDER COMPLETE ✅', 'ALL ITEMS AUTO-SERVED');
         } else if (result === 'MANIFESTED') {
             setScanQueue(prev => Array.from(new Set([...prev, order.id])));
-            triggerSonicPulse('SUCCESS', 'MANIFEST LIVE ✅', 'ITEMS LOADED ON SCREEN');
+            triggerSonicPulse('SUCCESS', 'PARTIAL RELEASE ✅', 'ITEMS LOADED ON SCREEN');
         } else if (result === 'AWAITING_PAYMENT') {
             triggerSonicPulse('ERROR', 'UNPAID ORDER', 'Direct student to cashier');
+        } else if (result === 'AWAITING_COOKING') {
+            triggerSonicPulse('ERROR', 'MEAL NOT READY', 'Wait for cooking confirmation');
         }
     } catch (err: any) {
         if (err.message === 'ALREADY_CONSUMED') {
@@ -183,9 +238,15 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
   }, [profile.uid]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans select-none">
-      <div className="flex-1 flex flex-col min-w-0">
-        <UnifiedHeader 
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans select-none flex-col">
+      {isOffline && (
+        <div className="bg-red-600 text-white px-8 py-2 text-center font-black text-[10px] uppercase tracking-widest animate-pulse flex items-center justify-center gap-3 shrink-0 z-50">
+           <AlertTriangle className="w-3 h-3" /> Connection unstable. Reconnecting to kitchen brain...
+        </div>
+      )}
+      <div className="flex-1 flex flex-row min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0">
+          <UnifiedHeader 
           profile={profile} 
           onLogout={onLogout} 
           onBack={onBack} 
@@ -195,13 +256,19 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
         />
         
         <main className="flex-1 overflow-hidden relative">
-          {activeWorkspace === 'COOK' && <CookConsoleWorkspace initialStationId="ALL" />}
+          {activeWorkspace === 'COOK' && <CookConsoleWorkspace initialStationId="ALL" isMobile={isMobile} />}
           {activeWorkspace === 'SERVER' && (
              <ServerConsoleWorkspace 
                 scanQueue={scanQueue}
                 setScanQueue={setScanQueue}
                 setIsCameraOpen={setIsCameraOpen}
+                isMobile={isMobile}
              />
+          )}
+          {activeWorkspace === 'MIRROR' && (
+             <div className="h-full w-full bg-[#0a0a0c] overflow-hidden">
+                <CookConsoleWorkspace isPassive={true} />
+             </div>
           )}
 
           {sonicMode.status !== 'IDLE' && (
@@ -224,6 +291,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
           )}
         </main>
       </div>
+     </div>
     </div>
   );
 };
