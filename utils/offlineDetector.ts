@@ -15,7 +15,7 @@ class OfflineDetector {
   private status: NetworkStatus = navigator.onLine ? 'online' : 'offline';
   private listeners: Set<NetworkStatusListener> = new Set();
   private lastPingTime: number = Date.now();
-  private slowThreshold: number = 3000; // 3 seconds = slow connection
+  private slowThreshold: number = 30000; // 30 seconds = slow connection
 
   constructor() {
     this.setupEventListeners();
@@ -86,7 +86,7 @@ class OfflineDetector {
    * Check if network is available
    */
   isOnline(): boolean {
-    return this.status === 'online';
+    return this.status !== 'offline';
   }
 
   /**

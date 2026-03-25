@@ -106,7 +106,8 @@ export const PREPARATION_STATIONS: Record<string, PreparationStationConfig> = {
 
 /** Categorization for Smart Kitchen Workflow */
 export const STATION_ID_BY_ITEM_ID: Record<string, string> = {
-  'BKT03': 'dosa', 'BKT04': 'dosa', 'BKT06': 'dosa',
+  'BKT01': 'kitchen', 'BKT02': 'kitchen', 'BKT05': 'kitchen', 'BKT07': 'kitchen', 'BKT08': 'kitchen', 'BKT09': 'kitchen', // Tiffin items
+  'BKT03': 'dosa', 'BKT04': 'dosa', 'BKT06': 'dosa', // Dosa station items
   'BKT10': 'kitchen',
   'LCH02': 'kitchen', 'LCH04': 'kitchen', 'LCH05': 'kitchen',
 };

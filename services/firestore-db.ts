@@ -2021,10 +2021,10 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
       return await runTransaction(db, async (tx) => {
          // 🛡️ [STATE-LATCH] READ PHASE
          const snap = await tx.get(finalOrderRef);
-         if (!orderSnap.exists()) throw new Error("ORDER_NOT_FOUND");
+         if (!snap.exists()) throw new Error("ORDER_NOT_FOUND");
          
-         const orderData = orderSnap.data();
-         const order = firestoreToOrder(orderSnap.id, orderData);
+         const orderData = snap.data();
+         const order = firestoreToOrder(snap.id, orderData);
 
          // 3. IDEMPOTENCY & TERMINAL STATE CHECKS (FAST FAIL)
          const fStatus = order.serveFlowStatus;
@@ -2891,7 +2891,7 @@ export const lockItemsToPrepBatch = async (items: {orderId: string, itemId: stri
 /**
  * [SONIC-START] QUEUED -> PREPARING
  */
-export const startBatch = async (batchId: string, items: any[]) => {
+export const startBatch = async (batchId: string, items: any[], cookId?: string) => {
   const batchRef = doc(db, 'prepBatches', batchId);
   await runTransaction(db, async (tx) => {
     // 🔍 Phase 1: Reads
@@ -2911,6 +2911,7 @@ export const startBatch = async (batchId: string, items: any[]) => {
     // ⚡ Phase 2: Writes
     tx.update(batchRef, { 
       status: 'PREPARING', 
+      ownerId: cookId || null,
       updatedAt: serverTimestamp(),
       lastActionAt: serverTimestamp() 
     });
@@ -3124,30 +3125,50 @@ let lastPulseAt = 0;
 let lastProcessedItemFingerprint = "";
 let dosaCycleCount = 0; 
 
-// 🛡️ SAFETY 1: FAILSAFE GENERATOR PULSE (Ensure generator never stalls)
-setInterval(() => {
-   const now = Date.now();
-   if (now - lastPulseAt > 8000) {
-      console.log("🛡️ [SAFETY-1] Fail-safe pulse triggered.");
-      runBatchGenerator("failsafe-pulse-" + now);
+/** 🛡️ [BRAIN-CONTROLLER] Single Executive Authority Logic */
+let failsafeInterval: any = null;
+
+export const startSystemBrain = (nodeId: string) => {
+   if (failsafeInterval) return;
+   console.log(`🧠 [SYSTEM-BRAIN] Executive Authority started for node: ${nodeId}`);
+   
+   failsafeInterval = setInterval(() => {
+      const now = Date.now();
+      if (now - lastPulseAt > 10000) {
+         console.log("🛡️ [SAFETY-1] Fail-safe pulse triggered.");
+         runBatchGenerator("failsafe-pulse-" + now);
+      }
+   }, 10000);
+};
+
+export const stopSystemBrain = () => {
+   if (failsafeInterval) {
+      clearInterval(failsafeInterval);
+      failsafeInterval = null;
+      console.log("🧠 [SYSTEM-BRAIN] Executive Authority released.");
    }
-}, 8000);
+};
 
 export const runBatchGenerator = async (nodeId: string) => {
   if (!auth.currentUser) return;
+  
+  // 🛡️ [BRAIN-ELIGIBILITY-GUARD] 
+  // Strict check to prevent unauthorized clients from hitting system docs
+  const user = auth.currentUser;
   const now = Date.now();
   
   // 🛡️ [ANTI-THRASH] Cooldown to stabilize background logic
-  if (now - lastPulseAt < 1500) return; 
+  if (now - lastPulseAt < 2000) return; 
   lastPulseAt = now;
 
   const lockRef = doc(db, "system_locks", "batch_generator");
 
   try {
-    const currentLock = await getDoc(lockRef);
-    if (currentLock.exists()) {
+    const currentLock = await getDoc(lockRef).catch(() => null);
+    if (currentLock?.exists()) {
        const lockData = currentLock.data();
-       if (now - (lockData.acquiredAt || 0) < 5000 && lockData.nodeId !== nodeId) return;
+       // Lease check: If lock was acquired < 10s ago by someone else, back off silently
+       if (now - (lockData.acquiredAt || 0) < 10000 && lockData.nodeId !== nodeId) return;
     }
 
     const shouldRun = await runTransaction(db, async (tx) => {
@@ -3696,6 +3717,8 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
   const maintenanceRef = doc(db, "system", "maintenance");
   const now = Date.now();
 
+  if (!auth.currentUser) return false;
+
   try {
     return await runTransaction(db, async (tx) => {
       const snap = await tx.get(maintenanceRef);
@@ -3712,8 +3735,12 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
       
       return false;
     });
-  } catch (err) {
-    console.warn("Maintenance lock acquisition failed (non-fatal):", (err as any)?.message);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+       // Silent yield: This device is not authorized to run system maintenance (e.g. Student phone)
+       return false;
+    }
+    console.warn("Maintenance lock acquisition failed (non-fatal):", err?.message);
     return false;
   }
 };

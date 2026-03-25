@@ -134,22 +134,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     return () => clearInterval(iv);
   }, [order?.serveFlowStatus, order?.pickupWindow?.endTime]);
 
-  useEffect(() => {
-    if (!order) return;
-    const isQrScanned = order.qrStatus === 'DESTROYED' || order.qrStatus === 'USED';
-    const isDestroyed = order.qrStatus === 'DESTROYED' || order.qrStatus === 'USED';
-    const isOrderServed = order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' || order.serveFlowStatus === 'SERVED';
-
-    if (isQrScanned || isDestroyed || isOrderServed) {
-      const isFast = order.orderType === 'FAST_ITEM';
-      const delay = isFast ? 1200 : 2500;
-      const timer = setTimeout(() => {
-        if (onViewOrders) onViewOrders();
-        else onBack();
-      }, delay);
-      return () => clearTimeout(timer);
-    }
-  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus, order?.qrState]);
 
   const [flashState, setFlashState] = useState<'GREEN' | 'RED' | null>(null);
   const prevItemsRef = useRef<any[] | null>(null);
@@ -222,17 +206,30 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const flow = orderForUI.serveFlowStatus || 'NEW';
   const isTimeExpired = orderForUI.pickupWindow?.endTime ? Date.now() > orderForUI.pickupWindow.endTime : false;
   const isQrScanned = (orderForUI.qrStatus as string) === 'USED' || (orderForUI.qrStatus as string) === 'DESTROYED';
-  const isServed = orderForUI.orderStatus === 'SERVED' || orderForUI.orderStatus === 'COMPLETED' || (orderForUI.serveFlowStatus as string) === 'SERVED' || isQrScanned;
+  const isScanned = orderForUI.qrState === 'SCANNED' || (orderForUI.qrStatus as string) === 'SCANNED';
+  const isServed = orderForUI.orderStatus === 'SERVED' || orderForUI.orderStatus === 'COMPLETED' || (orderForUI.serveFlowStatus as string) === 'SERVED' || isQrScanned || (orderForUI.orderStatus === 'IN_PROGRESS' && isScanned);
   if (isServed) terminalLatch.current = true;
   const isTerminal = terminalLatch.current;
   const isMissed = !isTerminal && (uiState === 'MISSED' || orderForUI.orderStatus === 'MISSED' || isTimeExpired);
 
+  useEffect(() => {
+    if (!order || !orderForUI) return;
+    if (isServed || isTerminal) {
+      const timer = setTimeout(() => {
+        if (onViewOrders) onViewOrders();
+        else onBack();
+      }, 4000); // 4s delay to read message
+      return () => clearTimeout(timer);
+    }
+  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus, order?.qrState, isServed, isTerminal, orderForUI]);
+
   let statusKey = 'SCHEDULED';
   if (isTerminal) statusKey = 'SERVED';
+  else if (isScanned) statusKey = 'SERVED'; // Student is at the counter, it's effectively served or currently handing over
   else if (isMissed) statusKey = 'MISSED';
   else if (orderForUI.paymentType === 'CASH' && orderForUI.paymentStatus === 'AWAITING_CONFIRMATION') statusKey = 'CASH_PENDING';
   else if (flow === 'READY') statusKey = 'READY';
-  else if (flow === 'SERVED_PARTIAL') statusKey = 'PREPARING';
+  else if (flow === 'SERVED_PARTIAL' || orderForUI.orderStatus === 'IN_PROGRESS') statusKey = 'PREPARING';
   else if (flow === 'PREPARING' || flow === 'ALMOST_READY') statusKey = 'PREPARING';
   else if (orderForUI.paymentStatus === 'SUCCESS' || orderForUI.paymentStatus === 'VERIFIED') statusKey = 'SCHEDULED';
 
@@ -442,13 +439,19 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         </button>
       </div>
 
-      {isServed && (
-        <div className="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-10 animate-in fade-in duration-700">
-          <div className="w-32 h-32 bg-green-50 rounded-[3rem] flex items-center justify-center mb-10 animate-in zoom-in duration-1000 delay-300">
+      {(isServed || isTerminal) && (
+        <div className="fixed inset-0 bg-white z-[150] flex flex-col items-center justify-center p-10 animate-in fade-in slide-in-from-bottom duration-700">
+          <div className="w-32 h-32 bg-green-50 rounded-[3rem] flex items-center justify-center mb-10 animate-in zoom-in spin-in-12 duration-1000 delay-300">
             <CheckCircle2 className="w-16 h-16 text-green-600" />
           </div>
-          <h2 className="text-4xl font-black text-gray-900 mb-4 tracking-tighter text-center">Meal Received!</h2>
-          <p className="text-gray-400 font-bold text-lg text-center leading-relaxed">Hope you enjoy every bite. Returning to the menu shortly.</p>
+          <h2 className="text-4xl font-black text-gray-900 mb-4 tracking-tighter text-center scale-in-90 animate-in duration-500 delay-500">Meal Received!</h2>
+          <p className="text-gray-400 font-bold text-lg text-center leading-relaxed max-w-[280px]">Order confirmed. Enjoy your delicious meal at JOE Cafe! 🍕</p>
+          <div className="mt-12 flex items-center gap-2 px-10">
+             <div className="h-1.5 w-24 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 animate-progress origin-left" />
+             </div>
+          </div>
+          <p className="mt-4 text-[10px] font-black uppercase text-gray-300 tracking-[0.3em]">Returning to menu</p>
         </div>
       )}
     </div>

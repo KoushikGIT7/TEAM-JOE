@@ -152,7 +152,9 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                 batchStatus: b.status,
                 batchCreatedAt: (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0,
                 stationId: b.stationId,
-                fullBatchItems: b.items 
+                fullBatchItems: b.items,
+                // 🆔 [UNIT-UNIQUE-IDENTITY]: Crucial for React focus logic
+                id: `${b.id}_${it.itemId}_${i}` 
               });
           }
           return result;
@@ -197,19 +199,30 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
   const [focus, setFocus] = useState<any>(null);
   useEffect(() => {
     const nextFocus = activeItemsSlice[0];
-    if (nextFocus?.id !== focus?.id) {
-       const timer = setTimeout(() => setFocus(nextFocus), 300);
-       return () => clearTimeout(timer);
+    
+    // ⚡ [LIVE-SYNC]: Update focus if ID changes OR if the status of the current item updates
+    if (nextFocus?.id !== focus?.id || nextFocus?.batchStatus !== focus?.batchStatus) {
+       // Identity change gets a transition; Status change is instant for speed
+       if (nextFocus?.id !== focus?.id) {
+          const timer = setTimeout(() => setFocus(nextFocus), 150);
+          return () => clearTimeout(timer);
+       } else {
+          setFocus(nextFocus);
+       }
     }
-  }, [activeItemsSlice]);
+  }, [activeItemsSlice, focus?.id, focus?.batchStatus]);
 
   const handleStart = async (batchId: string, items: any[]) => {
     if (!navigator.onLine) return alert("Waiting for connection...");
     if (processingMap[batchId]) return;
+    
+    // 📳 [HAPTIC-PULSE]
+    if (window.navigator.vibrate) window.navigator.vibrate(40);
+
     setOptimisticStatus(p => ({ ...p, [batchId]: 'PREPARING' }));
     setProcessingMap(p => ({ ...p, [batchId]: true }));
     try {
-      await startBatch(batchId, items);
+      await startBatch(batchId, items, auth.currentUser?.uid);
       setLastAction('Cooking Started ⚡');
       setTimeout(() => setLastAction(null), 2000);
     } catch {
@@ -223,6 +236,9 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     if (!navigator.onLine) return alert("Waiting for connection...");
     if (processingMap[batchId]) return;
     
+    // 📳 [HAPTIC-PULSE]
+    if (window.navigator.vibrate) window.navigator.vibrate([40, 20, 60]);
+
     // Only use optimistic state for full batch finalization
     if (!count) setOptimisticStatus(p => ({ ...p, [batchId]: 'READY' }));
     

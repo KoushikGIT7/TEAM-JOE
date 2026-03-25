@@ -157,14 +157,23 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       setCurrentTime(new Date());
     }, 1000);
     
-    // 🛡️ [LISTENER-LOAD-SHEDDING] 
-    // If pendingItems > 60, we stop the auto-pulse to let the kitchen catch up
+    // 🛡️ [BRAIN-EXECUTIVE-AUTHORITY]
+    // Only the primary staff device running the SERVER workspace acts as the brain.
+    // This prevents multi-device lock competition (failed-precondition errors).
+    const isBrainEligible = (profile.role === 'SERVER' || profile.role === 'ADMIN' || profile.role === 'COOK') && (activeWorkspace === 'SERVER' || activeWorkspace === 'COOK');
+    
+    if (isBrainEligible) {
+       import('../../services/firestore-db').then(m => m.startSystemBrain(profile.uid));
+    }
+
     let lastKnownCount = 0;
     let isThrottled = false;
 
     const unsubGenerator = onSnapshot(
        query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(100)),
        (snap) => {
+          if (!isBrainEligible) return; // Silent read-only mode for non-brain clients
+          
           const count = snap.docs.length;
           lastKnownCount = count;
           
@@ -173,7 +182,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
                 console.warn(`📉 [LOAD-SHEDDING] Kitchen overloaded (${count} items). Throttling generator.`);
                 isThrottled = true;
              }
-             return; // Shed the load: do not trigger generator
+             return; 
           }
           
           isThrottled = false;
@@ -184,7 +193,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     // 🛰️ [NETWORK-MONITOR]
     const onOnline = () => {
        console.log("📡 [NETWORK] Reconnected");
-       runBatchGenerator(profile.uid);
+       if (isBrainEligible) runBatchGenerator(profile.uid);
     };
     window.addEventListener('online', onOnline);
 
@@ -192,6 +201,7 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       clearInterval(clockInterval);
       if (unsubGenerator) unsubGenerator();
       window.removeEventListener('online', onOnline);
+      import('../../services/firestore-db').then(m => m.stopSystemBrain());
     };
   }, [profile.uid]);
 
@@ -201,14 +211,21 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
     scanLockRef.current = true;
     setIsCameraOpen(false); 
     
-    const intake = parseServingQR(rawData.trim());
-    if (!intake.orderId) {
-        triggerSonicPulse('ERROR', 'INVALID CODE', 'Protocol mismatch');
+    let intake;
+    try {
+        intake = parseServingQR(rawData.trim());
+        if (!intake.orderId) {
+            triggerSonicPulse('ERROR', 'INVALID CODE', 'Protocol mismatch');
+            scanLockRef.current = false;
+            return;
+        }
+        triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
+    } catch (e) {
+        console.error('Scan Parse Error:', e);
+        triggerSonicPulse('ERROR', 'SCAN ERROR', 'Invalid data format');
         scanLockRef.current = false;
         return;
     }
-
-    triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
 
     try {
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
@@ -227,10 +244,15 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
             triggerSonicPulse('ERROR', 'MEAL NOT READY', 'Wait for cooking confirmation');
         }
     } catch (err: any) {
-        if (err.message === 'ALREADY_CONSUMED') {
+        const msg = err.message || '';
+        if (msg === 'ALREADY_CONSUMED') {
             triggerSonicPulse('ERROR', 'ALREADY USED', 'QR code already consumed');
+        } else if (msg === 'SECURITY_BREACH') {
+            triggerSonicPulse('ERROR', 'SECURITY ALERT', 'Invalid or tampered token');
+        } else if (msg === 'ORDER_NOT_FOUND') {
+            triggerSonicPulse('ERROR', 'UNKNOWN ORDER', 'Order ID not in database');
         } else {
-            triggerSonicPulse('ERROR', 'SCAN ERROR', (err?.message || 'Transaction failed').toUpperCase());
+            triggerSonicPulse('ERROR', 'SCAN ERROR', msg.toUpperCase().slice(0, 20));
         }
     } finally {
         setTimeout(() => { scanLockRef.current = false; }, 800);

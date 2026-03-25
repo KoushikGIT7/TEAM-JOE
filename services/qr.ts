@@ -267,7 +267,7 @@ export interface ParsedIntakeQR {
  */
 export const parseServingQR = (rawData: string): ParsedIntakeQR => {
   if (!rawData) return { raw: '', orderId: '', paymentMode: 'UNKNOWN', qrKind: 'MALFORMED' };
-  const data = rawData.trim();
+  let data = rawData.trim();
   
   // 🔬 Diagnostic Capture
   const result: ParsedIntakeQR = {
@@ -277,44 +277,60 @@ export const parseServingQR = (rawData: string): ParsedIntakeQR => {
     qrKind: 'MALFORMED'
   };
 
+  // Helper to ensure 'order_' prefix exists
+  const normalizeId = (id: string) => {
+     if (!id) return '';
+     return id.startsWith('order_') ? id : `order_${id}`;
+  };
+
+  // --- PATH 0: URL Recovery ---
+  if (data.includes('/order/')) {
+     const orderMatch = data.match(/order_[a-zA-Z0-9]+/);
+     if (orderMatch) {
+        data = orderMatch[0];
+     } else {
+        const parts = data.split('/');
+        const id = parts[parts.length - 1].split(/[?#]/)[0];
+        if (id.length >= 4) data = normalizeId(id);
+     }
+  }
+
   // --- PATH 1: Modern Secure Payload (v1.order_xxxx.hash.exp) ---
-  if (data.startsWith('v1.')) {
+  if (data.includes('v1.')) {
      const parts = data.split('.');
-     if (parts.length >= 3) {
-        result.orderId = parts[1];
+     const vIdx = parts.findIndex(p => p.startsWith('v1'));
+     if (vIdx !== -1 && parts.length >= vIdx + 3) {
+        result.orderId = normalizeId(parts[vIdx+1]);
         result.qrKind = 'SECURE_V1';
-        result.paymentMode = 'UPI'; // Default for secure flow
-        result.timestamp = parseInt(parts[3] || '0', 10);
+        result.paymentMode = 'UPI'; 
+        result.timestamp = parseInt(parts[vIdx+3] || '0', 10);
         return result;
      }
   }
 
-  // --- PATH 2: Legacy Cash Confirmation (QR_CASH_order_xxxx_time) ---
-  if (data.startsWith('QR_CASH_')) {
+  // --- PATH 2: Legacy Cash Confirmation ---
+  if (data.includes('QR_CASH_')) {
      const parts = data.split('_');
      result.paymentMode = 'CASH';
      result.qrKind = 'LEGACY_CASH';
-     result.timestamp = parseInt(parts[parts.length - 1], 10);
-
-     // Strategy: Sift for the 'order_' token
+     
      const orderIdx = parts.findIndex(p => p.startsWith('order_'));
      if (orderIdx !== -1) {
         result.orderId = parts[orderIdx];
-     } else if (parts[2] === 'order' && parts[3]) {
-        // Fallback for parts: ['QR', 'CASH', 'order', 'xxxx', 't']
-        result.orderId = `order_${parts[3]}`;
+     } else if (parts.length >= 3) {
+        result.orderId = normalizeId(parts[2]);
      }
      
      if (result.orderId) return result;
   }
 
   // --- PATH 3: Plaintext / Naked ID Recovery ---
-  if (data.startsWith('order_')) {
-     result.orderId = data;
+  const orderMarker = data.indexOf('order_');
+  if (orderMarker !== -1) {
+     result.orderId = data.substring(orderMarker).split(/[ .?/#]/)[0];
      result.qrKind = 'PLAINTEXT';
   } else if (data.length >= 4 && !data.includes('.')) {
-     // Auto-normalize naked IDs (e.g. keyboard entry or shortcut scan)
-     result.orderId = `order_${data}`;
+     result.orderId = normalizeId(data);
      result.qrKind = 'PLAINTEXT';
   }
 

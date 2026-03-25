@@ -8,9 +8,9 @@ import { runMaintenanceCycle } from '../services/firestore-db';
  */
 export function useMaintenanceWorker(uid: string | null, role: string | null) {
   useEffect(() => {
-    // Only run for staff members (Cashier, Server, Admin)
-    const isStaff = role && ['ADMIN', 'CASHIER', 'SERVER'].includes(role.toUpperCase());
-    if (!uid || !isStaff) return;
+    // Only run for coordination staff (Server or Admin)
+    const isBrainEligible = role && ['ADMIN', 'SERVER'].includes(role.toUpperCase());
+    if (!uid || !isBrainEligible) return;
 
     console.log(`🛠️ [MAINTENANCE] Worker initialized for ${role} (${uid})`);
 
