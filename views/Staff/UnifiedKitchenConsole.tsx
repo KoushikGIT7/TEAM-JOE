@@ -138,7 +138,7 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
       if (status === 'SUCCESS') navigator.vibrate(100);
       else navigator.vibrate([200, 100, 200]);
     }
-    
+
     setTimeout(() => {
        setSonicMode(prev => {
           if (prev.status === 'IDLE') return prev;
@@ -154,10 +154,10 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
     const clockInterval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
-    
+
     // Only the primary staff device running the SERVER workspace acts as the brain.
     const isBrainEligible = (profile.role === 'SERVER' || profile.role === 'ADMIN' || profile.role === 'COOK') && (activeWorkspace === 'SERVER' || activeWorkspace === 'COOK');
-    
+
     if (isBrainEligible) {
        import('../../services/firestore-db').then(m => m.startSystemBrain(profile.uid));
     }
@@ -165,8 +165,8 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
     const unsubGenerator = onSnapshot(
        query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(100)),
        (snap) => {
-          if (!isBrainEligible) return; 
-          if (snap.docs.length > 60) return; 
+          if (!isBrainEligible) return;
+          if (snap.docs.length > 60) return;
           runBatchGenerator(profile.uid);
        }
     );
@@ -186,32 +186,32 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
 
   const handleQRScan = useCallback(async (rawData: string) => {
     if (!rawData?.trim() || scanLockRef.current) return;
-    
+
     scanLockRef.current = true;
-    setIsCameraOpen(false); 
-    
+    setIsCameraOpen(false);
+
     try {
         const intake = parseServingQR(rawData.trim());
         if (!intake.orderId) throw new Error("INVALID_QR");
         triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
 
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
-        
-        if (result === 'ALREADY_MANIFESTED' || result === 'MANIFESTED') {
-            const label = result === 'ALREADY_MANIFESTED' ? 'TOKEN ACTIVE ✅' : 'PARTIAL RELEASE ✅';
-            const sub = result === 'ALREADY_MANIFESTED' ? 'Order already on manifest' : 'ITEMS LOADED ON SCREEN';
+
+        if (result === 'ALREADY_MANIFESTED' || result === 'MANIFESTED' || result === 'CONSUMED') {
+            const isDone = result === 'CONSUMED';
+            const label = isDone ? 'ORDER COMPLETE ✅' : (result === 'ALREADY_MANIFESTED' ? 'TOKEN ACTIVE ✅' : 'PARTIAL RELEASE ✅');
+            const sub = isDone ? 'ALL ITEMS READY FOR HANDOVER' : 'ITEMS LOADED ON SERVER SCREEN';
             
-            // 🚀 [ZERO-LAG-PUSH]: Inject scanned data directly into workspace memory
+            // 🚀 [SIGNAL-PUSH]: Ensure items are in local memory so they show up instantly
             if (setExternalMapRef.current && order.items) {
                setExternalMapRef.current((prev: any) => ({ ...prev, [order.id]: order.items }));
             }
             
+            // Critical: Always add to manifest queue so server can see it
             setScanQueue(prev => Array.from(new Set([...prev, order.id])));
             triggerSonicPulse('SUCCESS', label, sub);
-        } else if (result === 'CONSUMED') {
-            triggerSonicPulse('SUCCESS', 'ORDER COMPLETE ✅', 'ALL ITEMS AUTO-SERVED');
-        } else {
-            triggerSonicPulse('ERROR', 'SCAN ERROR', result.replace('_', ' '));
+        } else if (result === 'AWAITING_PAYMENT') {
+        triggerSonicPulse('ERROR', 'SCAN ERROR', result.replace('_', ' '));
         }
     } catch (err: any) {
         triggerSonicPulse('ERROR', 'SCAN ERROR', (err.message || 'Unknown').toUpperCase().slice(0, 20));

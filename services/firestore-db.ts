@@ -118,10 +118,11 @@ export const isStaticItem = (item: any): boolean => {
   if (item.orderType === 'PREPARATION_ITEM') return false;
   if (item.orderType === 'FAST_ITEM') return true;
   
-  // Tertiary: Category Fallback (Static categories like Beverages/Lunch)
-  if (FAST_ITEM_CATEGORIES.includes(item.category || '')) return true;
-  
-  return false;
+  // Only Beverages (Tea/Coffee) are auto-served now. 
+  // Everything else (Idli, Dosa, Lunch) MUST appear on the server page.
+  const staticCategories = ['beverages'];
+  const cat = (item.category || '').toLowerCase();
+  return staticCategories.includes(cat);
 };
 
 const orderToFirestore = (order: Order) => ({
@@ -1981,140 +1982,111 @@ export const serveSingleItem = async (orderId: string, itemId: string) => {
  */
 const QR_VALIDATION_CACHE: Record<string, { time: number, result: any }> = {};
 
+// ────────────────────────────────────────────────────────────────────────────
+// [ATOMIC QR INTAKE]
+// ────────────────────────────────────────────────────────────────────────────
 export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
-    // 🛡️ [CACHE-LOCK] Reject rapid redundant scans (1s TTL)
     const now = Date.now();
-    if (QR_VALIDATION_CACHE[qrPayload] && (now - QR_VALIDATION_CACHE[qrPayload].time < 1000)) {
-       return QR_VALIDATION_CACHE[qrPayload].result;
-    }
-
-    if (!offlineDetector.isOnline()) throw new Error("Cannot verify QR offline");
-
-    // 1. LIGHTWEIGHT SYNC RESOLUTION
-    const intake = parseServingQR(qrPayload);
-    let orderId = intake.orderId;
-    if (!orderId) throw new Error("INVALID_QR_FORMAT");
-
-    const orderRefDirect = doc(db, "orders", orderId);
     
+    // 🛡️ [CACHE-LOCK] Reject rapid redundant scans (1s TTL)
+    const cached = QR_VALIDATION_CACHE[qrPayload];
+    if (cached && (now - cached.time) < 1000) return cached.result;
+
     try {
-      return await runTransaction(db, async (tx) => {
-         const snap = await tx.get(orderRefDirect);
-         if (!snap.exists()) throw new Error("ORDER_NOT_FOUND");
-         const order = firestoreToOrder(snap.id, snap.data());
+        const payload = parseServingQR(qrPayload);
+        const orderId = payload?.orderId;
+        if (!orderId) throw new Error("INVALID_QR_PAYLOAD");
 
-         // 🛡️ [IDEMPOTENCY & SCAN-ONCE POLICY]
-         if (order.qrStatus === 'DESTROYED' || order.orderStatus === 'COMPLETED' || order.orderStatus === 'SERVED') {
-            throw new Error("ALREADY_CONSUMED");
-         }
+        const orderRef = doc(db, 'orders', orderId);
+        
+        return await runTransaction(db, async (tx) => {
+            const orderSnap = await tx.get(orderRef);
+            if (!orderSnap.exists()) throw new Error("ORDER_NOT_FOUND");
+            
+            const orderDoc = orderSnap.data() as any;
+            if (orderDoc.qrStatus === 'DESTROYED') throw new Error("ALREADY_CONSUMED");
 
-         // If already scanned but not yet served, return a special result to the UI
-         // This allows the Server Console to re-open the manifest without re-processing items.
-         if (order.qrState === 'SCANNED') {
-            return { order, result: 'ALREADY_MANIFESTED' as const };
-         }
-
-         if (order.paymentStatus !== 'SUCCESS' && order.paymentStatus !== 'VERIFIED') {
-            return { order, result: 'AWAITING_PAYMENT' as const };
-         }
-
-         // 2. SECURITY FILTERS
-         const parsedPayload = await parseQRPayload(qrPayload);
-         const secureHash = parsedPayload?.secureHash || 'MANUAL_OVERRIDE';
-         if (secureHash !== 'MANUAL_OVERRIDE') {
-            const exp = parsedPayload?.expiresAt || (order.createdAt + (30 * 60 * 1000));
-            const isValid = await verifySecureHash(order.id, order.userId, order.cafeteriaId, order.createdAt, exp, secureHash);
-            if (!isValid) throw new Error("SECURITY_BREACH");
-         }
-
-         // 3. [REVIVAL-MODE]: If scan hits an ABANDONED order, wake it up.
-         const isAbandoned = order.orderStatus === 'ABANDONED';
-         if (isAbandoned) {
-            order.orderStatus = 'ACTIVE';
-            order.items = order.items.map(it => ({ ...it, status: 'PENDING' }));
-         }
-
-         // 4. ITEM DISPOSITION
-         const servedStatics: string[] = [];
-         const updatedItems = order.items.map(it => {
-            const isStatic = isStaticItem(it);
-            const isUnserved = (it.remainingQty !== undefined ? it.remainingQty : it.quantity) > 0;
-            const isActionable = it.status === 'READY' || isStatic;
-
-            if (isActionable && isUnserved) {
-               servedStatics.push(it.id);
-               return { 
-                  ...it, 
-                  status: 'SERVED' as const, 
-                  remainingQty: 0, 
-                  servedQty: (it.servedQty || 0) + it.quantity, 
-                  servedAt: now, 
-                  servedBy: staffId 
-               };
+            // Security Filter
+            const parsedPayload = await parseQRPayload(qrPayload);
+            const secureHash = parsedPayload?.secureHash || 'MANUAL_OVERRIDE';
+            if (secureHash !== 'MANUAL_OVERRIDE') {
+                const exp = parsedPayload?.expiresAt || (orderDoc.createdAt + (30 * 60 * 1000));
+                const isValid = await verifySecureHash(orderDoc.id, orderDoc.userId, orderDoc.cafeteriaId, orderDoc.createdAt, exp, secureHash);
+                if (!isValid) throw new Error("SECURITY_BREACH");
             }
-            return it;
-         });
 
-         const stillHasDynamic = updatedItems.some(it => {
-            const rem = (it.remainingQty !== undefined ? it.remainingQty : it.quantity);
-            return rem > 0 && it.status !== 'SERVED'; // Only count items not yet served
-         });
+            // [REVIVAL]: Wakup abandoned orders
+            if (orderDoc.orderStatus === 'ABANDONED') {
+                orderDoc.orderStatus = 'ACTIVE';
+                orderDoc.items = orderDoc.items.map((it: any) => ({ ...it, status: 'PENDING' }));
+            }
 
-         const finalOrderState: OrderStatus = stillHasDynamic ? 'IN_PROGRESS' : 'COMPLETED';
-         const finalQRState: QRState = stillHasDynamic ? 'SCANNED' : 'SERVED';
+            // Fix 7.4: NEVER auto-serve in the scanner.
+            // Items must stay on the manifest for the server to manually handover.
+            const updatedItems = orderDoc.items.map((it: any) => {
+                const isStatic = isStaticItem(it);
+                
+                // If it's a fast item (Tea, Coffee), move it to READY for the server
+                if (isStatic && (it.status === 'PENDING' || !it.status)) {
+                    it.status = 'READY';
+                }
 
-         const updateData: any = {
-            orderStatus: finalOrderState,
-            qrStatus: stillHasDynamic ? 'ACTIVE' : 'DESTROYED',
-            qrState: finalQRState,
-            scannedAt: now,
-            updatedAt: serverTimestamp(),
-            // 🛡️ [IMAGE-LOCK]: Strip base64
-            items: updatedItems.map(it => {
-               const cleanItem = { ...it };
-               if (cleanItem.imageUrl && cleanItem.imageUrl.startsWith('data:image')) {
-                  delete cleanItem.imageUrl; // Strip temporary base64 placeholders
-               }
-               return cleanItem;
-            })
-         };
-
-         if (!stillHasDynamic) updateData.servedAt = now;
-
-         // 5. ATOMIC COMMIT
-         tx.update(orderRefDirect, updateData);
-
-         // 📡 [UI-SYNC]: Update items subcollection
-         updatedItems.forEach(it => {
-            const subRef = doc(db, 'orders', order.id, 'items', it.id);
-            // Fix 7.3: Use set(merge:true) to ensure the subcollection doc exists
-            tx.set(subRef, { 
-               status: it.status, 
-               servedAt: it.status === 'SERVED' ? now : null, 
-               updatedAt: serverTimestamp() 
+                // Strip base64
+                const cleanItem = { ...it };
+                if (cleanItem.imageUrl && cleanItem.imageUrl.startsWith('data:image')) {
+                    delete cleanItem.imageUrl;
+                }
+                return cleanItem;
             });
-         });
 
-         const result = (updateData.qrStatus === 'DESTROYED') ? ('CONSUMED' as const) : ('MANIFESTED' as const);
-         
-         // Fix 7.2: Build a refined list for the UI to consume instantly
-         const refinedItems = updatedItems.map(it => ({
-            itemId: it.id,
-            orderId: order.id,
-            name: it.name,
-            status: it.status,
-            quantity: it.quantity,
-            category: it.category,
-            orderType: it.orderType
-         }));
+            const stillHasDynamic = updatedItems.some((it: any) => it.status !== 'SERVED');
+            const finalOrderState: OrderStatus = stillHasDynamic ? 'IN_PROGRESS' : 'COMPLETED';
 
-         const finalResult = { order: { ...order, ...updateData, items: refinedItems }, result };
-         QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
-         return finalResult;
-      });
+            const updateData: any = {
+                orderStatus: finalOrderState,
+                qrStatus: stillHasDynamic ? 'ACTIVE' : 'DESTROYED',
+                qrState: stillHasDynamic ? 'SCANNED' : 'SERVED',
+                scannedAt: now,
+                updatedAt: serverTimestamp(),
+                items: updatedItems
+            };
+
+            tx.update(orderRef, updateData);
+
+            // Sync items subcollection
+            updatedItems.forEach((it: any) => {
+                const subRef = doc(db, 'orders', orderDoc.id, 'items', it.id);
+                tx.set(subRef, { 
+                    status: it.status, 
+                    updatedAt: serverTimestamp() 
+                }, { merge: true });
+            });
+
+            const result = (updateData.qrStatus === 'DESTROYED') ? ('CONSUMED' as const) : ('MANIFESTED' as const);
+            
+            // Build refined list for UI
+            const refinedItems = updatedItems.map((it: any) => ({
+                itemId: it.id,
+                orderId: orderDoc.id,
+                name: it.name,
+                status: it.status,
+                quantity: it.quantity,
+                category: it.category,
+                orderType: it.orderType,
+                imageUrl: it.imageUrl
+            }));
+
+            const finalResult = { 
+                order: { ...orderDoc, ...updateData, items: refinedItems }, 
+                result 
+            };
+            
+            QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
+            return finalResult;
+        });
     } catch (e: any) {
-      console.error('❌ [ATOMIC-INTAKE-ERROR]:', e.message);
-      throw e;
+        console.error('❌ [ATOMIC-INTAKE-ERROR]:', e.message);
+        throw e;
     }
 };
 
