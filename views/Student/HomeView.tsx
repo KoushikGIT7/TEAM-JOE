@@ -337,12 +337,14 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
                   localStorage.setItem('joe_pulse_seen', 'true');
                   setShowPulsePopup(false);
                   const joeSubscribe = (window as any).joeSubscribe;
-                  if (typeof joeSubscribe === 'function') {
-                    joeSubscribe();
-                    setTimeout(() => {
-                      if (Notification.permission === 'granted') setNotifSubscribed(true);
-                    }, 1500);
-                  }
+                  if (typeof joeSubscribe === 'function') joeSubscribe();
+                  try {
+                    const result = await Notification.requestPermission();
+                    if (result === 'granted') {
+                      setNotifSubscribed(true);
+                      syncOneSignal(profile?.uid || null);
+                    }
+                  } catch { /* safe fallback */ }
                 }}
                 className="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-sm rounded-2xl shadow-lg shadow-indigo-200 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
@@ -462,9 +464,19 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
           <div className="flex items-center gap-2">
             {/* 📣 [ANIMATED-BELL] Premium Notification Subscribe Icon */}
             <button
-              onClick={() => {
+              onClick={async () => {
+                if (notifSubscribed) return;
+                // Direct browser permission request for instant UI feedback
                 const joeSubscribe = (window as any).joeSubscribe;
                 if (typeof joeSubscribe === 'function') joeSubscribe();
+                // Also request directly so we can update UI immediately
+                try {
+                  const result = await Notification.requestPermission();
+                  if (result === 'granted') {
+                    setNotifSubscribed(true);
+                    syncOneSignal(profile?.uid || null);
+                  }
+                } catch { /* browser may not support requestPermission as promise */ }
               }}
               title={notifSubscribed ? 'Subscribed to Deals!' : 'Tap to get Exclusive Deals!'}
               className={`relative flex items-center justify-center transition-all duration-500 active:scale-90
@@ -744,48 +756,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <ShoppingBag className="w-5 h-5 group-hover:rotate-12 transition-transform" />
             </button>
           </div>
-        </div>
-      )}
-      {/* 📣 [SONIC-PULSE-PROMPT] Smart permission onboarding modal */}
-      {showPulsePopup && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-300">
-           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-           <div className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
-              <div className="p-8 pb-4">
-                 <div className="w-16 h-16 bg-indigo-500 rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-indigo-200 ring-4 ring-indigo-50">
-                    <BellRing className="w-8 h-8 animate-bounce" />
-                 </div>
-                 <h3 className="text-2xl font-black text-slate-900 tracking-tighter leading-tight mb-2">
-                    Never Miss a Hot Meal
-                 </h3>
-                 <p className="text-sm font-medium text-slate-500 leading-relaxed">
-                    Get real-time pulses when your food is ready and unlock exclusive high-priority limited deals.
-                 </p>
-              </div>
-              
-              <div className="p-8 flex flex-col gap-3">
-                 <button 
-                  onClick={() => {
-                    localStorage.setItem('joe_pulse_seen', 'true');
-                    setShowPulsePopup(false);
-                    const joeSubscribe = (window as any).joeSubscribe;
-                    if (typeof joeSubscribe === 'function') joeSubscribe();
-                  }}
-                  className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-200 active:scale-95 transition-all"
-                 >
-                    Enable Alerts
-                 </button>
-                 <button 
-                  onClick={() => {
-                    localStorage.setItem('joe_pulse_seen', 'true');
-                    setShowPulsePopup(false);
-                  }}
-                  className="w-full py-4 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-slate-600 transition-colors"
-                 >
-                    Maybe later
-                 </button>
-              </div>
-           </div>
         </div>
       )}
     </div>
