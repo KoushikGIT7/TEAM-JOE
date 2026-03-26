@@ -12,6 +12,7 @@ interface ServerConsoleWorkspaceProps {
   setScanQueue?: (fn: (prev: string[]) => string[]) => void;
   setIsCameraOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isMobile?: boolean;
+  onOrderDataPreload?: (orderId: string, items: LiveItem[]) => void;
 }
 
 interface LiveItem {
@@ -41,8 +42,10 @@ interface LiveItem {
  */
 const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   scanQueue,
+  setScanQueue,
   setIsCameraOpen,
   isMobile = false,
+  onOrderDataPreload
 }) => {
   // Map: orderId → live items from Firestore subcollection
   const [orderItemsMap, setOrderItemsMap] = useState<Record<string, LiveItem[]>>({});
@@ -149,16 +152,18 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
   // Orders remain in this list if they are in the scanQueue.
   // We only filter if we are 100% sure the order is completely served 
   // based on the live subcollection data.
-  const activeScannedOrders = scanQueue.filter(id => {
-    const items = orderItemsMap[id];
-    if (!items || items.length === 0) return true; // Keep while loading
-    
-    // An order is active if it has ANY item that is not yet served
-    return items.some(it => {
-      const status = it.status?.toUpperCase() || '';
-      return !['SERVED', 'COMPLETED', 'READY_SERVED'].includes(status);
-    });
-  });
+  // Helper to allow external preloading (Zero-Lag UI)
+  useEffect(() => {
+    if (onOrderDataPreload) {
+      // Expose the internal setter to the parent so it can push scan results instantly
+      (onOrderDataPreload as any)(setOrderItemsMap);
+    }
+  }, [onOrderDataPreload]);
+
+  // 🛡️ [MANIFEST-STABILITY]: Manifests stay on screen as long as they are in the queue.
+  // We no longer auto-dismiss them just because items are served, as servers
+  // need to physically hand over the food to the student.
+  const activeScannedOrders = scanQueue;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#fdfdfd] font-sans select-none overflow-hidden">
@@ -210,20 +215,33 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
               }`}>
                 
                 {/* Order Header */}
-                <div className={`${isMobile ? 'px-4 py-3' : 'px-8 py-5'} ${pendingCount === 0 ? 'bg-transparent' : 'bg-slate-900'} flex items-center justify-between`}>
-                  <div>
-                    <p className={`text-[8px] font-black uppercase tracking-widest ${pendingCount === 0 ? 'text-white/60' : 'text-slate-500'}`}>Manifest ID</p>
-                    <h3 className={`${isMobile ? 'text-base' : 'text-xl'} font-black text-white font-mono tracking-tighter`}>#{orderId.slice(-6).toUpperCase()}</h3>
+                <div className={`${isMobile ? 'px-4 py-3' : 'px-8 py-5'} ${pendingCount === 0 ? 'bg-emerald-600' : 'bg-slate-900'} flex items-center justify-between`}>
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setScanQueue?.(prev => prev.filter(q => q !== orderId));
+                      }}
+                      className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div>
+                      <p className={`text-[8px] font-black uppercase tracking-widest ${pendingCount === 0 ? 'text-white/60' : 'text-slate-500'}`}>Manifest ID</p>
+                      <h3 className={`${isMobile ? 'text-base' : 'text-xl'} font-black text-white font-mono tracking-tighter`}>#{orderId.slice(-6).toUpperCase()}</h3>
+                    </div>
                   </div>
                   <div className={`px-4 py-1.5 rounded-full text-[8px] lg:text-[9px] font-black uppercase tracking-widest ${
                     pendingCount === 0 ? 'bg-white text-emerald-600' : 'bg-white/10 text-white'
                   }`}>
-                    {pendingCount === 0 ? '✓ READY' : `${pendingCount} Left`}
+                    {pendingCount === 0 ? '✓ ALL READY' : `${pendingCount} Left`}
                   </div>
                 </div>
 
                 {/* Items List */}
                 <div className={`${isMobile ? 'p-3 space-y-2' : 'p-6 space-y-4'} ${pendingCount === 0 ? 'bg-emerald-600/10' : ''}`}>
+                  {/* 🛡️ [MANIFEST-VISIBILITY]: We show all items in the manifest. 
+                      Served items are greyed out, while pending ones stay active. */}
                   {items.map(item => {
                     const cfg = getStatusConfig(item);
                     const key = `${orderId}-${item.itemId}`;

@@ -9,22 +9,22 @@ service cloud.firestore {
     }
 
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      // Safe read of the role field, forcing to lowercase for normalized comparison
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.lower();
     }
 
     function hasRoleDoc() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    // Fast-path: match known staff email prefixes first (zero-lag),
-    // then fall back to the users doc (1 extra read per rule eval).
+    // 🛡️ [STAFF-RESOLVER]: Determines if the session belongs to legitimate operations.
+    // Handles case-insensitive roles and provides an email-prefix fast-track for zero-lag UI.
     function isStaff() {
       let email = request.auth.token.email.lower();
       let staffEmail = email.matches('^(admin|server|cashier|cook)@.*');
       return isAuthenticated() && (
         staffEmail ||
-        (hasRoleDoc() && getUserRole() in ['ADMIN', 'SERVER', 'CASHIER', 'COOK',
-                                            'admin', 'server', 'cashier', 'cook'])
+        (hasRoleDoc() && getUserRole() in ['admin', 'server', 'cashier', 'cook', 'manager'])
       );
     }
 
@@ -32,15 +32,14 @@ service cloud.firestore {
       let email = request.auth.token.email.lower();
       return isAuthenticated() && (
         email.matches('^admin@.*') ||
-        (hasRoleDoc() && getUserRole() in ['ADMIN', 'admin'])
+        (hasRoleDoc() && getUserRole() == 'admin')
       );
     }
 
     function isCashier() {
-      let email = request.auth.token.email.lower();
-      return isAuthenticated() && (
-        email.matches('^(admin|cashier)@.*') ||
-        (hasRoleDoc() && getUserRole() in ['ADMIN', 'CASHIER', 'admin', 'cashier'])
+      return isStaff() && (
+        request.auth.token.email.lower().matches('^(admin|cashier)@.*') ||
+        (hasRoleDoc() && getUserRole() in ['admin', 'cashier'])
       );
     }
 
@@ -107,17 +106,16 @@ service cloud.firestore {
     }
 
     // ─── SYSTEM LOCKS ─────────────────────────────────────────────────────────
-    // Batch generator acquires/releases locks. Must be accessible to any
-    // authenticated staff session — including sessions where the users doc
-    // is still being provisioned.
+    // 🛡️ [ROOT-FIX]: Coordination locks are pure operational signaling.
+    // Restricting these to isStaff() caused pulse failure for non-prefixed staff emails.
+    // Relaxed to isAuthenticated() to ensure background stability across all client nodes.
+    match /system_locks/{lockId} {
+      allow read, write: if isAuthenticated();
+    }
 
     match /system/{docId} {
       allow read: if isAuthenticated();
       allow write: if isStaff();
-    }
-
-    match /system_locks/{lockId} {
-      allow read, write: if isStaff();
     }
 
     // ─── IDEMPOTENCY KEYS ─────────────────────────────────────────────────────

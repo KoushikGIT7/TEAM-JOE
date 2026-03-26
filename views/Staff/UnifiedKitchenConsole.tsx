@@ -9,8 +9,7 @@ import { db } from '../../firebase';
 import { UserProfile } from '../../types';
 import { 
   processAtomicIntake,
-  runBatchGenerator,
-  runKitchenWatchdog
+  runBatchGenerator
 } from '../../services/firestore-db';
 import { parseServingQR } from '../../services/qr';
 import CookConsoleWorkspace from './CookConsoleWorkspace';
@@ -100,7 +99,6 @@ const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack
   );
 };
 
-// ── INNER COMPONENT (all hooks live here, profile is guaranteed non-null) ────
 const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void; onBack?: () => void }> = ({ profile, onLogout, onBack }) => {
   const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MIRROR'>('COOK');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -125,7 +123,6 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
     };
   }, []);
   
-  // scanQueue drives the entire Server Manifest loop now
   const [scanQueue, setScanQueue] = useState<string[]>([]);
 
   const [sonicMode, setSonicMode] = useState<{
@@ -142,7 +139,6 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
       else navigator.vibrate([200, 100, 200]);
     }
     
-    // Fast Dismiss
     setTimeout(() => {
        setSonicMode(prev => {
           if (prev.status === 'IDLE') return prev;
@@ -152,48 +148,30 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
   };
 
   const scanLockRef = useRef(false);
+  const setExternalMapRef = useRef<any>(null);
 
   useEffect(() => {
     const clockInterval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     
-    // 🛡️ [BRAIN-EXECUTIVE-AUTHORITY]
     // Only the primary staff device running the SERVER workspace acts as the brain.
-    // This prevents multi-device lock competition (failed-precondition errors).
     const isBrainEligible = (profile.role === 'SERVER' || profile.role === 'ADMIN' || profile.role === 'COOK') && (activeWorkspace === 'SERVER' || activeWorkspace === 'COOK');
     
     if (isBrainEligible) {
        import('../../services/firestore-db').then(m => m.startSystemBrain(profile.uid));
     }
 
-    let lastKnownCount = 0;
-    let isThrottled = false;
-
     const unsubGenerator = onSnapshot(
        query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(100)),
        (snap) => {
-          if (!isBrainEligible) return; // Silent read-only mode for non-brain clients
-          
-          const count = snap.docs.length;
-          lastKnownCount = count;
-          
-          if (count > 60) {
-             if (!isThrottled) {
-                console.warn(`📉 [LOAD-SHEDDING] Kitchen overloaded (${count} items). Throttling generator.`);
-                isThrottled = true;
-             }
-             return; 
-          }
-          
-          isThrottled = false;
+          if (!isBrainEligible) return; 
+          if (snap.docs.length > 60) return; 
           runBatchGenerator(profile.uid);
        }
     );
 
-    // 🛰️ [NETWORK-MONITOR]
     const onOnline = () => {
-       console.log("📡 [NETWORK] Reconnected");
        if (isBrainEligible) runBatchGenerator(profile.uid);
     };
     window.addEventListener('online', onOnline);
@@ -204,7 +182,7 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
       window.removeEventListener('online', onOnline);
       import('../../services/firestore-db').then(m => m.stopSystemBrain());
     };
-  }, [profile.uid]);
+  }, [profile.uid, activeWorkspace]);
 
   const handleQRScan = useCallback(async (rawData: string) => {
     if (!rawData?.trim() || scanLockRef.current) return;
@@ -212,114 +190,100 @@ const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void
     scanLockRef.current = true;
     setIsCameraOpen(false); 
     
-    let intake;
     try {
-        intake = parseServingQR(rawData.trim());
-        if (!intake.orderId) {
-            triggerSonicPulse('ERROR', 'INVALID CODE', 'Protocol mismatch');
-            scanLockRef.current = false;
-            return;
-        }
+        const intake = parseServingQR(rawData.trim());
+        if (!intake.orderId) throw new Error("INVALID_QR");
         triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
-    } catch (e) {
-        console.error('Scan Parse Error:', e);
-        triggerSonicPulse('ERROR', 'SCAN ERROR', 'Invalid data format');
-        scanLockRef.current = false;
-        return;
-    }
 
-    try {
         const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
         
-        if (result === 'ALREADY_MANIFESTED') {
+        if (result === 'ALREADY_MANIFESTED' || result === 'MANIFESTED') {
+            const label = result === 'ALREADY_MANIFESTED' ? 'TOKEN ACTIVE ✅' : 'PARTIAL RELEASE ✅';
+            const sub = result === 'ALREADY_MANIFESTED' ? 'Order already on manifest' : 'ITEMS LOADED ON SCREEN';
+            
+            // 🚀 [ZERO-LAG-PUSH]: Inject scanned data directly into workspace memory
+            if (setExternalMapRef.current && order.items) {
+               setExternalMapRef.current((prev: any) => ({ ...prev, [order.id]: order.items }));
+            }
+            
             setScanQueue(prev => Array.from(new Set([...prev, order.id])));
-            triggerSonicPulse('SUCCESS', 'TOKEN ACTIVE ✅', 'Order already on manifest');
+            triggerSonicPulse('SUCCESS', label, sub);
         } else if (result === 'CONSUMED') {
             triggerSonicPulse('SUCCESS', 'ORDER COMPLETE ✅', 'ALL ITEMS AUTO-SERVED');
-        } else if (result === 'MANIFESTED') {
-            setScanQueue(prev => Array.from(new Set([...prev, order.id])));
-            triggerSonicPulse('SUCCESS', 'PARTIAL RELEASE ✅', 'ITEMS LOADED ON SCREEN');
-        } else if (result === 'AWAITING_PAYMENT') {
-            triggerSonicPulse('ERROR', 'UNPAID ORDER', 'Direct student to cashier');
-        } else if (result === 'AWAITING_COOKING') {
-            triggerSonicPulse('ERROR', 'MEAL NOT READY', 'Wait for cooking confirmation');
+        } else {
+            triggerSonicPulse('ERROR', 'SCAN ERROR', result.replace('_', ' '));
         }
     } catch (err: any) {
-        const msg = err.message || '';
-        if (msg === 'ALREADY_CONSUMED') {
-            triggerSonicPulse('ERROR', 'ALREADY USED', 'QR code already consumed');
-        } else if (msg === 'SECURITY_BREACH') {
-            triggerSonicPulse('ERROR', 'SECURITY ALERT', 'Invalid or tampered token');
-        } else if (msg === 'ORDER_NOT_FOUND') {
-            triggerSonicPulse('ERROR', 'UNKNOWN ORDER', 'Order ID not in database');
-        } else {
-            triggerSonicPulse('ERROR', 'SCAN ERROR', msg.toUpperCase().slice(0, 20));
-        }
+        triggerSonicPulse('ERROR', 'SCAN ERROR', (err.message || 'Unknown').toUpperCase().slice(0, 20));
     } finally {
         setTimeout(() => { scanLockRef.current = false; }, 800);
     }
   }, [profile.uid]);
 
+  const handleOrderPreload = useCallback((setter: any) => {
+    setExternalMapRef.current = setter;
+  }, []);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans select-none flex-col">
+    <div className="flex flex-col h-screen bg-white overflow-hidden text-slate-900 select-none">
       {isOffline && (
         <div className="bg-red-600 text-white px-8 py-2 text-center font-black text-[10px] uppercase tracking-widest animate-pulse flex items-center justify-center gap-3 shrink-0 z-50">
            <AlertTriangle className="w-3 h-3" /> Connection unstable. Reconnecting to kitchen brain...
         </div>
       )}
-      <div className="flex-1 flex flex-row min-w-0 overflow-hidden">
-        <div className="flex-1 flex flex-col min-w-0">
-          <UnifiedHeader 
-          profile={profile} 
-          onLogout={onLogout} 
-          onBack={onBack} 
-          currentTime={currentTime}
-          activeWorkspace={activeWorkspace}
-          setActiveWorkspace={setActiveWorkspace}
-        />
+      <UnifiedHeader 
+        profile={profile} 
+        onLogout={onLogout} 
+        onBack={onBack}
+        currentTime={currentTime}
+        activeWorkspace={activeWorkspace}
+        setActiveWorkspace={setActiveWorkspace}
+      />
+      
+      <main className="flex-1 overflow-hidden relative">
+        {activeWorkspace === 'COOK' && (
+          <CookConsoleWorkspace isMobile={isMobile} />
+        )}
         
-        <main className="flex-1 overflow-hidden relative">
-          {activeWorkspace === 'COOK' && <CookConsoleWorkspace initialStationId="ALL" isMobile={isMobile} />}
-          {activeWorkspace === 'SERVER' && (
-             <ServerConsoleWorkspace 
-                scanQueue={scanQueue}
-                setScanQueue={setScanQueue}
-                setIsCameraOpen={setIsCameraOpen}
-                isMobile={isMobile}
-             />
-          )}
-          {activeWorkspace === 'MIRROR' && (
-             <div className="h-full w-full bg-[#0a0a0c] overflow-hidden">
-                <CookConsoleWorkspace isPassive={true} />
+        {activeWorkspace === 'SERVER' && (
+          <ServerConsoleWorkspace 
+            scanQueue={scanQueue}
+            setScanQueue={setScanQueue as any}
+            setIsCameraOpen={setIsCameraOpen}
+            isMobile={isMobile}
+            onOrderDataPreload={handleOrderPreload}
+          />
+        )}
+        
+        {activeWorkspace === 'MIRROR' && (
+          <div className="h-full w-full bg-[#0a0a0c] overflow-hidden">
+            <CookConsoleWorkspace isPassive={true} />
+          </div>
+        )}
+
+        {sonicMode.status !== 'IDLE' && (
+          <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
+              sonicMode.status === 'ERROR' ? 'bg-rose-600' : 'bg-emerald-600'
+          }`}>
+             <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
+                {sonicMode.status === 'SUCCESS' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
              </div>
-          )}
+             <h1 className="text-4xl lg:text-6xl font-black text-white uppercase tracking-tighter italic mb-4 drop-shadow-2xl">{sonicMode.title}</h1>
+             <p className="text-base lg:text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono">{sonicMode.sub}</p>
+          </div>
+        )}
 
-          {sonicMode.status !== 'IDLE' && (
-            <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
-                sonicMode.status === 'ERROR' ? 'bg-rose-600' : 'bg-emerald-600'
-            }`}>
-               <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
-                  {sonicMode.status === 'SUCCESS' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
-               </div>
-               <h1 className="text-6xl font-black text-white uppercase tracking-tighter italic mb-4 drop-shadow-2xl">{sonicMode.title}</h1>
-               <p className="text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono">{sonicMode.sub}</p>
-            </div>
-          )}
-
-          {isCameraOpen && (
-            <QRScanner
-              onScan={handleQRScan}
-              onClose={() => setIsCameraOpen(false)}
-            />
-          )}
-        </main>
-      </div>
-     </div>
+        {isCameraOpen && (
+          <QRScanner
+            onScan={handleQRScan}
+            onClose={() => setIsCameraOpen(false)}
+          />
+        )}
+      </main>
     </div>
   );
 };
 
-// ── OUTER SHELL: null-guard before any hooks run ──────────────────────────────
 const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
   if (!profile) {
     return (
