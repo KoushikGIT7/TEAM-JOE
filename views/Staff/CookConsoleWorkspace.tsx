@@ -6,8 +6,8 @@ import { PrepBatch } from '../../types';
 import { startBatch, finalizeBatch } from '../../services/firestore-db';
 import { safeListener } from '../../services/safeListener';
 import {
-  collection, query, where, orderBy, onSnapshot, getDocs,
-  collectionGroup, limit
+  collection, query, where, orderBy, onSnapshot,
+  limit
 } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 
@@ -38,8 +38,6 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
   const [processingMap, setProcessingMap] = useState<Record<string, boolean>>({});
   const [optimisticStatus, setOptimisticStatus] = useState<Record<string, string>>({});
   const [lastAction, setLastAction] = useState<string | null>(null);
-  const [indexReady, setIndexReady] = useState(true);
-  const [pendingCount, setPendingCount] = useState(0); 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   useEffect(() => {
@@ -81,48 +79,11 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
       (live) => {
         console.log(`🔥 [COOK-CONSOLE] Live batches: ${live.length}`);
         setBatches(live);
-        if (!indexReady) setIndexReady(true); // recover once index is ready
       },
       fallbackQ
     );
 
-    // ── STATUS DOCTOR ─────────────────────────────────────────────────────────
-    const unsubDoctor = onSnapshot(
-      query(collectionGroup(db, 'items'), where('status', 'in', ['PENDING', 'RESERVED', 'QUEUED']), limit(100)),
-      (snap) => {
-        const counts = snap.docs.reduce((acc, d) => {
-          const s = (d.data() as any).status as string;
-          acc[s] = (acc[s] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>);
-        if (Object.keys(counts).length > 0)
-          console.log('🔬 [STATUS-DOCTOR] Item census:', counts);
-      },
-      (err) => { console.warn('[STATUS-DOCTOR] Non-critical error:', err.code); }
-    );
-
-    // ── INCOMING PULSE ────────────────────────────────────────────────────────
-    const unsubPending = onSnapshot(
-      query(collectionGroup(db, 'items'), where('status', 'in', ['PENDING', 'RESERVED']), limit(20)),
-      (snap) => {
-         setPendingCount(snap.size);
-      }
-    );
-
-    // 🛡️ SAFETY 4: STATE RECONCILIATION LOOP (Every 5s)
-    const reconciliation = setInterval(async () => {
-       try {
-         const q = query(collection(db, 'prepBatches'), where('status', 'in', ['QUEUED', 'PREPARING']), limit(50));
-         const snap = await getDocs(q);
-         const live = snap.docs.map(d => ({ id: d.id, ...d.data() })) as PrepBatch[];
-         setBatches(live);
-         console.log("🛡️ [SAFETY-4] State reconciled successfully.");
-       } catch (err) {
-         console.warn("[SAFETY-4] Reconciliation failed - network likely unstable.");
-       }
-    }, 5000);
-
-    return () => { unsub(); unsubDoctor(); unsubPending(); clearInterval(reconciliation); };
+    return () => { unsub(); };
   }, []); // single mount — safeListener handles all index/retry logic internally
 
   // ── Available stations from live data ──────────────────────────────────────
@@ -258,16 +219,16 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
   if (sortedItems.length === 0) {
     return (
       <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] relative">
-        <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={!indexReady} />
+        <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} />
         <div className="flex-1 flex flex-col items-center justify-center text-center p-20 select-none">
           <div className="w-32 h-32 rounded-[3rem] bg-white/5 border-4 border-white/10 flex items-center justify-center mb-8">
             <Sparkles className="w-12 h-12 text-white/20" />
           </div>
           <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter mb-3">
-             {pendingCount > 0 ? `${pendingCount} Orders Arriving...` : 'Pipeline Clear'}
+             Pipeline Clear
           </h2>
           <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">
-            {pendingCount > 0 ? 'Building production batches now' : (!indexReady ? '⚠️ Fallback sync active — waiting for orders...' : 'Waiting for kitchen manifests...')}
+            Waiting for kitchen manifests...
           </p>
         </div>
       </div>
@@ -287,7 +248,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
         </div>
       )}
 
-      <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={!indexReady} />
+      <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} />
 
       <div className={`flex flex-1 overflow-hidden ${isMobile ? 'flex-col' : 'flex-row'}`}>
         {/* ── SIDEBAR QUEUE ───────────────────────────────────────────── */}
@@ -334,12 +295,6 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
               );
             })}
             
-            {pendingCount > sortedItems.length && (
-              <div className="p-4 border border-dashed border-white/5 rounded-xl flex items-center justify-center gap-2 text-white/10">
-                <Sparkles className="w-3 h-3 animate-pulse" />
-                <span className="text-[9px] font-bold uppercase tracking-widest">Backlog Processing...</span>
-              </div>
-            )}
           </div>
         </div>
         )}
