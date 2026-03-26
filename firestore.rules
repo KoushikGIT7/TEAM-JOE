@@ -112,7 +112,8 @@ service cloud.firestore {
     // is still being provisioned.
 
     match /system/{docId} {
-      allow read, write: if isStaff();
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
     }
 
     match /system_locks/{lockId} {

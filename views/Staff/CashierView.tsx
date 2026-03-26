@@ -18,6 +18,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
 import SmartImage from '../../components/Common/SmartImage';
 import { preloadImage } from '../../utils/image-optimizer';
+import useOfflineDetector from '../../hooks/useOfflineDetector';
+import AuditDownloadButton from '../../components/AuditDownloadButton';
 
 interface CashierViewProps {
   profile: UserProfile;
@@ -316,6 +318,9 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
   // --- 💻 DESKTOP COMPONENTS (ORIGINAL STYLE) ---
   const renderDesktopDashboard = () => (
     <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="flex justify-end">
+         <AuditDownloadButton />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
           <DollarSign className="w-8 h-8 text-emerald-600 mb-4" />

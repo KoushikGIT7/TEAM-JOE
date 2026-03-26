@@ -1,116 +1,53 @@
-
 /**
- * 📣 [SONIC-ONESIGNAL-API] Push Notification REST Integration
- * Role: Principal Orchestration Engineer
- * Strategy: Targeted UID strikes via OneSignal REST API
+ * 📣 [ONESIGNAL-FRONTEND-SHIM]
+ *
+ * ⚠️  IMPORTANT: This file NO LONGER calls the OneSignal REST API directly.
+ *
+ * WHY: Calling the OneSignal REST API from the browser causes:
+ *   1. CORS errors (403 Forbidden) — OneSignal blocks browser-side POST
+ *   2. API key exposure in the browser bundle — a security vulnerability
+ *
+ * NEW ARCHITECTURE:
+ *   Frontend  →  updates Firestore state only
+ *   Firestore →  triggers Cloud Functions (functions/src/index.ts)
+ *   Cloud Fn  →  securely calls OneSignal REST API
+ *   Student   →  receives push notification in background
+ *
+ * This shim exists only for backward compatibility with code that still
+ * calls notifyOrderUpdate() — it is now a harmless no-op that logs the
+ * intent and lets the Cloud Function handle actual delivery.
  */
 
-const ONESIGNAL_APP_ID = "2561939d-5fe5-4311-b95c-c12b7ee9ded0";
-
-// 🛡️ [SECURITY-WARNING] Storing REST API Key on client is risky. 
-// However, for this automated deployment context, we inject it via VITE_ env var.
-const ONESIGNAL_REST_API_KEY = (import.meta as any).env.VITE_ONESIGNAL_REST_API_KEY;
-
-interface PushNotificationData {
-    userId: string;
-    title: string;
-    message: string;
-    sound?: string;
-    url?: string;
-    data?: any;
-}
-
 /**
- * Sends a targeted push notification to a specific Firebase UID via OneSignal.
- * Students must have granted permission and completed the Handshake earlier.
+ * 🟢 [SAFE-SHIM] notifyOrderUpdate — backward compatible no-op.
+ *
+ * The actual push is now triggered by Firestore document transitions
+ * detected by the Cloud Function (onOrderWrite / onItemWrite).
+ * No direct API call is made from the browser.
  */
-export const sendDirectedPush = async ({
-    userId,
-    title,
-    message,
-    sound = 'default',
-    url = 'https://joecafebrand.netlify.app',
-    data = {}
-}: PushNotificationData) => {
-    const apiKey = ONESIGNAL_REST_API_KEY || localStorage.getItem('onesignal_rest_api_key');
-    
-    if (!apiKey) {
-        console.warn('⚠️ [ONESIGNAL-API] REST API Key missing. Skipping push strike.');
-        return;
-    }
-
-    try {
-        const payload = {
-            app_id: ONESIGNAL_APP_ID,
-            include_external_user_ids: [userId],
-            contents: { "en": message },
-            headings: { "en": title },
-            url: url,
-            data: data,
-            // 🔈 [VOICE-ENGINE] Custom sound for PWA support (Requires hosted sound file)
-            web_push_sound: sound === 'ready' 
-                ? 'https://joecafebrand.netlify.app/sounds/ready.mp3' 
-                : 'https://joecafebrand.netlify.app/sounds/pulse.mp3',
-            // [ANDROID/IOS Fallback]
-            android_sound: sound,
-            ios_sound: `${sound}.wav`,
-            // 🏎️ [URGENCY] High priority push
-            priority: 10,
-            ttl: 3600 // 1 hour relevance
-        };
-
-        const response = await fetch('https://onesignal.com/api/v1/notifications', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Authorization': `Basic ${apiKey}`
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-        console.log(`🚀 [ONESIGNAL-PULSE] Broadcast result for ${userId}:`, result);
-        return result;
-    } catch (err) {
-        console.error('❌ [ONESIGNAL-PULSE] Broadcast failed:', err);
-    }
+export const notifyOrderUpdate = (
+  userId: string,
+  status: string,
+  _itemName?: string
+): void => {
+  // Structured intent log — useful for debugging in dev console
+  console.info(
+    `[NOTIFY-SHIM] Push intent recorded: userId=${userId} status=${status}. ` +
+    `Actual delivery handled by Cloud Function on Firestore state transition.`
+  );
+  // No fetch. No API key. No CORS error.
 };
 
 /**
- * Logic-mapping for specific order states
+ * 🟢 [SAFE-SHIM] sendDirectedPush — backward compatible no-op.
  */
-export const notifyOrderUpdate = (userId: string, status: string, itemName: string) => {
-    const alerts: Record<string, { title: string, body: string, sound: string }> = {
-        'PREPARING': {
-            title: '🥣 Cooking',
-            body: `Kitchen is busy.`,
-            sound: 'pulse'
-        },
-        'READY': {
-            title: '🎉 Ready',
-            body: `Come get it!`,
-            sound: 'ready'
-        },
-        'MISSED': {
-            title: '⚠️ Missed',
-            body: `Check next batch.`,
-            sound: 'pulse'
-        },
-        'REJECTED': {
-            title: '🚫 Issue',
-            body: `See cashier now.`,
-            sound: 'pulse'
-        }
-    };
-
-    const alert = alerts[status];
-    if (alert) {
-        sendDirectedPush({
-            userId,
-            title: alert.title,
-            message: alert.body,
-            sound: alert.sound,
-            data: { status, itemName }
-        });
-    }
+export const sendDirectedPush = async (_payload: {
+  userId: string;
+  title: string;
+  message: string;
+  sound?: string;
+  url?: string;
+  data?: Record<string, unknown>;
+}): Promise<void> => {
+  console.info("[NOTIFY-SHIM] sendDirectedPush suppressed — Cloud Function handles delivery.");
 };

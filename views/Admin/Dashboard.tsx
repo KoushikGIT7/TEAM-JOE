@@ -23,6 +23,7 @@ import { CATEGORIES } from '../../constants';
 import Logo from '../../components/Logo';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
 import { offlineDetector } from '../../utils/offlineDetector';
+import AuditDownloadButton from '../../components/AuditDownloadButton';
 
 const COLORS = ['#0F9D58', '#34D399', '#FBBF24', '#6B7280', '#EF4444'];
 
@@ -334,6 +335,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
 
   const renderOverview = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="flex justify-end">
+         <AuditDownloadButton />
+      </div>
       {/* Financial Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[

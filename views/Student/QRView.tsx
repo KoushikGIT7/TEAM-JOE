@@ -27,6 +27,7 @@ const STATUS: Record<string, { label: string; sub: string; icon: React.FC<any>; 
 };
 
 const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
+  // ── ALL HOOKS MUST BE UNCONDITIONAL ──────────────────────────────────────────
   const [order, setOrder] = useState<Order | null>(null);
   const [items, setItems] = useState<any[]>([]);
 
@@ -53,8 +54,10 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const [, setTick] = useState(0);
   const terminalLatch = useRef(false);
   const isMounted = useRef(true);
-
   const [globalDelayMins, setGlobalDelayMins] = useState(0);
+  const [flashState, setFlashState] = useState<'GREEN' | 'RED' | null>(null);
+  const prevItemsRef = useRef<any[] | null>(null);
+  const [showLoader, setShowLoader] = useState(false);
 
   useEffect(() => {
     return listenToSystemSettings((settings) => {
@@ -100,7 +103,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
       
       if (!data) return;
       
-      // Initial items hydration
       if (data.items) setItems(data.items);
 
       const qr = data.qr?.token || generateQRPayloadSync(data);
@@ -133,10 +135,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
   }, [order?.serveFlowStatus, order?.pickupWindow?.endTime]);
-
-
-  const [flashState, setFlashState] = useState<'GREEN' | 'RED' | null>(null);
-  const prevItemsRef = useRef<any[] | null>(null);
 
   useEffect(() => {
     const flow = order?.serveFlowStatus || '';
@@ -179,8 +177,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     setOrderCount(h.length);
   }, [orderId]);
 
-  const [showLoader, setShowLoader] = useState(false);
-
   useEffect(() => {
     if (loading) {
       const timer = setTimeout(() => setShowLoader(true), 150);
@@ -190,42 +186,52 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     }
   }, [loading]);
 
-  if (loading) {
-      if (!showLoader) return <div className="h-screen w-full bg-white" />;
-      return (
-        <div className="h-screen w-full flex items-center justify-center bg-white">
-          <FoodLoader />
-        </div>
-      );
-  }
-
+  // 🛡️ Derive the state values needed for the final useEffect BEFORE calling it
   const orderForUI = mergedOrder;
-  if (!orderForUI) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
-
-  const uiState = getOrderUIState(orderForUI);
-  const flow = orderForUI.serveFlowStatus || 'NEW';
-  const isTimeExpired = orderForUI.pickupWindow?.endTime ? Date.now() > orderForUI.pickupWindow.endTime : false;
-  const isQrScanned = (orderForUI.qrStatus as string) === 'USED' || (orderForUI.qrStatus as string) === 'DESTROYED';
-  const isScanned = orderForUI.qrState === 'SCANNED' || (orderForUI.qrStatus as string) === 'SCANNED';
-  const isServed = orderForUI.orderStatus === 'SERVED' || orderForUI.orderStatus === 'COMPLETED' || (orderForUI.serveFlowStatus as string) === 'SERVED' || isQrScanned || (orderForUI.orderStatus === 'IN_PROGRESS' && isScanned);
+  const uiState = orderForUI ? getOrderUIState(orderForUI) : null;
+  const flow = orderForUI?.serveFlowStatus || 'NEW';
+  const isTimeExpired = orderForUI?.pickupWindow?.endTime ? Date.now() > orderForUI.pickupWindow.endTime : false;
+  const isQrScanned = (orderForUI?.qrStatus as string) === 'USED' || (orderForUI?.qrStatus as string) === 'DESTROYED';
+  const isScanned = orderForUI?.qrState === 'SCANNED' || (orderForUI?.qrStatus as string) === 'SCANNED';
+  const isServed = !!orderForUI && (
+    orderForUI.orderStatus === 'SERVED' ||
+    orderForUI.orderStatus === 'COMPLETED' ||
+    (orderForUI.serveFlowStatus as string) === 'SERVED' ||
+    isQrScanned ||
+    (orderForUI.orderStatus === 'IN_PROGRESS' && isScanned)
+  );
   if (isServed) terminalLatch.current = true;
   const isTerminal = terminalLatch.current;
-  const isMissed = !isTerminal && (uiState === 'MISSED' || orderForUI.orderStatus === 'MISSED' || isTimeExpired);
+  const isMissed = !isTerminal && (uiState === 'MISSED' || orderForUI?.orderStatus === 'MISSED' || isTimeExpired);
 
+  // ✅ This useEffect is now unconditional and below NO early returns
   useEffect(() => {
     if (!order || !orderForUI) return;
     if (isServed || isTerminal) {
       const timer = setTimeout(() => {
         if (onViewOrders) onViewOrders();
         else onBack();
-      }, 4000); // 4s delay to read message
+      }, 4000);
       return () => clearTimeout(timer);
     }
-  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus, order?.qrState, isServed, isTerminal, orderForUI]);
+  }, [order?.qrStatus, order?.orderStatus, order?.serveFlowStatus, order?.qrState, isServed, isTerminal]);
 
+  // ── EARLY RETURNS (safe now — all hooks declared above) ──────────────────────
+  if (loading) {
+    if (!showLoader) return <div className="h-screen w-full bg-white" />;
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-white">
+        <FoodLoader />
+      </div>
+    );
+  }
+
+  if (!orderForUI) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
+
+  // ── DERIVED UI VALUES ─────────────────────────────────────────────────────────
   let statusKey = 'SCHEDULED';
   if (isTerminal) statusKey = 'SERVED';
-  else if (isScanned) statusKey = 'SERVED'; // Student is at the counter, it's effectively served or currently handing over
+  else if (isScanned) statusKey = 'SERVED';
   else if (isMissed) statusKey = 'MISSED';
   else if (orderForUI.paymentType === 'CASH' && orderForUI.paymentStatus === 'AWAITING_CONFIRMATION') statusKey = 'CASH_PENDING';
   else if (flow === 'READY') statusKey = 'READY';
@@ -248,7 +254,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         </button>
         <div className="text-right">
           <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest leading-none mb-1">Queue ID</p>
-          <p className="text-sm font-black text-gray-900 leading-none">#{order.id.slice(-6).toUpperCase()}</p>
+          <p className="text-sm font-black text-gray-900 leading-none">#{order!.id.slice(-6).toUpperCase()}</p>
         </div>
       </div>
 
@@ -274,15 +280,15 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
                 </div>
               </div>
             )}
-            {!isReady && order.arrivalTime && (
+            {!isReady && order!.arrivalTime && (
               <div className="text-right">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center justify-end gap-1">
                   Time Slot {globalDelayMins > 0 && <span className="text-red-500 animate-pulse">(Delayed)</span>}
                 </p>
                 <p className={`text-sm font-black uppercase flex items-center justify-end gap-1 ${globalDelayMins > 0 ? 'text-red-600' : 'text-gray-900'}`}>
                   {(() => {
-                    let h = Math.floor(order.arrivalTime / 100);
-                    let m = (order.arrivalTime % 100) + globalDelayMins;
+                    let h = Math.floor(order!.arrivalTime! / 100);
+                    let m = (order!.arrivalTime! % 100) + globalDelayMins;
                     h += Math.floor(m / 60);
                     h = h % 24; m = m % 60;
                     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -303,7 +309,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
       {/* ─── The Static QR (Centerpiece) ─── */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
-        {!isReady && !isServed && order.arrivalTime && (
+        {!isReady && !isServed && order!.arrivalTime && (
           <div className="w-full max-w-[320px] mb-4 animate-in fade-in duration-500">
             <div className="bg-slate-50 border border-slate-100 rounded-[1.5rem] p-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -317,13 +323,13 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
               </div>
               <button
                 onClick={async () => {
-                  await updateDoc(doc(db, 'orders', order.id), { arrivalSignal: 'ARRIVED', arrivalSignalAt: serverTimestamp() });
+                  await updateDoc(doc(db, 'orders', order!.id), { arrivalSignal: 'ARRIVED', arrivalSignalAt: serverTimestamp() });
                 }}
-                disabled={order.arrivalSignal === 'ARRIVED'}
-                className={`shrink-0 px-4 py-2.5 rounded-2xl font-black text-[9px] uppercase tracking-[0.15em] flex items-center gap-2 transition-all active:scale-95 ${order.arrivalSignal === 'ARRIVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white shadow-lg'}`}
+                disabled={order!.arrivalSignal === 'ARRIVED'}
+                className={`shrink-0 px-4 py-2.5 rounded-2xl font-black text-[9px] uppercase tracking-[0.15em] flex items-center gap-2 transition-all active:scale-95 ${order!.arrivalSignal === 'ARRIVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-900 text-white shadow-lg'}`}
               >
-                {order.arrivalSignal === 'ARRIVED' ? <Check className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
-                {order.arrivalSignal === 'ARRIVED' ? 'Signalled' : "I'm Here"}
+                {order!.arrivalSignal === 'ARRIVED' ? <Check className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
+                {order!.arrivalSignal === 'ARRIVED' ? 'Signalled' : "I'm Here"}
               </button>
             </div>
           </div>

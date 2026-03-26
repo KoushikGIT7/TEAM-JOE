@@ -2055,9 +2055,38 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
 
          // 5. INTAKE LOGIC (Intelligent Guard)
          const now = Date.now();
+
+         // 🛡️ [REVIVAL-FIX] Rapid checkout revival if student brought an abandoned QR back from the dead
+         const isAbandoned = order.orderStatus === 'ABANDONED' || order.serveFlowStatus === 'ABANDONED';
+         if (isAbandoned) {
+            console.log("⚡ [REVIVAL] Waking up abandoned order from deep sleep...");
+            // Mutate local object so the rest of the atomic logic treats it as a fresh order
+            order.orderStatus = 'ACTIVE';
+            order.serveFlowStatus = 'PENDING';
+            order.items = order.items.map(it => ({ ...it, status: 'PENDING' }));
+         }
+
          const servableItems = order.items.filter(it => (it.status === 'READY' || isStaticItem(it)) && it.status !== 'SERVED' && it.status !== 'COMPLETED');
          
          if (servableItems.length === 0) {
+            // If it was abandoned, we must persist the revived PENDING state to DB so the Kitchen sees it again!
+            if (isAbandoned) {
+               const revivalUpdates: any = {
+                 orderStatus: 'ACTIVE',
+                 serveFlowStatus: 'PENDING',
+                 "pickupWindow.status": 'COLLECTING',
+                 "pickupWindow.endTime": now + (15 * 60 * 1000), // Give 15 mins
+                 updatedAt: serverTimestamp(),
+                 items: order.items
+               };
+               tx.update(finalOrderRef, revivalUpdates);
+               // Also revive the subcollections
+               order.items.forEach(it => {
+                 const idName = it.id || (it as any).itemId || it.name;
+                 const itRef = doc(db, 'orders', order.id, 'items', idName);
+                 tx.update(itRef, { status: 'PENDING', updatedAt: serverTimestamp() });
+               });
+            }
             return { order, result: 'AWAITING_COOKING' as const };
          }
 
@@ -2067,17 +2096,23 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             scannedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             lastScannedBy: staffId,
+            ...(isAbandoned ? { 
+               orderStatus: 'ACTIVE', 
+               serveFlowStatus: 'PENDING',
+               "pickupWindow.status": 'COLLECTING',
+               "pickupWindow.endTime": now + (15 * 60 * 1000)
+            } : {}),
             items: (order.items || []).map(it => {
                const shouldServe = (it.status === 'READY' || isStaticItem(it)) && it.status !== 'SERVED' && it.status !== 'COMPLETED';
                if (shouldServe) {
                   return { ...it, status: 'SERVED', remainingQty: 0, servedQty: it.quantity, servedAt: now };
                }
-               return it;
+               return it; // Leaves as PENDING if revived and dynamic
             })
          };
 
          const allServed = updateData.items.every((it: any) => it.status === 'SERVED' || it.status === 'COMPLETED');
-         
+
          if (allServed) {
             updateData.qrStatus = 'DESTROYED';
             updateData.qrState = 'SERVED';
@@ -2091,16 +2126,23 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             updateData.serveFlowStatus = 'SERVED_PARTIAL';
          }
 
+         tx.update(finalOrderRef, updateData);
+
          // 📡 [SONIC-SUBCOLLECTION-PULSE]
-         (order.items || []).forEach(it => {
+         updateData.items.forEach((it: any) => {
             const itRef = doc(db, 'orders', order.id, 'items', it.id);
-            const shouldServe = (it.status === 'READY' || isStaticItem(it)) && it.status !== 'SERVED' && it.status !== 'COMPLETED';
-            if (shouldServe) {
+            if (it.status === 'SERVED') {
                tx.update(itRef, { 
                   status: 'SERVED', 
                   remainingQty: 0, 
                   servedQty: it.quantity, 
                   servedAt: now, 
+                  updatedAt: serverTimestamp() 
+               });
+            } else if (isAbandoned) {
+               // Only update if it was revived and still pending
+               tx.update(itRef, { 
+                  status: it.status, 
                   updatedAt: serverTimestamp() 
                });
             }
@@ -2835,7 +2877,7 @@ export const recoverZombieItems = async () => {
 /** 
  * [SONIC-LOCK] Hardened Atomic Item Handover to Production
  */
-export const lockItemsToPrepBatch = async (items: {orderId: string, itemId: string, name: string}[], stationId: string) => {
+export const lockItemsToPrepBatch = async (items: {orderId: string, itemId: string, name: string}[], stationId: string, itemName: string, totalQty: number) => {
   const itemIds = items.map(i => i.itemId);
   // 🏎️ [STABLE-IDENTITY] deterministic batchId based on sorted itemIds
   const batchId = 'batch_' + [...itemIds].sort().join('_').slice(0, 32) + '_' + Date.now();
@@ -2872,11 +2914,21 @@ export const lockItemsToPrepBatch = async (items: {orderId: string, itemId: stri
       });
     });
 
+    const nowTime = new Date();
+    const totalMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+    const currentSlot = Math.floor(totalMins / 15) * 15;
+    const slotH = Math.floor(currentSlot / 60);
+    const slotM = currentSlot % 60;
+    const arrivalTimeSlot = Number(`${slotH.toString().padStart(2, '0')}${slotM.toString().padStart(2, '0')}`);
+
     tx.set(batchRef, {
       id: batchId,
       items,
+      itemName,
+      quantity: totalQty,
       status: 'QUEUED',
       stationId,
+      arrivalTimeSlot,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastActionAt: serverTimestamp()
@@ -3149,7 +3201,7 @@ export const stopSystemBrain = () => {
    }
 };
 
-export const runBatchGenerator = async (nodeId: string) => {
+export const runBatchGenerator = async (nodeId: string, force: boolean = false) => {
   if (!auth.currentUser) return;
   
   // 🛡️ [BRAIN-ELIGIBILITY-GUARD] 
@@ -3157,8 +3209,9 @@ export const runBatchGenerator = async (nodeId: string) => {
   const user = auth.currentUser;
   const now = Date.now();
   
-  // 🛡️ [ANTI-THRASH] Cooldown to stabilize background logic
-  if (now - lastPulseAt < 2000) return; 
+  // 🛡️ [ANTI-THRASH] Cooldown to stabilize background logic (Reduced for forced pulses)
+  const cooldown = force ? 500 : 2000;
+  if (now - lastPulseAt < cooldown) return; 
   lastPulseAt = now;
 
   const lockRef = doc(db, "system_locks", "batch_generator");
@@ -3227,7 +3280,8 @@ export const runBatchGenerator = async (nodeId: string) => {
       candidateDocs = snap.docs;
     } catch (e) {
       console.warn("⚠️ [INDEX-PENDING] Fallback deep-scan active...");
-      const recentOrders = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(20)));
+      // 🛡️ [FALLBACK-RECOVERY] Deepen scan to catch old re-queued orders
+      const recentOrders = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(40)));
       for (const orderDoc of recentOrders.docs) {
          const itemsSnap = await getDocs(query(collection(db, "orders", orderDoc.id, "items"), where("status", "in", ["PENDING", "RESERVED"])));
          candidateDocs.push(...itemsSnap.docs);
@@ -3242,7 +3296,6 @@ export const runBatchGenerator = async (nodeId: string) => {
        return;
     }
 
-    // 3. NORMALIZE & APPLY HEAD CHEF PRIORITY (Anti-Starvation)
     const pendingItems = candidateDocs.map(d => {
       const data = d.data();
       const stationId = STATION_ID_BY_ITEM_ID[d.id] || 'default';
@@ -3250,12 +3303,15 @@ export const runBatchGenerator = async (nodeId: string) => {
       const waitTimeBonus = (Date.now() - paidAt) / 60000; // 1 min wait = 1 min bonus
       const scarcityWeight = stationId !== 'dosa' ? 2 : 1; // Non-dosa items get 2x presence weight 
       
+      // 🚀 [PRIORITY-BOOST] Re-queued items get a massive score lead (10 mins artificially added weight)
+      const reQueueBonus = data.reQueuedAt ? (10 * 60000) : 0;
+      
       return {
         ...data,
         id: d.id,
         orderId: d.ref.parent.parent?.id || '',
         stationId,
-        score: paidAt - (waitTimeBonus * 30000 * scarcityWeight) // Pull 30s per min wait, weighted by scarcity
+        score: paidAt - (waitTimeBonus * 30000 * scarcityWeight) - reQueueBonus
       };
     }).sort((a, b) => a.score - b.score);
 
@@ -3283,19 +3339,33 @@ export const runBatchGenerator = async (nodeId: string) => {
        if (currentLoad >= maxPipeline) continue;
        if (stationItems.length === 0) continue;
 
-       // 🏎️ [CONTINUOUS-FLOW] Fill the current gap up to the next micro-batch size
        const gap = maxPipeline - currentLoad;
-       const batchItems = stationItems.slice(0, Math.min(gap, config.maxConcurrentPreparation));
-       
-       if (batchItems.length > 0) {
-          const manifest = batchItems.map(i => ({ 
-            orderId: i.orderId, 
-            itemId: i.id, 
-            name: i.name 
-          }));
+
+       // 🏎️ [SMART-GROUPING] Group by itemId so each prepBatch is single-item type (UX requirement)
+       const groupedByItem: Record<string, typeof stationItems> = {};
+       stationItems.forEach(it => {
+          if (!groupedByItem[it.id]) groupedByItem[it.id] = [];
+          groupedByItem[it.id].push(it);
+       });
+
+       for (const itemId of Object.keys(groupedByItem)) {
+          const itemGroup = groupedByItem[itemId];
+          const slice = itemGroup.slice(0, Math.min(gap, config.maxConcurrentPreparation));
           
-          await lockItemsToPrepBatch(manifest, sId);
-          processedFingerprint.push(...batchItems.map(b => b.id));
+          if (slice.length > 0) {
+             const manifest = slice.map(i => ({ 
+               orderId: i.orderId, 
+               itemId: i.id, 
+               name: i.name 
+             }));
+             
+             await lockItemsToPrepBatch(manifest, sId, slice[0].name, slice.length);
+             processedFingerprint.push(...slice.map(b => b.id));
+             
+             // Break early if station is now full
+             // (simplified load calculation for this pulse)
+             if (processedFingerprint.length >= gap) break;
+          }
        }
     }
     
@@ -3786,13 +3856,19 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
       const nextSlot = Number(`${slotH.toString().padStart(2, '0')}${slotM.toString().padStart(2, '0')}`);
 
       if (currentMissedCount >= 3) {
+        const newItems = (data.items || []).map((it: any) => ({ ...it, status: 'ABANDONED' }));
         masterBatch.update(d.ref, {
           "pickupWindow.status": 'ABANDONED',
           "serveFlowStatus": 'ABANDONED',
           "orderStatus": 'ABANDONED',
           "missedCount": currentMissedCount,
           "updatedAt": serverTimestamp(),
-          "items": (data.items || []).map((it: any) => ({ ...it, status: 'ABANDONED' }))
+          "items": newItems
+        });
+        
+        newItems.forEach((it: any) => {
+          const itRef = doc(db, 'orders', d.id, 'items', it.id || it.itemId);
+          masterBatch.update(itRef, { status: 'ABANDONED', updatedAt: serverTimestamp() });
         });
       } else {
         const isDynamic = (data.items || []).some((it: any) => it.orderType === 'PREPARATION_ITEM');
@@ -3820,81 +3896,43 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
           "updatedAt": serverTimestamp()
         });
 
+        // 1.5 Update Subcollection Items (Cook Console uses subcollections)
+        reQueuedItems.forEach((it: any) => {
+           if (it.status === 'PENDING') {
+              // Standardize itemId: prefer 'id' then 'itemId' then 'name'
+              const idName = it.id || it.itemId || it.name;
+              const itRef = doc(db, 'orders', d.id, 'items', idName);
+              // Fallback time for paidAt: guaranteed to be a millisecond number
+              const fallback = (data.confirmedAt?.toMillis?.() || data.confirmedAt || data.createdAt?.toMillis?.() || data.createdAt || Date.now());
+              
+              masterBatch.update(itRef, { 
+                 status: 'PENDING', 
+                 // 🛡️ [TIMESTAMP-STABILITY] Standardize as ms number for consistent query sorting
+                 paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
+                 reQueuedAt: serverTimestamp(),
+                 updatedAt: serverTimestamp() 
+              });
+           }
+        });
+
         // 📣 [ONESIGNAL-STRIKE] Notify student they are bumped to next batch
         if (data.userId) {
             const missedItem = (data.items || []).find((it: any) => it.status === 'READY' || it.status === 'COLLECTING');
             notifyOrderUpdate(data.userId, 'MISSED', missedItem?.name || 'Item');
         }
 
-        // 2. Aggregate for NEW batches (only for items now marked PENDING)
-        reQueuedItems.forEach((it: any) => {
-           if (it.status === 'PENDING') {
-              const batchId = `batch_${nextSlot}_${it.id}`;
-              if (!aggregatedBatches[batchId]) {
-                 aggregatedBatches[batchId] = {
-                    id: batchId,
-                    itemId: it.id,
-                    itemName: it.name,
-                    arrivalTimeSlot: nextSlot,
-                    orderIds: new Set<string>(),
-                    quantity: 0
-                 };
-              }
-              const remQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
-              if (remQty > 0) {
-                aggregatedBatches[batchId].orderIds.add(d.id);
-                aggregatedBatches[batchId].quantity += remQty;
-              }
-           }
-        });
-
-        // 3. Mark OLD batches for decrement
-        (data.items || []).forEach((it: any) => {
-           // If this item was in old batches and we are re-queuing it, we must subtract its quantity from the old batch
-           if (it.status === 'READY' || it.status === 'COLLECTING') {
-              const oldSlot = data.arrivalTimeSlot;
-              if (oldSlot) {
-                 const oldBatchId = `batch_${oldSlot}_${it.id}`;
-                 const decrQty = typeof it.remainingQty === 'number' ? it.remainingQty : it.quantity;
-                 if (decrQty > 0) {
-                   oldBatchDecrements[oldBatchId] = (oldBatchDecrements[oldBatchId] || 0) + decrQty;
-                 }
-              }
-           }
-        });
       }
       updatedCount++;
     }
 
-    // 🏎️💨 STAGE 2: COMMIT AGGREGATED MANIFEST (Atomic Sonic Write)
-    // 2.1 CREATE NEW BATCHES
-    Object.values(aggregatedBatches).forEach((b: any) => {
-       const bRef = doc(db, "prepBatches", b.id);
-       masterBatch.set(bRef, {
-          id: b.id,
-          itemId: b.itemId,
-          itemName: b.itemName,
-          arrivalTimeSlot: b.arrivalTimeSlot,
-          orderIds: arrayUnion(...Array.from(b.orderIds)),
-          quantity: increment(b.quantity),
-          status: 'QUEUED',
-          isRequeued: true, // 🏷️ FLAG FOR KITCHEN UI
-          updatedAt: serverTimestamp()
-       }, { merge: true });
-    });
-
-    // 2.2 CLEANUP OLD BATCHES (Decrement)
-    Object.entries(oldBatchDecrements).forEach(([bId, qty]) => {
-       const bRef = doc(db, "prepBatches", bId);
-       masterBatch.update(bRef, {
-          quantity: increment(-qty),
-          updatedAt: serverTimestamp()
-       });
-    });
-
     if (updatedCount > 0) {
       await masterBatch.commit();
       console.log(`⚡ [SONIC-SYNC] Re-queued ${updatedCount} orders atomically.`);
+      
+      // 🏎️ [INSTANT-PULSE] Trigger generator with 'force' flag after minimal propagation delay
+      setTimeout(() => {
+        runBatchGenerator(nodeId || 'requeue-pulse', true).catch(() => {});
+      }, 500);
     }
     return updatedCount;
   } catch (error) {

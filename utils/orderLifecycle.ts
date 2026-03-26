@@ -74,7 +74,7 @@ export const getOrderUIState = (order: Order): OrderUIState => {
  */
 export const shouldShowQR = (order: Order): boolean => {
   const state = getOrderUIState(order);
-  const hideStates = ['COMPLETED', 'REJECTED', 'CANCELLED', 'ABANDONED', 'EXPIRED'];
+  const hideStates = ['COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED'];
   if (hideStates.includes(state)) return false;
 
   // Final check: count unserved items
@@ -86,20 +86,12 @@ export const shouldShowQR = (order: Order): boolean => {
   if (unservedCount === 0) return false;
 
   const isPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
+  const isCash = order.paymentType === 'CASH';
   
-  // 🏎️ [INTELLIGENT-UNLOCK] Identify if any item is collectable
-  const hasStatic = order.items?.some(it => 
-     it.orderType === 'FAST_ITEM' || 
-     ['Lunch', 'Beverages', 'Snacks'].includes(it.category || '')
-  );
-  const hasReady = order.items?.some(it => it.status === 'READY');
-  const isScanned = order.qrState === 'SCANNED' || order.qrStatus === 'SCANNED';
+  // Release QR if it's paid or if it's a cash order awaiting verification
+  if (!isPaid && !isCash) return false;
 
-  // Release QR if it's paid and either has something to collect or was already scanned
-  if (!isPaid) return false;
-  if (!hasStatic && !hasReady && !isScanned) return false;
-
-  return (order.qrStatus === 'ACTIVE' || order.qrStatus === 'SCANNED');
+  return true;
 };
 
 /**
