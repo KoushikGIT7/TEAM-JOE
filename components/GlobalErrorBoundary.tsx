@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { RefreshCw, Home } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -13,8 +13,11 @@ interface State {
 /**
  * 🛡️ [GLOBAL-SECURITY-LAYER] Error Boundary
  * Prevents "White Screen of Death" by catching React rendering crashes.
+ * Auto-recovers after 4s in production to unblock users.
  */
 class GlobalErrorBoundary extends Component<Props, State> {
+  private autoRecoverTimer: ReturnType<typeof setTimeout> | null = null;
+
   public state: State = {
     hasError: false,
     error: null
@@ -26,49 +29,63 @@ class GlobalErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('🔥 [REACT-CRASH]:', error, errorInfo);
+
+    // Auto-recover after 4s in production so users aren't permanently blocked
+    const isDev = import.meta.env?.DEV || window.location.hostname === 'localhost';
+    if (!isDev) {
+      this.autoRecoverTimer = setTimeout(() => {
+        window.location.reload();
+      }, 4000);
+    }
+  }
+
+  public componentWillUnmount() {
+    if (this.autoRecoverTimer) clearTimeout(this.autoRecoverTimer);
   }
 
   private handleReset = () => {
+    if (this.autoRecoverTimer) clearTimeout(this.autoRecoverTimer);
     this.setState({ hasError: false, error: null });
     window.location.reload();
   };
 
   public render() {
     if (this.state.hasError) {
+      const isDev = import.meta.env?.DEV || window.location.hostname === 'localhost';
       return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
-          <div className="max-w-md w-full bg-slate-900 border border-white/10 rounded-[2.5rem] p-10 shadow-2xl animate-in fade-in zoom-in duration-300">
-            <div className="w-24 h-24 bg-rose-500/20 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-rose-500/30">
-               <AlertTriangle className="w-12 h-12 text-rose-500" />
+          <div className="max-w-md w-full bg-slate-900 border border-white/10 rounded-[2.5rem] p-10 shadow-2xl">
+            <div className="w-20 h-20 bg-amber-500/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 border border-amber-500/30">
+              <RefreshCw className="w-10 h-10 text-amber-400 animate-spin" />
             </div>
-            
-            <h1 className="text-3xl font-black text-white italic tracking-tighter uppercase mb-4">
-              System Interrupted
+
+            <h1 className="text-2xl font-black text-white italic tracking-tighter uppercase mb-3">
+              Refreshing...
             </h1>
-            
+
             <p className="text-slate-400 text-sm font-medium mb-8 leading-relaxed">
-              A critical UI error occurred. Restoring the kitchen console now to prevent data loss.
+              Something went wrong. {isDev ? 'Check the console for details.' : 'Auto-recovering in a moment.'}
             </p>
 
-            <div className="space-y-4">
-               <button 
+            <div className="space-y-3">
+               <button
                  onClick={this.handleReset}
-                 className="w-full h-16 bg-white text-slate-950 rounded-2xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-white/5"
+                 className="w-full h-14 bg-white text-slate-950 rounded-2xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all"
                >
-                 <RefreshCw className="w-5 h-5" />
-                 Restore System
+                 <RefreshCw className="w-4 h-4" />
+                 Reload Now
                </button>
-               
-               <button 
+
+               <button
                  onClick={() => window.location.href = '/'}
-                 className="w-full h-16 bg-white/5 text-white/40 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all"
+                 className="w-full h-12 bg-white/5 text-white/40 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all"
                >
-                 <Home className="w-4 h-4" />
+                 <Home className="w-3.5 h-3.5" />
                  Return Home
                </button>
             </div>
 
-            {(import.meta.env?.DEV || window.location.hostname === 'localhost') && (
+            {isDev && (
               <div className="mt-8 pt-8 border-t border-white/5 text-left overflow-auto max-h-40">
                 <code className="text-[10px] text-rose-400 font-mono block whitespace-pre-wrap">
                   {this.state.error?.name}: {this.state.error?.message}

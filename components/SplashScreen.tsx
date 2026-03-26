@@ -18,8 +18,8 @@ interface SplashScreenProps {
 // Pre-load image at module level so it starts downloading immediately
 // before the component even mounts — critical for first render speed
 const LOGO_SRC = '/JeoLogoFinal.png';
-const logoPreloader = new window.Image();
-logoPreloader.src = LOGO_SRC;
+const logoPreloader = typeof window !== 'undefined' ? new window.Image() : null;
+if (logoPreloader) logoPreloader.src = LOGO_SRC;
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   // logoReady gates the CSS entrance animation — it only fires after the
@@ -31,6 +31,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
     const prepareImage = async () => {
       try {
+        if (!logoPreloader) { if (!cancelled) setLogoReady(true); return; }
         // decode() waits for the image to be fully decoded into bitmap memory
         // before we allow the CSS animation to start — eliminates partial render
         if (logoPreloader.complete) {
