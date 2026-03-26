@@ -113,16 +113,39 @@ export const saveCartDraft = async (userId: string, items: any[]): Promise<void>
 // TYPE CONVERSIONS
 // ============================================================================
 
-/** 🛡️ [Principal Architect] Item Classification Helper */
+/** 🛡️ [Principal Architect] Item Classification Helper
+ * 
+ * Static (FAST_ITEM) = served instantly from counter, no kitchen queue needed.
+ * Aligned with FAST_ITEM_CATEGORIES and PREP_TIME_BY_ITEM in constants.tsx.
+ * 
+ * FAST  → Beverages, Lunch (Plate Meal, Curd Rice, etc.), pre-made Snacks  
+ * DYNAMIC → Breakfast tiffin (Idli, Dosa, etc.), kitchen-cooked Lunch items
+ */
 export const isStaticItem = (item: any): boolean => {
+  // 1. Explicit orderType overrides everything
   if (item.orderType === 'PREPARATION_ITEM') return false;
   if (item.orderType === 'FAST_ITEM') return true;
-  
-  // Only Beverages (Tea/Coffee) are auto-served now. 
-  // Everything else (Idli, Dosa, Lunch) MUST appear on the server page.
-  const staticCategories = ['beverages'];
+
+  // 2. Per-item prep-time map: id listed with 0 = instant/fast
+  const FAST_ITEM_IDS = new Set([
+    // Beverages (all)
+    'BEV01', 'BEV02', 'BEV03', 'BEV04', 'BEV05', 'BEV06',
+    // Lunch counter items (pre-cooked, served from tray)
+    'LCH01', // Plate Meal
+    'LCH03', // Jeera Rice
+    'LCH06', // Veg Biryani
+    'LCH07', // Curd Rice
+    // Pre-prepared snacks
+    'SNK01', 'SNK02', 'SNK03', 'SNK04',
+  ]);
+  if (item.id && FAST_ITEM_IDS.has(item.id)) return true;
+
+  // 3. Category-level fallback — Beverages are always fast
   const cat = (item.category || '').toLowerCase();
-  return staticCategories.includes(cat);
+  if (cat === 'beverages') return true;
+
+  // 4. Everything else (Breakfast tiffin, kitchen-cooked Lunch) → dynamic
+  return false;
 };
 
 const orderToFirestore = (order: Order) => ({
@@ -1976,6 +1999,99 @@ export const serveSingleItem = async (orderId: string, itemId: string) => {
   });
 };
 
+/**
+ * ⚡ [SERVE-ALL] Atomic handover — marks every READY item on an order as SERVED
+ * in one transaction. Used by the "Serve All" button on the Server Console.
+ */
+export const serveAllItems = async (orderId: string) => {
+  const orderRef = doc(db, 'orders', orderId);
+
+  return runTransaction(db, async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists()) throw new Error("ORDER_NOT_FOUND");
+
+    const oData = orderSnap.data();
+    const now = Date.now();
+
+    // Only serve items that are READY — skip PENDING/PREPARING/already done
+    const updatedItems = (oData.items || []).map((it: any) => {
+      if (it.status === 'READY') {
+        const cleanItem = { ...it, status: 'SERVED', servedAt: now };
+        if (cleanItem.imageUrl && cleanItem.imageUrl.startsWith('data:image')) {
+          delete cleanItem.imageUrl;
+        }
+        return cleanItem;
+      }
+      return it;
+    });
+
+    const allDone = updatedItems.every((it: any) =>
+      it.status === 'SERVED' || it.status === 'REJECTED'
+    );
+
+    // Bulk-update subcollection docs for items that were READY
+    const readyItemIds = (oData.items || [])
+      .filter((it: any) => it.status === 'READY')
+      .map((it: any) => it.id);
+
+    readyItemIds.forEach((itemId: string) => {
+      const itemRef = doc(db, 'orders', orderId, 'items', itemId);
+      tx.update(itemRef, { status: 'SERVED', servedAt: serverTimestamp() });
+    });
+
+    tx.update(orderRef, {
+      items: updatedItems,
+      orderStatus: allDone ? 'COMPLETED' : 'ACTIVE',
+      qrStatus: allDone ? 'DESTROYED' : oData.qrStatus,
+      qrState: allDone ? 'SERVED' : oData.qrState,
+      updatedAt: serverTimestamp(),
+    });
+  });
+};
+
+export const rejectOrderItem = async (orderId: string, itemId: string) => {
+  const itemRef = doc(db, 'orders', orderId, 'items', itemId);
+  const orderRef = doc(db, 'orders', orderId);
+
+  return runTransaction(db, async (tx) => {
+    const [itSnap, orderSnap] = await Promise.all([
+      tx.get(itemRef),
+      tx.get(orderRef)
+    ]);
+    
+    if (!itSnap.exists()) throw new Error("ITEM_NOT_FOUND");
+    if (!orderSnap.exists()) throw new Error("ORDER_NOT_FOUND");
+
+    const itData = itSnap.data();
+    if (itData?.status === 'REJECTED') return;
+
+    const oData = orderSnap.data();
+    const items = (oData.items || []).map((it: any) => {
+       const isCurrent = it.id === itemId;
+       const status = isCurrent ? 'REJECTED' : it.status;
+       
+       const cleanItem = { ...it, status };
+       if (cleanItem.imageUrl && cleanItem.imageUrl.startsWith('data:image')) {
+          delete cleanItem.imageUrl;
+       }
+       return cleanItem;
+    });
+
+    const allDone = items.every((it: any) => it.status === 'SERVED' || it.status === 'REJECTED');
+
+    tx.update(itemRef, { 
+      status: 'REJECTED', 
+      rejectedAt: serverTimestamp() 
+    });
+    tx.update(orderRef, { 
+      items, 
+      orderStatus: allDone ? 'COMPLETED' : 'ACTIVE',
+      qrStatus: allDone ? 'DESTROYED' : oData.qrStatus,
+      updatedAt: serverTimestamp()
+    });
+  });
+};
+
 
 /**
  * ⚡ [SUPERSONIC-INTAKE] QR validation fast-path: <300ms direct document lookup
@@ -2004,7 +2120,36 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
             if (!orderSnap.exists()) throw new Error("ORDER_NOT_FOUND");
             
             const orderDoc = orderSnap.data() as any;
-            if (orderDoc.qrStatus === 'DESTROYED') throw new Error("ALREADY_CONSUMED");
+            orderDoc.id = orderSnap.id; // Ensure ID is injected
+
+            // 🛡️ [IDEMPOTENCY & SCAN-ONCE POLICY]
+            if (orderDoc.qrStatus === 'DESTROYED' || orderDoc.orderStatus === 'COMPLETED' || orderDoc.orderStatus === 'SERVED') {
+                throw new Error("ALREADY_CONSUMED");
+            }
+
+            if (orderDoc.qrState === 'SCANNED') {
+                // Return gracefully so the UI can reopen the manifest without error
+                const refinedItems = (orderDoc.items || []).map((it: any) => ({
+                    itemId: it.id,
+                    orderId: orderDoc.id,
+                    name: it.name,
+                    status: it.status,
+                    quantity: it.quantity,
+                    category: it.category,
+                    orderType: it.orderType,
+                    imageUrl: it.imageUrl
+                }));
+                const finalResult = { 
+                    order: { ...orderDoc, items: refinedItems }, 
+                    result: 'ALREADY_MANIFESTED' as const 
+                };
+                QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
+                return finalResult;
+            }
+
+            if (orderDoc.paymentStatus !== 'SUCCESS' && orderDoc.paymentStatus !== 'VERIFIED') {
+                return { order: orderDoc, result: 'AWAITING_PAYMENT' as const };
+            }
 
             // Security Filter
             const parsedPayload = await parseQRPayload(qrPayload);
@@ -2053,11 +2198,16 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
 
             tx.update(orderRef, updateData);
 
-            // Sync items subcollection
+            // Sync items subcollection — write FULL metadata so server manifest shows name + image
             updatedItems.forEach((it: any) => {
                 const subRef = doc(db, 'orders', orderDoc.id, 'items', it.id);
                 tx.set(subRef, { 
-                    status: it.status, 
+                    status: it.status,
+                    name: it.name || '',
+                    quantity: it.quantity || 1,
+                    category: it.category || '',
+                    orderType: it.orderType || 'PREPARATION_ITEM',
+                    imageUrl: it.imageUrl || null,
                     updatedAt: serverTimestamp() 
                 }, { merge: true });
             });
