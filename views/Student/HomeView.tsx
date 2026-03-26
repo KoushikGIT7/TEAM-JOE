@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-  LogOut, ShoppingBag, Plus, Minus, Search, Loader2, 
-  Menu, X as CloseIcon, User, Clock, ShieldCheck, 
+import {
+  LogOut, ShoppingBag, Plus, Minus, Search, Loader2,
+  Menu, X as CloseIcon, User, Clock, ShieldCheck,
   ChevronRight, MapPin, Coffee, ShoppingCart, Zap, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon,
   Bell, BellRing, Check
 } from 'lucide-react';
@@ -112,7 +112,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         orders.forEach(order => {
           const prev = prevOrderStatuses.current[order.id];
           const currPayment = order.paymentStatus;
-          const currOrder   = order.orderStatus;
+          const currOrder = order.orderStatus;
 
           if (!prev) {
             prevOrderStatuses.current[order.id] = { payment: currPayment, order: currOrder };
@@ -152,14 +152,14 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     return myOrders.find((o) => {
       // 🛑 Exclude Terminal/Completed states immediately
       if (['REJECTED', 'CANCELLED', 'COMPLETED', 'SERVED', 'EXPIRED', 'ABANDONED'].includes(o.orderStatus)) return false;
-      
+
       // 💰 Cash orders waiting for confirmation are ACTIVE
       if (o.paymentStatus === 'PENDING') return true;
 
       // 🥗 Paid orders are ACTIVE if they are still preparing or waiting for scan
       const isPaid = o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED';
       if (isPaid && (o.qrStatus === 'ACTIVE' || o.qrStatus === 'SCANNED' || o.qr?.status === 'ACTIVE')) return true;
-      
+
       return false;
     });
   }, [myOrders]);
@@ -172,7 +172,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const { visible: showHeadline, headline } = useMotivationalHeadline(isPrepWaiting);
 
   // Derive flow for Haptic Feedback + UI, safe when activeOrder is null
-  const activeOrderFlow = activeOrder?.serveFlowStatus || ( (activeOrder?.paymentStatus === 'SUCCESS' || activeOrder?.paymentStatus === 'VERIFIED') ? 'PAID' : 'NEW');
+  const activeOrderFlow = activeOrder?.serveFlowStatus || ((activeOrder?.paymentStatus === 'SUCCESS' || activeOrder?.paymentStatus === 'VERIFIED') ? 'PAID' : 'NEW');
 
   // Haptic Feedback for READY state (triggered by flow change), moved to top level
   useEffect(() => {
@@ -188,7 +188,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         const parsed = JSON.parse(savedCart) as CartItem[];
         // LEGACY CLEANUP: If items have old numeric IDs ('1', '2'...), clear them entirely
         const hasLegacy = parsed.some(it => !isNaN(Number(it.id)));
-        
+
         if (hasLegacy) {
           localStorage.removeItem('joe_cart');
           setCart({});
@@ -197,15 +197,15 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
         const cartMap: Record<string, CartItem> = {};
         let changed = false;
-        
-        parsed.forEach(item => { 
+
+        parsed.forEach(item => {
           if (menu.find(m => m.id === item.id)) {
-            cartMap[item.id] = item; 
+            cartMap[item.id] = item;
           } else {
             changed = true;
           }
         });
-        
+
         setCart(cartMap);
         if (changed) {
           localStorage.setItem('joe_cart', JSON.stringify(Object.values(cartMap)));
@@ -226,8 +226,8 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   }, 0);
 
   const filteredMenu = useMemo(() => {
-    const filtered = menu.filter(item => 
-      item.category === selectedCategory && 
+    const filtered = menu.filter(item =>
+      item.category === selectedCategory &&
       item.name.toLowerCase().includes(search.toLowerCase())
     );
     // Sort Breakfast items to keep common things like Idli/Dosa at top
@@ -251,23 +251,23 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         const isMorning = currentHour >= 7 && currentHour <= 9;
         const isDosa = item.name.toLowerCase().includes('dosa');
         if (isMorning && isDosa) {
-           if (newQty > 2) {
-             alert("Maximum 2 Dosas allowed per student during morning rush.");
-             newQty = 2; // Strict limit 2 per person
-           }
+          if (newQty > 2) {
+            alert("Maximum 2 Dosas allowed per student during morning rush.");
+            newQty = 2; // Strict limit 2 per person
+          }
         }
 
         // 🛑 MEAL LIMIT (Max 1 per student)
         if (item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) {
-           if (newQty > 1) {
-             alert("Only 1 meal can be ordered at a time per order. Please complete this order and place a new one if you need another.");
-             newQty = 1; // Strict limit 1 for meals
-           }
+          if (newQty > 1) {
+            alert("Only 1 meal can be ordered at a time per order. Please complete this order and place a new one if you need another.");
+            newQty = 1; // Strict limit 1 for meals
+          }
         }
 
         const maxAllowed = stockByItemId[item.id]?.available ?? 999;
         if (newQty > maxAllowed) newQty = maxAllowed;
-        
+
         // Fix StrictMode double increment by avoiding direct object mutation
         if (newQty <= 0) {
           delete newCart[item.id];
@@ -298,7 +298,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
           {/* Card */}
           <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-8 duration-500">
-            
+
             {/* Top gradient band */}
             <div className="bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 px-8 pt-10 pb-16 text-center relative overflow-hidden">
               {/* Decorative rings */}
@@ -313,7 +313,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               </div>
 
               <h2 className="text-white font-black text-2xl tracking-tight mb-1">Get Exclusive Deals!</h2>
-              <p className="text-white/80 text-sm font-medium">Be first to know about special offers,<br/>flash deals & meal combos 🎉</p>
+              <p className="text-white/80 text-sm font-medium">Be first to know about special offers,<br />flash deals & meal combos 🎉</p>
             </div>
 
             {/* Perks list overlapping the band */}
@@ -366,7 +366,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       )}
       {/* Profile Drawer Overlay */}
       {isDrawerOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] transition-opacity animate-in fade-in duration-300"
           onClick={() => setIsDrawerOpen(false)}
         />
@@ -396,29 +396,29 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
         <div className="space-y-4 flex-1 overflow-y-auto hide-scrollbar">
           <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
-             <div className="flex items-center gap-3 mb-6 text-primary">
-               <Clock className="w-5 h-5" />
-               <span className="text-[10px] font-black uppercase tracking-widest">Recent Activity</span>
-             </div>
-             {myOrders.slice(0, 3).length > 0 ? (
-               <div className="space-y-4">
-                 {myOrders.slice(0, 3).map(order => (
-                   <div key={order.id} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-black/5">
-                     <div className="min-w-0">
-                        <p className="text-xs font-black text-textMain truncate">#{order.id.slice(-6).toUpperCase()}</p>
-                        <p className="text-[9px] text-textSecondary font-bold mt-0.5">₹{order.totalAmount} • {new Date(order.createdAt).toLocaleDateString()}</p>
-                     </div>
-                     <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${order.orderStatus === 'SERVED' ? 'bg-success/10 text-success' : 'bg-cash/10 text-cash'}`}>
-                       {order.orderStatus}
-                     </span>
-                   </div>
-                 ))}
-               </div>
-             ) : (
-               <div className="text-center py-4">
-                 <p className="text-xs font-bold text-primary/40 italic">No orders logged yet.</p>
-               </div>
-             )}
+            <div className="flex items-center gap-3 mb-6 text-primary">
+              <Clock className="w-5 h-5" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Recent Activity</span>
+            </div>
+            {myOrders.slice(0, 3).length > 0 ? (
+              <div className="space-y-4">
+                {myOrders.slice(0, 3).map(order => (
+                  <div key={order.id} className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-black/5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-textMain truncate">#{order.id.slice(-6).toUpperCase()}</p>
+                      <p className="text-[9px] text-textSecondary font-bold mt-0.5">₹{order.totalAmount} • {new Date(order.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${order.orderStatus === 'SERVED' ? 'bg-success/10 text-success' : 'bg-cash/10 text-cash'}`}>
+                      {order.orderStatus}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-xs font-bold text-primary/40 italic">No orders logged yet.</p>
+              </div>
+            )}
           </div>
 
           {/* (Removed extra placeholder buttons to keep home UX clean) */}
@@ -426,7 +426,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
         <div className="space-y-3 mt-8">
           {onViewOrders && (
-            <button 
+            <button
               onClick={() => {
                 setIsDrawerOpen(false);
                 onViewOrders();
@@ -436,8 +436,8 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <ShoppingBag className="w-4 h-4" /> My Orders
             </button>
           )}
-          
-          <button 
+
+          <button
             onClick={onLogout}
             className="w-full py-5 bg-error/5 text-error rounded-[1.5rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95 hover:bg-error hover:text-white transition-all"
           >
@@ -450,7 +450,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-4 shadow-sm border-b border-black/5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsDrawerOpen(true)}
               className="w-12 h-12 bg-white border border-black/5 rounded-2xl flex items-center justify-center text-textMain active:scale-90 transition-all shadow-sm hover:border-primary/20"
             >
@@ -480,7 +480,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               }}
               title={notifSubscribed ? 'Subscribed to Deals!' : 'Tap to get Exclusive Deals!'}
               className={`relative flex items-center justify-center transition-all duration-500 active:scale-90
-                ${ notifSubscribed
+                ${notifSubscribed
                   ? 'w-11 h-11 rounded-2xl bg-emerald-500 shadow-lg shadow-emerald-200 ring-4 ring-emerald-100'
                   : 'w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-300 ring-4 ring-indigo-100 hover:shadow-indigo-400'
                 }`}
@@ -512,9 +512,9 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-textSecondary" />
-          <input 
-            type="text" 
-            placeholder="Search meal engine..." 
+          <input
+            type="text"
+            placeholder="Search meal engine..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-gray-50 border-none rounded-[1.25rem] py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none shadow-inner"
@@ -526,11 +526,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.15em] whitespace-nowrap transition-all active:scale-95 ${
-                selectedCategory === cat 
-                ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                : 'bg-background text-textSecondary border border-transparent hover:border-black/10'
-              }`}
+              className={`px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.15em] whitespace-nowrap transition-all active:scale-95 ${selectedCategory === cat
+                  ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                  : 'bg-background text-textSecondary border border-transparent hover:border-black/10'
+                }`}
             >
               {cat}
             </button>
@@ -549,77 +548,75 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       )}
       {/* Live Order Tracker Banner (Senior UX) */}
       {activeOrder && (
-         <div className="p-4 animate-in slide-in-from-top-4 duration-700">
-            <div 
-              onClick={() => onViewQR && onViewQR(activeOrder.id)}
-              className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all duration-500 group ${
-                activeOrder.paymentStatus === 'PENDING' ? 'border-amber-500 bg-amber-500/5 shadow-amber-900/10' :
+        <div className="p-4 animate-in slide-in-from-top-4 duration-700">
+          <div
+            onClick={() => onViewQR && onViewQR(activeOrder.id)}
+            className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all duration-500 group ${activeOrder.paymentStatus === 'PENDING' ? 'border-amber-500 bg-amber-500/5 shadow-amber-900/10' :
                 activeOrderFlow === 'READY' ? 'border-green-500 bg-green-500/5 shadow-green-900/20' :
-                activeOrderFlow === 'ALMOST_READY' ? 'border-orange-500 bg-orange-500/5 shadow-orange-900/10' :
-                'border-primary bg-primary/5 shadow-primary-900/10'
+                  activeOrderFlow === 'ALMOST_READY' ? 'border-orange-500 bg-orange-500/5 shadow-orange-900/10' :
+                    'border-primary bg-primary/5 shadow-primary-900/10'
               }`}
-            >
-              {/* Ready State Pulsing Glow */}
-              {activeOrderFlow === 'READY' && (
-                <div className="absolute inset-0 bg-green-500/10 animate-pulse-slow pointer-events-none" />
+          >
+            {/* Ready State Pulsing Glow */}
+            {activeOrderFlow === 'READY' && (
+              <div className="absolute inset-0 bg-green-500/10 animate-pulse-slow pointer-events-none" />
+            )}
+
+            <div className="flex justify-between items-center relative z-10">
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-2xl ${activeOrderFlow === 'READY' ? 'bg-green-500 text-white animate-bounce' : 'bg-white shadow-sm'}`}>
+                  {activeOrderFlow === 'READY' ? <Sparkles className="w-5 h-5" /> : <Clock className="w-5 h-5 text-primary" />}
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary opacity-60">Real-time Order Tracking</p>
+                  <h4 className="text-xl font-black text-textMain tracking-tighter">
+                    {activeOrder.paymentStatus === 'PENDING' ? 'Pay to Start Cooking' :
+                      activeOrder.serveFlowStatus === 'READY' ? '🎉 Food is Ready!' :
+                        activeOrder.serveFlowStatus === 'ALMOST_READY' ? '🔥 Almost Ready...' :
+                          (activeOrder.serveFlowStatus === 'PREPARING' || activeOrder.serveFlowStatus === 'SERVED_PARTIAL') ? '🥣 Preparing Meal' :
+                            '📅 Order Scheduled'}
+                  </h4>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Queue ID</p>
+                <p className="text-sm font-black text-textMain">#{activeOrder.id.slice(-4).toUpperCase()}</p>
+              </div>
+            </div>
+
+            {/* Multi-item Preview */}
+            <div className="flex flex-wrap gap-2 relative z-10">
+              {activeOrder.items.slice(0, 3).map((item, idx) => (
+                <div key={idx} className="px-3 py-1.5 bg-white/50 backdrop-blur rounded-xl border border-black/5 flex items-center gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
+                  <span className="text-[9px] font-black text-textMain">{item.name}</span>
+                </div>
+              ))}
+              {activeOrder.items.length > 3 && (
+                <div className="px-3 py-1.5 bg-black/5 rounded-xl border border-black/5 text-[9px] font-black text-textSecondary">
+                  +{activeOrder.items.length - 3} more
+                </div>
               )}
-              
-              <div className="flex justify-between items-center relative z-10">
-                <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${activeOrderFlow === 'READY' ? 'bg-green-500 text-white animate-bounce' : 'bg-white shadow-sm'}`}>
-                    {activeOrderFlow === 'READY' ? <Sparkles className="w-5 h-5" /> : <Clock className="w-5 h-5 text-primary" />}
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary opacity-60">Real-time Order Tracking</p>
-                    <h4 className="text-xl font-black text-textMain tracking-tighter">
-                      {activeOrder.paymentStatus === 'PENDING' ? 'Pay to Start Cooking' : 
-                       activeOrder.serveFlowStatus === 'READY' ? '🎉 Food is Ready!' : 
-                       activeOrder.serveFlowStatus === 'ALMOST_READY' ? '🔥 Almost Ready...' : 
-                       (activeOrder.serveFlowStatus === 'PREPARING' || activeOrder.serveFlowStatus === 'SERVED_PARTIAL') ? '🥣 Preparing Meal' : 
-                       '📅 Order Scheduled'}
-                    </h4>
-                  </div>
-                </div>
-                <div className="text-right">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Queue ID</p>
-                    <p className="text-sm font-black text-textMain">#{activeOrder.id.slice(-4).toUpperCase()}</p>
-                </div>
-              </div>
+            </div>
 
-              {/* Multi-item Preview */}
-              <div className="flex flex-wrap gap-2 relative z-10">
-                 {activeOrder.items.slice(0, 3).map((item, idx) => (
-                    <div key={idx} className="px-3 py-1.5 bg-white/50 backdrop-blur rounded-xl border border-black/5 flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500' : 'bg-primary animate-pulse'}`} />
-                        <span className="text-[9px] font-black text-textMain">{item.name}</span>
-                    </div>
-                 ))}
-                 {activeOrder.items.length > 3 && (
-                    <div className="px-3 py-1.5 bg-black/5 rounded-xl border border-black/5 text-[9px] font-black text-textSecondary">
-                        +{activeOrder.items.length - 3} more
-                    </div>
-                 )}
-              </div>
-
-              <div className="space-y-3 relative z-10">
-                <div className="flex justify-between items-end">
-                    <div className="text-[10px] font-bold text-textSecondary flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-primary'}`} />
-                        {activeOrderFlow === 'READY' ? 'Collect from counter' : 'Optimal arrival in ~8m'}
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-textSecondary opacity-30 group-hover:translate-x-1 transition-transform" />
+            <div className="space-y-3 relative z-10">
+              <div className="flex justify-between items-end">
+                <div className="text-[10px] font-bold text-textSecondary flex items-center gap-1.5">
+                  <div className={`w-2 h-2 rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-primary'}`} />
+                  {activeOrderFlow === 'READY' ? 'Collect from counter' : 'Optimal arrival in ~8m'}
                 </div>
-                <div className="h-2 bg-black/5 rounded-full overflow-hidden">
-                    <div className={`h-full transition-all duration-1000 ease-out rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500' : 'bg-primary'} ${
-                      activeOrder.paymentStatus === 'PENDING' ? 'w-1/4' :
-                      activeOrderFlow === 'READY' ? 'w-full' :
+                <ChevronRight className="w-4 h-4 text-textSecondary opacity-30 group-hover:translate-x-1 transition-transform" />
+              </div>
+              <div className="h-2 bg-black/5 rounded-full overflow-hidden">
+                <div className={`h-full transition-all duration-1000 ease-out rounded-full ${activeOrderFlow === 'READY' ? 'bg-green-500' : 'bg-primary'} ${activeOrder.paymentStatus === 'PENDING' ? 'w-1/4' :
+                    activeOrderFlow === 'READY' ? 'w-full' :
                       activeOrderFlow === 'ALMOST_READY' ? 'w-5/6' :
-                      activeOrderFlow === 'PREPARING' ? 'w-2/3' : 'w-1/2'
-                    }`} />
-                </div>
+                        activeOrderFlow === 'PREPARING' ? 'w-2/3' : 'w-1/2'
+                  }`} />
               </div>
             </div>
           </div>
+        </div>
       )}
 
 
@@ -652,29 +649,29 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <div key={item.id} className={`bg-white rounded-[2rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col h-full group transition-all duration-300 ${outOfStock ? 'grayscale-[0.5] opacity-80' : 'hover:shadow-md'}`}>
                 {/* 📸 IMAGE HERO SLIGHTLY LARGER */}
                 <div className="relative h-44 w-full bg-slate-50 overflow-hidden">
-                  <SmartImage 
-                      src={item.imageUrl} 
-                      alt={item.name} 
-                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
-                      priority={idx < 4 ? 'high' : 'auto'}
+                  <SmartImage
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                    priority={idx < 4 ? 'high' : 'auto'}
                   />
                   {/* VEG INDICATOR FLOATING TOP LEFT */}
                   <div className="absolute top-3 left-3 bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-black/5">
-                     <div className="w-2.5 h-2.5 border-2 border-green-600 flex items-center justify-center rounded-sm">
-                        <div className="w-1 h-1 bg-green-600 rounded-full" />
-                     </div>
+                    <div className="w-2.5 h-2.5 border-2 border-green-600 flex items-center justify-center rounded-sm">
+                      <div className="w-1 h-1 bg-green-600 rounded-full" />
+                    </div>
                   </div>
-                  
+
                   {/* STATUS FLOATING BOTTOM CENTER */}
                   {outOfStock && (
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center">
-                       <span className="bg-white/95 text-slate-900 px-4 py-2 rounded-full text-[10px] font-black tracking-widest uppercase">Sold Out</span>
+                      <span className="bg-white/95 text-slate-900 px-4 py-2 rounded-full text-[10px] font-black tracking-widest uppercase">Sold Out</span>
                     </div>
                   )}
-                  
+
                   {lowStock && !outOfStock && (
                     <div className="absolute bottom-3 left-3 bg-amber-500/90 text-white px-2.5 py-1 rounded-full text-[9px] font-black tracking-tight border border-white/20">
-                       Only {available} Left
+                      Only {available} Left
                     </div>
                   )}
                 </div>
@@ -696,14 +693,14 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
                     <div>
                       {cart[item.id] ? (
                         <div className="flex items-center bg-slate-100 rounded-full p-0.5 border border-slate-200">
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); updateCart(item, -1); }}
                             className="w-8 h-8 flex items-center justify-center bg-white text-slate-900 rounded-full shadow-sm active:scale-95 transition-all"
                           >
                             <Minus className="w-3.5 h-3.5" />
                           </button>
                           <span className="px-3 text-xs font-black text-slate-900">{cart[item.id].quantity}</span>
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); canAdd && updateCart(item, 1); }}
                             className={`w-8 h-8 flex items-center justify-center bg-primary text-white rounded-full shadow-lg active:scale-95 transition-all ${!canAdd ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
@@ -711,13 +708,13 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
                           </button>
                         </div>
                       ) : (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); canAdd && updateCart(item, 1); }}
                           disabled={!canAdd}
                           className={`
                             px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all active:scale-95
-                            ${!canAdd 
-                              ? 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed' 
+                            ${!canAdd
+                              ? 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed'
                               : 'bg-primary text-white shadow-xl shadow-primary/20 hover:shadow-primary/40'
                             }
                           `}
@@ -748,7 +745,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               <span className="text-[9px] font-black text-textSecondary uppercase tracking-widest">{cartItemsCount} Units Selected</span>
               <span className="text-2xl font-black text-textMain tracking-tight">₹{cartTotal}</span>
             </div>
-            <button 
+            <button
               onClick={onProceed}
               className="flex-1 bg-primary text-white font-black text-xs uppercase tracking-widest py-5 rounded-[1.75rem] flex items-center justify-center gap-3 shadow-2xl shadow-primary/30 active:scale-95 transition-all group"
             >
