@@ -2859,7 +2859,7 @@ export const recoverZombieItems = async () => {
 /** 
  * [SONIC-LOCK] Hardened Atomic Item Handover to Production
  */
-export const lockItemsToPrepBatch = async (items: {orderId: string, itemId: string, name: string}[], stationId: string, itemName: string, totalQty: number) => {
+export const lockItemsToPrepBatch = async (items: {orderId: string, itemId: string, name: string, quantity: number, userName?: string}[], stationId: string, itemName: string, totalQty: number) => {
   const itemIds = items.map(i => i.itemId);
   // 🏎️ [STABLE-IDENTITY] deterministic batchId based on sorted itemIds
   const batchId = 'batch_' + [...itemIds].sort().join('_').slice(0, 32) + '_' + Date.now();
@@ -3321,7 +3321,7 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
        if (currentLoad >= maxPipeline) continue;
        if (stationItems.length === 0) continue;
 
-       const gap = maxPipeline - currentLoad;
+       let remainingGap = maxPipeline - currentLoad;
 
        // 🏎️ [SMART-GROUPING] Group by itemId so each prepBatch is single-item type (UX requirement)
        const groupedByItem: Record<string, typeof stationItems> = {};
@@ -3330,23 +3330,46 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
           groupedByItem[it.id].push(it);
        });
 
-       for (const itemId of Object.keys(groupedByItem)) {
+       // 🧠 [SMART-SORT] Prioritize groups containing the highest-priority items (lowest score)
+       const sortedGroupIds = Object.keys(groupedByItem).sort((a, b) => {
+          const minScoreA = Math.min(...groupedByItem[a].map(it => it.score));
+          const minScoreB = Math.min(...groupedByItem[b].map(it => it.score));
+          return minScoreA - minScoreB;
+       });
+
+       for (const itemId of sortedGroupIds) {
           const itemGroup = groupedByItem[itemId];
-          const slice = itemGroup.slice(0, Math.min(gap, config.maxConcurrentPreparation));
           
-          if (slice.length > 0) {
-             const manifest = slice.map(i => ({ 
+          let currentBatchUnits = 0;
+          const itemsToInclude: typeof itemGroup = [];
+          
+          for (const it of itemGroup) {
+             const qty = it.quantity || 1;
+             // If this order fits (or it's the first one in the batch and we want to allow slight burst)
+             if (currentBatchUnits + qty <= config.maxConcurrentPreparation || itemsToInclude.length === 0) {
+                itemsToInclude.push(it);
+                currentBatchUnits += qty;
+                if (currentBatchUnits >= config.maxConcurrentPreparation) break;
+             }
+          }
+
+          if (itemsToInclude.length > 0) {
+             const manifest = itemsToInclude.map(i => ({ 
                orderId: i.orderId, 
                itemId: i.id, 
-               name: i.name 
+               name: i.name,
+               quantity: i.quantity || 1,
+               userName: i.userName || 'Student'
              }));
              
-             await lockItemsToPrepBatch(manifest, sId, slice[0].name, slice.length);
-             processedFingerprint.push(...slice.map(b => b.id));
+             // 🚀 [UNIT-SENSITIVE-BATCH] totalQty is now the physical sum of units
+             await lockItemsToPrepBatch(manifest, sId, itemsToInclude[0].name, currentBatchUnits);
+             processedFingerprint.push(...itemsToInclude.map(b => b.id));
              
-             // Break early if station is now full
-             // (simplified load calculation for this pulse)
-             if (processedFingerprint.length >= gap) break;
+             // Reduce the station gap by the physical units we just allocated
+             remainingGap -= currentBatchUnits;
+             
+             if (remainingGap <= 0) break;
           }
        }
     }

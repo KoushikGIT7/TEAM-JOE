@@ -82,7 +82,7 @@
     OneSignalDeferred.push(async function(OneSignal) {
       // 🛡️ [DOMAIN-SHIELD] Prevent fatal SDK crashes on unauthorized staging/local domains
       const isTestDomain = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const isProdDomain = window.location.hostname.includes('joecafebrand.netlify.app');
+      const isProdDomain = window.location.hostname.includes('netlify.app');
       
       if (!isTestDomain && !isProdDomain) {
          console.warn('🚧 [ONESIGNAL-SHIELD] Current domain is not authorized in OneSignal Dashboard. SDK initialization silenced to prevent crash.');

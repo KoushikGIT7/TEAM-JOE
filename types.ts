@@ -252,6 +252,7 @@ export interface PrepBatch {
     orderId: string;
     itemId: string;
     name: string;
+    quantity: number;
     userName?: string;
   }[];
   status: PrepBatchStatus;

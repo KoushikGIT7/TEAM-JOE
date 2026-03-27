@@ -101,46 +101,29 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
         (b.status === 'QUEUED' || b.status === 'PREPARING')
       );
 
-    const flattened = activeBatches.flatMap(b => 
-      (b.items || []).flatMap((it: any) => {
-          const units = it.quantity || 1;
-          const result = [];
-          for (let i = 0; i < units; i++) {
-              result.push({
-                ...it,
-                unitIndex: i,
-                batchId: b.id,
-                batchStatus: b.status,
-                batchCreatedAt: (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0,
-                stationId: b.stationId,
-                fullBatchItems: b.items,
-                // 🆔 [UNIT-UNIQUE-IDENTITY]: Crucial for React focus logic
-                id: `${b.id}_${it.itemId}_${i}` 
-              });
-          }
-          return result;
-      })
-    );
+    const displayBatches = activeBatches.map(b => {
+      const totalUnits = (b.items || []).reduce((sum, it) => sum + (it.quantity || 1), 0);
+      return {
+        ...b,
+        status: optimisticStatus[b.id] ?? b.status, // already applied above but for safety
+        totalUnits,
+        batchCreatedAt: (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0,
+        // 🆔 [BATCH-UNIQUE-IDENTITY]
+        id: b.id
+      };
+    });
 
-    const stationCounts: Record<string, number> = {};
-    flattened.forEach(it => { stationCounts[it.stationId] = (stationCounts[it.stationId] || 0) + 1; });
-
-    // 🛡️ [ANTI-OVERLOAD] Focus Mode: Only show 4 active and 4 upcoming units
+    // 🛡️ [ANTI-OVERLOAD] Focus Mode
     const stationCapacity = activeStation === 'dosa' ? 4 : (isMobile ? 2 : 8); 
     
-    // Sort READY queue by readyAt ASC, paidAt ASC
-    return flattened.sort((a, b) => {
-      // READY state should ideally be out of this particular focus view, but if present:
-      if (a.batchStatus === 'READY' && b.batchStatus !== 'READY') return 1;
-      if (b.batchStatus === 'READY' && a.batchStatus !== 'READY') return -1;
-      
+    return displayBatches.sort((a, b) => {
       // PREPARING always top
-      if (a.batchStatus === 'PREPARING' && b.batchStatus !== 'PREPARING') return -1;
-      if (b.batchStatus === 'PREPARING' && a.batchStatus !== 'PREPARING') return 1;
+      if (a.status === 'PREPARING' && b.status !== 'PREPARING') return -1;
+      if (b.status === 'PREPARING' && a.status !== 'PREPARING') return 1;
 
       // Primary FIFO within status
       return (a.batchCreatedAt || 0) - (b.batchCreatedAt || 0);
-    }).slice(0, stationCapacity * 2); 
+    }).slice(0, stationCapacity); 
   }, [batches, optimisticStatus, activeStation, isMobile]);
 
   const activeItemsSlice = useMemo(() => (sortedItems || []).slice(0, 2), [sortedItems]);
@@ -156,14 +139,12 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     });
   }, [batches]);
 
-  // 🧠 [RHYTHM-MODE] FIX 5: Soft delay before refill
+  // 🧠 [RHYTHM-MODE] Soft delay before refill
   const [focus, setFocus] = useState<any>(null);
   useEffect(() => {
-    const nextFocus = activeItemsSlice[0];
+    const nextFocus = sortedItems[0];
     
-    // ⚡ [LIVE-SYNC]: Update focus if ID changes OR if the status of the current item updates
-    if (nextFocus?.id !== focus?.id || nextFocus?.batchStatus !== focus?.batchStatus) {
-       // Identity change gets a transition; Status change is instant for speed
+    if (nextFocus?.id !== focus?.id || nextFocus?.status !== focus?.status) {
        if (nextFocus?.id !== focus?.id) {
           const timer = setTimeout(() => setFocus(nextFocus), 150);
           return () => clearTimeout(timer);
@@ -171,15 +152,13 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
           setFocus(nextFocus);
        }
     }
-  }, [activeItemsSlice, focus?.id, focus?.batchStatus]);
+  }, [sortedItems, focus?.id, focus?.status]);
 
   const handleStart = async (batchId: string, items: any[]) => {
     if (!navigator.onLine) return alert("Waiting for connection...");
     if (processingMap[batchId]) return;
     
-    // 📳 [HAPTIC-PULSE]
     if (window.navigator.vibrate) window.navigator.vibrate(40);
-
     setOptimisticStatus(p => ({ ...p, [batchId]: 'PREPARING' }));
     setProcessingMap(p => ({ ...p, [batchId]: true }));
     try {
@@ -197,10 +176,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     if (!navigator.onLine) return alert("Waiting for connection...");
     if (processingMap[batchId]) return;
     
-    // 📳 [HAPTIC-PULSE]
     if (window.navigator.vibrate) window.navigator.vibrate([40, 20, 60]);
-
-    // Only use optimistic state for full batch finalization
     if (!count) setOptimisticStatus(p => ({ ...p, [batchId]: 'READY' }));
     
     setProcessingMap(p => ({ ...p, [batchId]: true }));
@@ -215,7 +191,6 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     }
   };
 
-  // ── EMPTY STATE ────────────────────────────────────────────────────────────
   if (sortedItems.length === 0) {
     return (
       <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] relative">
@@ -224,18 +199,13 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
           <div className="w-32 h-32 rounded-[3rem] bg-white/5 border-4 border-white/10 flex items-center justify-center mb-8">
             <Sparkles className="w-12 h-12 text-white/20" />
           </div>
-          <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter mb-3">
-             Pipeline Clear
-          </h2>
-          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">
-            Waiting for kitchen manifests...
-          </p>
+          <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter mb-3">Pipeline Clear</h2>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">Waiting for kitchen manifests...</p>
         </div>
       </div>
     );
   }
 
-  // ── MAIN LAYOUT ────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] overflow-hidden relative">
       <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[100px] rounded-full pointer-events-none" />
@@ -251,89 +221,63 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
       <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} />
 
       <div className={`flex flex-1 overflow-hidden ${isMobile ? 'flex-col' : 'flex-row'}`}>
-        {/* ── SIDEBAR QUEUE ───────────────────────────────────────────── */}
         {!isPassive && (
           <div className={`${isMobile ? 'h-32 border-b border-white/5' : 'w-80 border-r border-white/5'} flex flex-col bg-white/[0.01]`}>
-          <div className={`${isMobile ? 'hidden' : 'p-6 border-b border-white/5'}`}>
-            <h2 className="text-white font-black uppercase italic tracking-tight text-lg">Focus Pipeline</h2>
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">
-              {sortedItems.length < 5 ? 'Stable Flow' : 'High Velocity'} • {sortedItems.length} units
-            </p>
-          </div>
-          <div className={`flex-1 overflow-x-auto overflow-y-hidden ${isMobile ? 'p-2 flex flex-row gap-2' : 'p-4 space-y-3'}`}>
-            {sortedItems.map((it, i) => {
-              const isActive = i < (activeStation === 'dosa' ? 4 : (isMobile ? 2 : 8));
-              return (
+            <div className={`${isMobile ? 'hidden' : 'p-6 border-b border-white/5'}`}>
+              <h2 className="text-white font-black uppercase italic tracking-tight text-lg">Focus Pipeline</h2>
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">
+                {sortedItems.length} active batches
+              </p>
+            </div>
+            <div className={`flex-1 overflow-x-auto overflow-y-hidden ${isMobile ? 'p-2 flex flex-row gap-2' : 'p-4 space-y-3'}`}>
+              {sortedItems.map((b, i) => (
                 <div
-                  key={`${it.batchId}-${it?.id ?? i}-${i}`}
-                  className={`${isMobile ? 'p-2 rounded-xl' : 'p-5 rounded-[1.5rem]'} border transition-all ${isActive ? 'bg-emerald-500/15 border-emerald-500/50 shadow-[0_0_25px_rgba(16,185,129,0.2)] ring-2 ring-emerald-500/20' : 'bg-white/[0.02] border-white/5 opacity-30'} ${it.batchStatus === 'PREPARING' ? 'animate-[pulse_3s_infinite]' : ''}`}
+                  key={b.id}
+                  className={`${isMobile ? 'p-2 rounded-xl min-w-[120px]' : 'p-5 rounded-[1.5rem]'} border transition-all ${i === 0 ? 'bg-emerald-500/15 border-emerald-500/50 shadow-[0_0_25px_rgba(16,185,129,0.2)] ring-2 ring-emerald-500/20' : 'bg-white/[0.02] border-white/5 opacity-50'} ${b.status === 'PREPARING' ? 'animate-pulse' : ''}`}
                 >
-                  <div className={`flex items-center justify-between ${isMobile ? 'mb-1' : 'mb-3'} text-[7px] lg:text-[9px] font-black uppercase tracking-widest`}>
-                    <div className="flex items-center gap-1.5">
-                       <span className={it?.batchStatus === 'PREPARING' ? 'text-emerald-400 font-black' : 'text-white/40'}>
-                         {isActive ? '🔥 NOW' : '⏳ NEXT'}
-                       </span>
-                       {it?.ownerId && !isPassive && (
-                         <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-sm border border-white/10">
-                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                           <span className="text-white/60 font-black tracking-tighter">
-                             {it.ownerId === auth.currentUser?.uid ? 'YOU' : 'TAKEN'}
-                           </span>
-                         </div>
-                       )}
-                    </div>
-                    <span className={`text-white/20 ${isMobile ? 'hidden' : 'block'}`}>{it?.stationId ?? 'GEN'}</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-emerald-500 font-black text-[9px] uppercase tracking-widest">{b.status}</span>
+                    <span className="text-white/20 text-[9px] font-mono">#{b.id.slice(-4).toUpperCase()}</span>
                   </div>
-                  <h3 className={`text-white font-bold ${isMobile ? 'text-[10px] leading-tight truncate' : 'text-base truncate'}`}>
-                    {it?.name ?? 'Loading...'}
+                  <h3 className="text-white font-black italic truncate text-sm">
+                    {b.totalUnits}x {b.itemName || 'Items'}
                   </h3>
-                  <div className={`flex items-center gap-1 mt-0.5 ${isMobile ? 'flex-col items-start' : ''}`}>
-                    <p className={`${isMobile ? 'text-[7px]' : 'text-[10px]'} text-slate-500 font-bold uppercase`}>#{it?.orderId?.slice(-4).toUpperCase() ?? '####'}</p>
-                    {(it?.unitIndex ?? 0) > 0 && <span className={`${isMobile ? 'text-[6px]' : 'text-[9px]'} bg-white/5 text-white/40 px-1 rounded`}>P{(it?.unitIndex ?? 0) + 1}</span>}
-                  </div>
                 </div>
-              );
-            })}
-            
+              ))}
+            </div>
           </div>
-        </div>
         )}
 
-        {/* ── MAIN PAN ────────────────────────────────────────────────── */}
         <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-4' : 'p-10'}`}>
           {focus && (
             <div className={`max-w-3xl mx-auto ${isPassive ? 'pointer-events-none' : ''}`}>
-              <div className={`flex items-center justify-between ${isMobile ? 'mb-4' : 'mb-10'}`}>
-                <div className="flex items-center gap-4">
-                  {(focus?.ownerId && focus.ownerId !== auth.currentUser?.uid) && (
-                    <div className="w-10 h-10 lg:w-16 lg:h-16 bg-rose-500/20 border border-rose-500/40 rounded-full flex items-center justify-center animate-pulse">
-                      <Lock className="w-5 h-5 lg:w-8 lg:h-8 text-rose-500" />
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[8px] lg:text-[10px] mb-0.5 lg:mb-1 block">{(focus?.stationId ?? 'GEN')} STATION</span>
-                    <h1 className={`${isMobile ? 'text-2xl' : 'text-5xl'} font-black text-white uppercase italic tracking-tighter`}>
-                      {isPassive ? 'Live Mirror' : 'Kitchen Batch'}
-                    </h1>
-                  </div>
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                   <span className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[10px] mb-1 block">{focus.stationId} STATION</span>
+                   <h1 className="text-4xl lg:text-6xl font-black text-white uppercase italic tracking-tighter">
+                     {focus.totalUnits}x {focus.itemName}
+                   </h1>
                 </div>
                 <div className="text-right">
-                  <p className="text-[8px] lg:text-[10px] font-black text-white/20 uppercase tracking-[0.3em] mb-1">Order ID</p>
-                  <span className={`${isMobile ? 'text-4xl' : 'text-8xl'} font-black text-white tracking-widest leading-none font-mono drop-shadow-[0_0_30px_rgba(255,255,255,0.1)]`}>
-                    #{focus?.id?.slice(-4).toUpperCase() ?? '####'}
-                  </span>
+                   <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] mb-1">Batch Ref</p>
+                   <span className="text-4xl lg:text-7xl font-black text-white tracking-widest leading-none font-mono italic">#{focus.id.slice(-4).toUpperCase()}</span>
                 </div>
               </div>
- 
-              <div className={`bg-white/[0.03] border border-white/10 rounded-[2rem] lg:rounded-[3rem] ${isMobile ? 'p-4' : 'p-10'} ${focus.batchStatus === 'PREPARING' ? 'ring-4 ring-emerald-500/20 shadow-[0_0_50px_rgba(16,185,129,0.1)]' : ''}`}>
-                <div className={`${isMobile ? 'space-y-2 mb-4' : 'space-y-4 mb-10'}`}>
-                  {(focus?.fullBatchItems ?? []).map((it: any, i: number) => (
-                    <div key={`${it?.batchId ?? 'b'}-${i}`} className={`flex items-center justify-between ${isMobile ? 'p-3 rounded-xl' : 'p-6 rounded-[2rem]'} bg-white/[0.04] border border-white/10 shadow-xl ${focus.batchStatus === 'PREPARING' ? 'border-emerald-500/30' : ''}`}>
-                      <div>
-                        <h4 className={`${isMobile ? 'text-base' : 'text-2xl'} font-black text-white italic truncate`}>{it?.name ?? 'Item'}</h4>
-                        <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Item Unit</p>
+
+              <div className={`bg-white/[0.03] border border-white/10 rounded-[3rem] p-6 lg:p-10 ${focus.status === 'PREPARING' ? 'ring-4 ring-emerald-500/20 shadow-2xl' : ''}`}>
+                <div className="space-y-4 mb-10 overflow-y-auto max-h-64 pr-2 custom-scrollbar">
+                  {(focus.items || []).map((it: any, i: number) => (
+                    <div key={`${focus.id}-${i}`} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.04] border border-white/10">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 font-black text-xs italic">
+                          {it.quantity || 1}
+                        </div>
+                        <div>
+                          <h4 className="text-white font-black italic">{it.userName || 'Student'}</h4>
+                          <p className="text-[8px] font-black text-white/40 uppercase tracking-widest">Order ID: #{it.orderId.slice(-4).toUpperCase()}</p>
+                        </div>
                       </div>
-                      <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">#{it?.orderId?.slice(-4).toUpperCase() ?? '####'}</span>
+                      <span className="text-emerald-500 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">READY TO PREP</span>
                     </div>
                   ))}
                 </div>
@@ -345,10 +289,10 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                      </div>
                      <p className="text-white/10 font-black uppercase tracking-[0.2em] text-[9px]">Passive Mirror Terminal • ID: #{(focus?.stationId ?? 'GEN').toUpperCase()}</p>
                    </div>
-                ) : focus.batchStatus === 'QUEUED' ? (
+                ) : focus.status === 'QUEUED' ? (
                   <button
-                    onClick={() => handleStart(focus.batchId, focus.fullBatchItems)}
-                    disabled={!!processingMap[focus.batchId] || isOffline}
+                    onClick={() => handleStart(focus.id, focus.items)}
+                    disabled={!!processingMap[focus.id] || isOffline}
                     className={`${isMobile ? 'h-16' : 'h-20'} w-full bg-white text-black rounded-2xl lg:rounded-[1.5rem] font-black ${isMobile ? 'text-base' : 'text-lg'} uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] disabled:opacity-50`}
                   >
                     <Zap className="w-5 h-5 lg:w-7 lg:h-7 fill-current" /> {isOffline ? "RECONNECTING..." : "Start Cooking"}
@@ -358,18 +302,18 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                   return (
                     <div className="flex flex-col gap-3 lg:gap-4">
                       <button
-                        onClick={() => handleFinalize(focus.batchId, focus.fullBatchItems)}
-                        disabled={!!processingMap[focus.batchId] || !isOwner || isOffline}
+                        onClick={() => handleFinalize(focus.id, focus.items)}
+                        disabled={!!processingMap[focus.id] || !isOwner || isOffline}
                         className={`${isMobile ? 'h-16' : 'h-20'} w-full bg-emerald-500 text-white rounded-2xl lg:rounded-[1.5rem] font-black ${isMobile ? 'text-base' : 'text-lg'} uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20 disabled:opacity-50`}
                       >
                         {isOffline ? <><Clock className="w-5 h-5 lg:w-7 lg:h-7 animate-spin" /> Sync...</> : 
                          isOwner ? <><CheckCircle2 className="w-5 h-5 lg:w-7 lg:h-7" /> Complete All</> : <><Lock className="w-5 h-5 lg:w-7 lg:h-7" /> Busy</>}
                       </button>
                       
-                      {focus.fullBatchItems?.length > 1 && (
+                      {focus.items?.length > 1 && (
                         <button
-                          onClick={() => handleFinalize(focus.batchId, focus.fullBatchItems, 1)}
-                          disabled={!!processingMap[focus.batchId] || !isOwner || isOffline}
+                          onClick={() => handleFinalize(focus.id, focus.items, 1)}
+                          disabled={!!processingMap[focus.id] || !isOwner || isOffline}
                           className={`${isMobile ? 'h-12' : 'h-16'} w-full bg-white/[0.05] border border-white/10 text-white rounded-2xl lg:rounded-[1.5rem] font-black ${isMobile ? 'text-[10px]' : 'text-sm'} uppercase italic tracking-widest flex items-center justify-center gap-3 hover:bg-white/[0.1] transition-all disabled:opacity-50`}
                         >
                           <Zap className="w-3 h-3 lg:w-4 lg:h-4 text-emerald-500" /> Push Single Item

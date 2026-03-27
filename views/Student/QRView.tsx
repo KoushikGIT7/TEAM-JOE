@@ -241,8 +241,15 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
   const s = STATUS[statusKey] || STATUS.DEFAULT;
   const isReady = (statusKey === 'READY' || (orderForUI.items || []).some(i => i.status === 'READY')) && !isTimeExpired;
-  const isUnlocked = isReady || (orderForUI.items || []).some(it => it.orderType === 'FAST_ITEM') || orderForUI.serveFlowStatus === 'READY';
-  const qrVisible = shouldShowQR(orderForUI) || isUnlocked;
+  
+  const hasUnservedFastItem = (orderForUI.items || []).some(it => 
+    (it.orderType === 'FAST_ITEM' || ['Lunch', 'Beverages', 'Snacks'].includes(it.category || '')) && 
+    it.status !== 'SERVED' && 
+    it.status !== 'COMPLETED'
+  );
+
+  const isUnlocked = isReady || hasUnservedFastItem || orderForUI.serveFlowStatus === 'READY';
+  const qrVisible = shouldShowQR(orderForUI) && isUnlocked;
 
   return (
     <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white font-sans overflow-x-hidden">
@@ -382,7 +389,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         <div className="mt-8 flex flex-col items-center gap-2 px-10">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] text-center">
             {isServed ? 'Order Completed' : 
-             (isReady || (orderForUI.items || []).some(i => i.orderType === 'FAST_ITEM' || ['Lunch', 'Beverages', 'Snacks'].includes(i.category || ''))) ? 
+             (isReady || hasUnservedFastItem) ? 
              'Point this at counter scanner' : 
              `Cooking in progress - #${orderForUI.id.slice(-6).toUpperCase()}`}
           </p>

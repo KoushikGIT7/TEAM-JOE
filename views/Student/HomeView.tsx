@@ -466,17 +466,28 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <button
               onClick={async () => {
                 if (notifSubscribed) return;
-                // Direct browser permission request for instant UI feedback
+                
+                // 🛡️ [SECURITY-GUARD] If user has already denied, requesting again does nothing
+                if (Notification.permission === 'denied') {
+                  alert("Notifications are currently blocked by your browser. Please click the 'Lock' icon in your address bar and enable 'Notifications' to get order alerts.");
+                  return;
+                }
+
+                console.log('🔔 [HANDSHAKE] Initializing OneSignal subscribe via Big Deals bell.');
+                
+                // OneSignal handles the actual state synchronization
                 const joeSubscribe = (window as any).joeSubscribe;
-                if (typeof joeSubscribe === 'function') joeSubscribe();
-                // Also request directly so we can update UI immediately
-                try {
-                  const result = await Notification.requestPermission();
-                  if (result === 'granted') {
-                    setNotifSubscribed(true);
-                    syncOneSignal(profile?.uid || null);
-                  }
-                } catch { /* browser may not support requestPermission as promise */ }
+                if (typeof joeSubscribe === 'function') {
+                   joeSubscribe();
+                } else {
+                   // Fallback if SDK hasn't loaded
+                   Notification.requestPermission().then(res => {
+                      if (res === 'granted') {
+                        setNotifSubscribed(true);
+                        syncOneSignal(profile?.uid || null);
+                      }
+                   });
+                }
               }}
               title={notifSubscribed ? 'Subscribed to Deals!' : 'Tap to get Exclusive Deals!'}
               className={`relative flex items-center justify-center transition-all duration-500 active:scale-90
