@@ -4,7 +4,7 @@ import {
   PackageCheck, Loader2, X, XCircle
 } from 'lucide-react';
 import { serveSingleItem, rejectOrderItem, serveAllItems } from '../../services/firestore-db';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 interface ServerConsoleWorkspaceProps {
@@ -134,6 +134,22 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
     }
   };
 
+  const [readyShelf, setReadyShelf] = useState<any[]>([]);
+
+  // 🥘 [READY-SHELF] Proactively monitor kitchen handover
+  useEffect(() => {
+    const q = query(
+      collection(db, 'prepBatches'),
+      where('status', 'in', ['READY', 'ALMOST_READY']),
+      orderBy('updatedAt', 'desc'),
+      limit(20)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setReadyShelf(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
   const getStatusConfig = (item: LiveItem) => {
     const key = `${item.orderId}-${item.itemId}`;
     if (servedKeys.has(key) || item.status === 'SERVED') return {
@@ -146,9 +162,13 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
       cardClass: 'opacity-40', canAction: false,
       icon: <XCircle className="w-4 h-4 text-red-400" />,
     };
-    if (item.status === 'READY') return {
+    
+    // Check if this item exists in a batch on the ready shelf
+    const onShelf = readyShelf.some(b => b.items.some((bi: any) => bi.orderId === item.orderId && bi.itemId === item.itemId));
+
+    if (item.status === 'READY' || onShelf) return {
       badge: '⚡ READY TO SERVE', badgeClass: 'bg-emerald-500 text-white',
-      cardClass: 'border-emerald-300 bg-emerald-50', canAction: true,
+      cardClass: 'border-emerald-300 bg-emerald-50 ring-4 ring-emerald-500/10', canAction: true,
       icon: <Zap className="w-4 h-4 text-emerald-600 fill-current" />,
     };
     if (item.status === 'PREPARING') return {
@@ -190,6 +210,44 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
           SCAN
         </button>
       </div>
+
+      {/* READY SHELF BAR */}
+      {readyShelf.length > 0 && (
+        <div className="bg-emerald-50 border-b border-emerald-100 py-3 px-4 lg:px-8 flex items-center gap-4 overflow-x-auto no-scrollbar shrink-0 shadow-inner">
+           <div className="flex items-center gap-2 shrink-0 border-r border-emerald-200 pr-4 mr-2">
+             <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center animate-pulse">
+               <ChefHat className="w-4 h-4 text-white" />
+             </div>
+             <div>
+               <p className="text-[7px] font-black text-emerald-600 uppercase tracking-widest leading-none">Ready</p>
+               <p className="text-[10px] font-black text-emerald-900 uppercase italic leading-none">Shelf</p>
+             </div>
+           </div>
+           
+           <div className="flex items-center gap-3">
+             {readyShelf.map(batch => (
+               <div key={batch.id} className="h-10 px-4 rounded-xl bg-white border border-emerald-200 shadow-sm flex items-center gap-3 shrink-0">
+                 <div className="flex -space-x-2">
+                   {batch.items.slice(0, 3).map((it: any, idx: number) => (
+                     <div key={idx} className="w-6 h-6 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-emerald-600">
+                        {it.orderId.slice(-1).toUpperCase()}
+                     </div>
+                   ))}
+                   {batch.items.length > 3 && (
+                     <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500">
+                       +{batch.items.length - 3}
+                     </div>
+                   )}
+                 </div>
+                 <div className="min-w-0">
+                    <p className="text-[9px] font-black text-slate-900 uppercase truncate leading-tight">{batch.itemName}</p>
+                    <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest leading-tight">Batch #{batch.id.slice(-4).toUpperCase()}</p>
+                 </div>
+               </div>
+             ))}
+           </div>
+        </div>
+      )}
 
       {/* CONTENT */}
       <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6">
