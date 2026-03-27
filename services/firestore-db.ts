@@ -1441,8 +1441,7 @@ export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): 
   );
   const fallbackQ = query(
     collection(db, "orders"),
-    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED", "AWAITING_CONFIRMATION"]),
-    limit(50)
+    where("paymentStatus", "in", ["PENDING", "UTR_SUBMITTED", "AWAITING_CONFIRMATION"])
   );
 
   return safeListener(
@@ -1450,7 +1449,7 @@ export const listenToPendingCashOrders = (callback: (orders: Order[]) => void): 
     q,
     (snapshot) => {
       const orders = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
-      return orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      return orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 100);
     },
     () => [],
     callback,
