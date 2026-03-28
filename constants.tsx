@@ -83,21 +83,21 @@ export interface PreparationStationConfig {
 export const PREPARATION_STATIONS: Record<string, PreparationStationConfig> = {
   dosa: {
     id: 'dosa',
-    maxConcurrentPreparation: 4, // 🍳 4 pans / items at once
+    maxConcurrentPreparation: 8, // 🍳 6-8 Masala or 9-10 Set Dosa (Survey Average)
     name: 'Dosa Counter',
     nameKn: 'ದೋಸೆ ಕೌಂಟರ್',
-    avgPrepTimeSeconds: 60,
+    avgPrepTimeSeconds: 300, // ⏱️ 5 minutes per batch (Survey data)
   },
   kitchen: {
     id: 'kitchen',
-    maxConcurrentPreparation: 10, // 🍲 Bulk Handi/Rice cooking
+    maxConcurrentPreparation: 20, // 🍲 High volume bulk Handi/Rice batches (Survey: 150+ plates)
     name: 'Main Kitchen',
     nameKn: 'ಮುಖ್ಯ ಅಡುಗೆಮನೆ',
-    avgPrepTimeSeconds: 90,
+    avgPrepTimeSeconds: 1200, // ⏱️ 20 mins for re-batching Rice/Idli (Survey data)
   },
   default: {
     id: 'default',
-    maxConcurrentPreparation: 10, // 🍱 Instant Service capacity
+    maxConcurrentPreparation: 50, // 🍱 Fast Items / Pre-prepared Snacks
     name: 'Instant Service',
     nameKn: 'ತಕ್ಷಣದ ಸೇವೆ',
     avgPrepTimeSeconds: 30,

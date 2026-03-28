@@ -3212,7 +3212,7 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
            const lock = snap.data();
            if (now - (lock.acquiredAt || 0) < 5000 && lock.nodeId !== nodeId) return false;
         }
-        tx.set(lockRef, { nodeId, acquiredAt: now });
+tx.set(lockRef, { nodeId, acquiredAt: now });
         return true;
     }).catch(e => {
         // 🛡️ [SILENT-YIELD] If transaction aborts due to contention, another node won. Yield silently.
@@ -3221,6 +3221,40 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
     });
 
     if (!shouldRun) return;
+
+    // 🛡️ [BRAIN-PHASE-3] INVENTORY-AWARE REFILL LOGIC (Cook-to-Stock Support)
+    const inventorySnap = await getDocs(collection(db, "inventory_meta"));
+    for (const d of inventorySnap.docs) {
+       const meta = d.data() as any;
+       const threshold = meta.lowStockThreshold || 30;
+       
+       if ((meta.available || 0) < threshold && meta.stockStatus !== 'OUT_OF_STOCK') {
+          const existingRefillQ = query(
+             collection(db, "prepBatches"), 
+             where("itemId", "==", meta.itemId),
+             where("status", "in", ["QUEUED", "PREPARING"])
+          );
+          const erSnap = await getDocs(existingRefillQ);
+          
+          if (erSnap.empty) {
+             console.log(`🥘 [REFILL-SIGNAL] Low stock detected for ${meta.itemName}. Generating production manifest.`);
+             const batchId = `refill_${meta.itemId}_${now}`;
+             const sId = STATION_ID_BY_ITEM_ID[meta.itemId] || 'kitchen';
+             
+             await setDoc(doc(db, "prepBatches", batchId), {
+                id: batchId,
+                itemId: meta.itemId,
+                itemName: meta.itemName,
+                quantity: sId === 'kitchen' ? 150 : 20,
+                status: 'QUEUED',
+                stationId: sId,
+                isInternalRefill: true,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+             });
+          }
+       }
+    }
 
     // 🛡️ SAFETY 5: STALE READY CLEANUP (Items > 180s moved to RECALL)
     const staleReadySnap = await getDocs(query(
@@ -3242,11 +3276,13 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
       where("status", "in", ["QUEUED", "PREPARING"]),
       limit(50)
     ));
+    const existingBatches = activeBatchesSnap.docs.map(d => d.data());
     const stationLoad: Record<string, number> = {};
     activeBatchesSnap.forEach(d => {
       const b = d.data();
       const sId = b.stationId || 'default';
-      stationLoad[sId] = (stationLoad[sId] || 0) + (b.items?.length || 0);
+      // ⚖️ [TRUE-LOAD] Sum the total quantity (physical units) instead of doc count
+      stationLoad[sId] = (stationLoad[sId] || 0) + (b.quantity || b.items?.length || 0);
     });
 
     // 2. GET PENDING CANDIDATES
@@ -3304,7 +3340,7 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
     for (const sId of Object.keys(PREPARATION_STATIONS)) {
        const config = PREPARATION_STATIONS[sId];
        const currentLoad = stationLoad[sId] || 0;
-       const maxPipeline = config.maxConcurrentPreparation * 2; 
+       const maxPipeline = config.maxConcurrentPreparation * 3; 
 
        // 🧠 [HARD-STARVATION] Force 1 non-dosa item into active every 3 dosa cycles
        const isStarvationCycle = dosaCycleCount % 3 === 0;

@@ -139,14 +139,15 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     });
   }, [batches]);
 
-  // 🧠 [RHYTHM-MODE] Soft delay before refill
+  // 🧠 [RHYTHM-MODE] High-speed focus refill 
   const [focus, setFocus] = useState<any>(null);
   useEffect(() => {
     const nextFocus = sortedItems[0];
     
     if (nextFocus?.id !== focus?.id || nextFocus?.status !== focus?.status) {
+       // Identity change gets a micro-transition (40ms) to ensure smooth DOM swap
        if (nextFocus?.id !== focus?.id) {
-          const timer = setTimeout(() => setFocus(nextFocus), 150);
+          const timer = setTimeout(() => setFocus(nextFocus), 40);
           return () => clearTimeout(timer);
        } else {
           setFocus(nextFocus);
