@@ -248,7 +248,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
         // 🛑 MORNING DOSA LIMIT (Max 2 per student)
         const currentHour = new Date().getHours();
-        const isMorning = currentHour >= 7 && currentHour <= 9;
+        const isMorning = currentHour >= 7 && currentHour <= 10;
         const isDosa = item.name.toLowerCase().includes('dosa');
         if (isMorning && isDosa) {
           if (newQty > 2) {
@@ -258,10 +258,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         }
 
         // 🛑 MEAL LIMIT (Max 1 per student)
-        if (item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) {
+        if (item.category === 'Lunch' || item.name.toLowerCase().includes('meal') || item.name.toLowerCase().includes('idli')) {
           if (newQty > 1) {
-            alert("Only 1 meal can be ordered at a time per order. Please complete this order and place a new one if you need another.");
-            newQty = 1; // Strict limit 1 for meals
+            alert("This item is limited to 1 per scan for fast serving. Please scan again for another plate.");
+            newQty = 1; // Strict limit 1 for meals/idli
           }
         }
 

@@ -136,6 +136,17 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       console.log('✅ [UTR-SYNC] Firestore persistent.');
     } catch (err: any) {
       console.error('❌ [UTR-SYNC] Submission error:', err);
+      
+      // 🛡️ [RECOVERY-LOGIC] If order was deleted/failed, clear staleness
+      if (err?.code === 'not-found' || err?.message?.includes('not-found') || err?.message?.includes('No document to update')) {
+         console.warn("⚠️ [STALE-SESSION] Order missing. Resetting...");
+         localStorage.removeItem('activeOrderId');
+         setOrderId(null);
+         setState('IDLE');
+         alert('Session expired or cleared. Please place your order again.');
+         return;
+      }
+
       if (!err?.message?.includes('permission-denied')) {
         alert(err.message || 'Verification failed. Contact staff.');
       }

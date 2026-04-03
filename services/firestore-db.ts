@@ -55,7 +55,8 @@ import { DEFAULT_FOOD_IMAGE, INITIAL_MENU, DEFAULT_ORDERING_ENABLED, DEFAULT_SER
 
 export const MAX_BATCH_SIZE = 40;
 export const MAX_TOTAL_SLOT_CAPACITY = 200;
-export const PICKUP_WINDOW_DURATION_MS = 200000;
+/** ⏱️ [GRACE-PERIOD] Student has 15 minutes (900s) to pick up before it marks as missed */
+export const PICKUP_WINDOW_DURATION_MS = 900000; 
 import { offlineDetector } from '../utils/offlineDetector';
 
 const RETRY_QUEUE: Array<{ fn: () => Promise<any>, retries: number }> = [];
@@ -551,32 +552,36 @@ export const initializeMenu = async (): Promise<void> => {
  * Trigger this via browser console: window.cleanJOE()
  */
 export const resetCafeteriaData = async (): Promise<void> => {
-  if (!confirm("⚠️ DANGER: This will delete ALL orders and batches. Continue?")) return;
+  if (!confirm("⚠️ DANGER: This will delete ALL orders, items, and batches. Continue?")) return;
 
   try {
-     console.log("🧹 Starting Clean Sweep...");
+     console.log("🧹 Starting Deep Clean Sweep...");
      
-     // 1. Fetch all documents in active collections
-     const ordersSnap = await getDocs(collection(db, "orders"));
-     const batchesSnap = await getDocs(collection(db, "prepBatches"));
-     const statsSnap = await getDocs(collection(db, "slot_stats"));
-     const idempSnap = await getDocs(collection(db, "idempotency_keys"));
+     // 1. Fetch all documents in active collections & subcollections
+     const [ordersSnap, itemsSnap, batchesSnap, statsSnap, idempSnap] = await Promise.all([
+        getDocs(collection(db, "orders")),
+        getDocs(query(collectionGroup(db, "items"), limit(500))), // Wipe up to 500 sub-items
+        getDocs(collection(db, "prepBatches")),
+        getDocs(collection(db, "slot_stats")),
+        getDocs(collection(db, "idempotency_keys"))
+     ]);
 
      const batch = writeBatch(db);
 
      // 2. Queue all docs for deletion
      ordersSnap.docs.forEach(doc => batch.delete(doc.ref));
+     itemsSnap.docs.forEach(doc => batch.delete(doc.ref));
      batchesSnap.docs.forEach(doc => batch.delete(doc.ref));
      statsSnap.docs.forEach(doc => batch.delete(doc.ref));
      idempSnap.docs.forEach(doc => batch.delete(doc.ref));
 
      // 3. Commit the sweep
      await batch.commit();
-     console.log("✅ Clean Sweep Complete! System is now PRISTINE.");
+     console.log("✅ Deep Clean Complete! Pipeline is now PRISTINE.");
      window.location.reload(); 
   } catch (err) {
      console.error("❌ Clean Sweep Failed:", err);
-     alert("Sweep failed: check console.");
+     alert("Sweep failed: check console for errors.");
   }
 };
 
@@ -1057,8 +1062,22 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
       return cleanItem;
     });
 
-    // [ROOT-FIX] Separate writes for atomicity without transaction locking
+    // 🛡️ [IDEMPOTENCY-SHIELD] - Atomic Pre-check for duplicate requests
     const idempotencyKey = orderData.idempotencyKey;
+    if (idempotencyKey) {
+       try {
+          const idempRef = doc(db, "idempotency_keys", idempotencyKey);
+          const idempSnap = await getDoc(idempRef);
+          if (idempSnap.exists()) {
+             const existingId = idempSnap.data().orderId;
+             console.log(`🛡️ [IDEMPOTENCY] Duplicate request blocked. Using existing order: ${existingId}`);
+             return existingId;
+          }
+       } catch(e) {
+          console.warn("[IDEMPOTENCY] Pre-check failure. Proceeding with caution...");
+       }
+    }
+
     const idempRef = idempotencyKey ? doc(db, "idempotency_keys", idempotencyKey) : null;
     
     // Resolve item types
@@ -2250,7 +2269,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
 export const validateQRForServing = processAtomicIntake;
 
 /**
- * ðŸ› ï¸ FORCE READY: Manual override for servers when an item is physically ready 
+ * ðŸ› ï¸  FORCE READY: Manual override for servers when an item is physically ready 
  * but system says PENDING/PREPARING. Moves it to COLLECTING/READY.
  */
 export const forceReadyOrder = async (orderId: string, staffId: string): Promise<void> => {
@@ -3071,6 +3090,16 @@ export const finalizeBatch = async (batchId: string, items: any[], limitCount?: 
          avgPrepTimeMs: currentEma, 
          lastUpdated: serverTimestamp()
       }, { merge: true });
+      
+      const bData = snap.data();
+      if (bData.isInternalRefill && bData.itemId) {
+         console.log(`📦 [INVENTORY-FEEDBACK] Refill completed for ${bData.itemName}. Adding ${bData.quantity} units to shelf.`);
+         const invRef = doc(db, 'inventory_meta', bData.itemId);
+         tx.set(invRef, { 
+            available: increment(bData.quantity || 0),
+            updatedAt: serverTimestamp() 
+         }, { merge: true });
+      }
     }
 
     // 📡 [STUDENT-PULSE] Propagate READY status to root orders so student UI updates instantly
@@ -3157,11 +3186,10 @@ export const listenToKitchenOrders = (callback: (orders: Order[]) => void): (() 
  */
 let lastPulseAt = 0; 
 let lastProcessedItemFingerprint = "";
-let dosaCycleCount = 0; 
+let failsafeInterval: any = null;
+let dosaCycleCount = 0; // 🆔 [PERSISTENT-BRAIN-STATE] Must stay outside to track scarcity across pulses
 
 /** 🛡️ [BRAIN-CONTROLLER] Single Executive Authority Logic */
-let failsafeInterval: any = null;
-
 export const startSystemBrain = (nodeId: string) => {
    if (failsafeInterval) return;
    console.log(`🧠 [SYSTEM-BRAIN] Executive Authority started for node: ${nodeId}`);
@@ -3183,238 +3211,12 @@ export const stopSystemBrain = () => {
    }
 };
 
+import { runBatchGenerator as newBrain } from './brain-logic';
+
 export const runBatchGenerator = async (nodeId: string, force: boolean = false) => {
-  if (!auth.currentUser) return;
-  
-  // 🛡️ [BRAIN-ELIGIBILITY-GUARD] 
-  // Strict check to prevent unauthorized clients from hitting system docs
-  const user = auth.currentUser;
-  const now = Date.now();
-  
-  // 🛡️ [ANTI-THRASH] Cooldown to stabilize background logic (Reduced for forced pulses)
-  const cooldown = force ? 500 : 2000;
-  if (now - lastPulseAt < cooldown) return; 
-  lastPulseAt = now;
-
-  const lockRef = doc(db, "system_locks", "batch_generator");
-
-  try {
-    const currentLock = await getDoc(lockRef).catch(() => null);
-    if (currentLock?.exists()) {
-       const lockData = currentLock.data();
-       // Lease check: If lock was acquired < 10s ago by someone else, back off silently
-       if (now - (lockData.acquiredAt || 0) < 10000 && lockData.nodeId !== nodeId) return;
-    }
-
-    const shouldRun = await runTransaction(db, async (tx) => {
-        const snap = await tx.get(lockRef);
-        if (snap.exists()) {
-           const lock = snap.data();
-           if (now - (lock.acquiredAt || 0) < 5000 && lock.nodeId !== nodeId) return false;
-        }
-tx.set(lockRef, { nodeId, acquiredAt: now });
-        return true;
-    }).catch(e => {
-        // 🛡️ [SILENT-YIELD] If transaction aborts due to contention, another node won. Yield silently.
-        if (e.code === 'failed-precondition' || e.code === 'aborted') return false;
-        throw e;
-    });
-
-    if (!shouldRun) return;
-
-    // 🛡️ [BRAIN-PHASE-3] INVENTORY-AWARE REFILL LOGIC (Cook-to-Stock Support)
-    const inventorySnap = await getDocs(collection(db, "inventory_meta"));
-    for (const d of inventorySnap.docs) {
-       const meta = d.data() as any;
-       const threshold = meta.lowStockThreshold || 30;
-       
-       if ((meta.available || 0) < threshold && meta.stockStatus !== 'OUT_OF_STOCK') {
-          const existingRefillQ = query(
-             collection(db, "prepBatches"), 
-             where("itemId", "==", meta.itemId),
-             where("status", "in", ["QUEUED", "PREPARING"])
-          );
-          const erSnap = await getDocs(existingRefillQ);
-          
-          if (erSnap.empty) {
-             console.log(`🥘 [REFILL-SIGNAL] Low stock detected for ${meta.itemName}. Generating production manifest.`);
-             const batchId = `refill_${meta.itemId}_${now}`;
-             const sId = STATION_ID_BY_ITEM_ID[meta.itemId] || 'kitchen';
-             
-             await setDoc(doc(db, "prepBatches", batchId), {
-                id: batchId,
-                itemId: meta.itemId,
-                itemName: meta.itemName,
-                quantity: sId === 'kitchen' ? 150 : 20,
-                status: 'QUEUED',
-                stationId: sId,
-                isInternalRefill: true,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-             });
-          }
-       }
-    }
-
-    // 🛡️ SAFETY 5: STALE READY CLEANUP (Items > 180s moved to RECALL)
-    const staleReadySnap = await getDocs(query(
-       collection(db, "prepBatches"), 
-       where("status", "==", "READY"),
-       limit(10)
-    ));
-    const staleCutoff = now - 180000;
-    for (const b of staleReadySnap.docs) {
-       const bd = b.data();
-       const rAt = bd.readyAt?.toMillis?.() || bd.readyAt || 0;
-       if (rAt > 0 && rAt < staleCutoff) {
-          console.warn(`🛡️ [SAFETY-5] Recalling stale batch ${b.id}`);
-          await updateDoc(b.ref, { status: 'RECALL', recalledAt: serverTimestamp(), updatedAt: serverTimestamp() });
-       }
-    }
-    const activeBatchesSnap = await getDocs(query(
-      collection(db, "prepBatches"), 
-      where("status", "in", ["QUEUED", "PREPARING"]),
-      limit(50)
-    ));
-    const existingBatches = activeBatchesSnap.docs.map(d => d.data());
-    const stationLoad: Record<string, number> = {};
-    activeBatchesSnap.forEach(d => {
-      const b = d.data();
-      const sId = b.stationId || 'default';
-      // ⚖️ [TRUE-LOAD] Sum the total quantity (physical units) instead of doc count
-      stationLoad[sId] = (stationLoad[sId] || 0) + (b.quantity || b.items?.length || 0);
-    });
-
-    // 2. GET PENDING CANDIDATES
-    let candidateDocs = [];
-    try {
-      const q = query(
-        collectionGroup(db, "items"), 
-        where("status", "in", ["PENDING", "RESERVED"]),
-        orderBy("paidAt", "asc"),
-        limit(100) 
-      );
-      const snap = await getDocs(q);
-      candidateDocs = snap.docs;
-    } catch (e) {
-      console.warn("⚠️ [INDEX-PENDING] Fallback deep-scan active...");
-      // 🛡️ [FALLBACK-RECOVERY] Deepen scan to catch old re-queued orders
-      const recentOrders = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(40)));
-      for (const orderDoc of recentOrders.docs) {
-         const itemsSnap = await getDocs(query(collection(db, "orders", orderDoc.id, "items"), where("status", "in", ["PENDING", "RESERVED"])));
-         candidateDocs.push(...itemsSnap.docs);
-      }
-    }
-
-    if (candidateDocs.length === 0) return;
-
-    // 📉 [LOAD-SHEDDING] If system is throttled by heavy backend load, skip generation pulse
-    if (candidateDocs.length > 100) {
-       console.warn(`📉 [LOAD-SHEDDING] Heavy load detected (${candidateDocs.length} pending items). Pausing generator.`);
-       return;
-    }
-
-    const pendingItems = candidateDocs.map(d => {
-      const data = d.data();
-      const stationId = STATION_ID_BY_ITEM_ID[d.id] || 'default';
-      const paidAt = data.paidAt?.toMillis?.() || data.paidAt || Date.now();
-      const waitTimeBonus = (Date.now() - paidAt) / 60000; // 1 min wait = 1 min bonus
-      const scarcityWeight = stationId !== 'dosa' ? 2 : 1; // Non-dosa items get 2x presence weight 
-      
-      // 🚀 [PRIORITY-BOOST] Re-queued items get a massive score lead (10 mins artificially added weight)
-      const reQueueBonus = data.reQueuedAt ? (10 * 60000) : 0;
-      
-      return {
-        ...data,
-        id: d.id,
-        orderId: d.ref.parent.parent?.id || '',
-        stationId,
-        score: paidAt - (waitTimeBonus * 30000 * scarcityWeight) - reQueueBonus
-      };
-    }).sort((a, b) => a.score - b.score);
-
-    // 4. MICRO-BATCH ALLOCATION (Station-Aware)
-    const processedFingerprint: string[] = [];
-    dosaCycleCount++;
-
-    for (const sId of Object.keys(PREPARATION_STATIONS)) {
-       const config = PREPARATION_STATIONS[sId];
-       const currentLoad = stationLoad[sId] || 0;
-       const maxPipeline = config.maxConcurrentPreparation * 3; 
-
-       // 🧠 [HARD-STARVATION] Force 1 non-dosa item into active every 3 dosa cycles
-       const isStarvationCycle = dosaCycleCount % 3 === 0;
-       const stationItemsFull = pendingItems.filter(it => it.stationId === sId);
-       
-       let stationItems = stationItemsFull;
-       if (sId === 'dosa' && isStarvationCycle && pendingItems.some(it => it.stationId !== 'dosa')) {
-          // In dosa station loop, but it's a starvation cycle?
-          // We yield priority to the main kitchen for one micro-slot
-          console.log("🚦 [STARVATION-GUARD] Yielding dosa slot to non-dosa item.");
-          continue; 
-       }
-
-       if (currentLoad >= maxPipeline) continue;
-       if (stationItems.length === 0) continue;
-
-       let remainingGap = maxPipeline - currentLoad;
-
-       // 🏎️ [SMART-GROUPING] Group by itemId so each prepBatch is single-item type (UX requirement)
-       const groupedByItem: Record<string, typeof stationItems> = {};
-       stationItems.forEach(it => {
-          if (!groupedByItem[it.id]) groupedByItem[it.id] = [];
-          groupedByItem[it.id].push(it);
-       });
-
-       // 🧠 [SMART-SORT] Prioritize groups containing the highest-priority items (lowest score)
-       const sortedGroupIds = Object.keys(groupedByItem).sort((a, b) => {
-          const minScoreA = Math.min(...groupedByItem[a].map(it => it.score));
-          const minScoreB = Math.min(...groupedByItem[b].map(it => it.score));
-          return minScoreA - minScoreB;
-       });
-
-       for (const itemId of sortedGroupIds) {
-          const itemGroup = groupedByItem[itemId];
-          
-          let currentBatchUnits = 0;
-          const itemsToInclude: typeof itemGroup = [];
-          
-          for (const it of itemGroup) {
-             const qty = it.quantity || 1;
-             // If this order fits (or it's the first one in the batch and we want to allow slight burst)
-             if (currentBatchUnits + qty <= config.maxConcurrentPreparation || itemsToInclude.length === 0) {
-                itemsToInclude.push(it);
-                currentBatchUnits += qty;
-                if (currentBatchUnits >= config.maxConcurrentPreparation) break;
-             }
-          }
-
-          if (itemsToInclude.length > 0) {
-             const manifest = itemsToInclude.map(i => ({ 
-               orderId: i.orderId, 
-               itemId: i.id, 
-               name: i.name,
-               quantity: i.quantity || 1,
-               userName: i.userName || 'Student'
-             }));
-             
-             // 🚀 [UNIT-SENSITIVE-BATCH] totalQty is now the physical sum of units
-             await lockItemsToPrepBatch(manifest, sId, itemsToInclude[0].name, currentBatchUnits);
-             processedFingerprint.push(...itemsToInclude.map(b => b.id));
-             
-             // Reduce the station gap by the physical units we just allocated
-             remainingGap -= currentBatchUnits;
-             
-             if (remainingGap <= 0) break;
-          }
-       }
-    }
-    
-    console.log(`🧠 [HEAD-CHEF] Station re-fill pulse complete. Batched ${processedFingerprint.length} units.`);
-    
-  } catch (error) {
-    console.error("🔥 [CORE-ERROR] Batch generator failed:", error);
-  }
+   // 🛡️ [BRAIN-DELEGATION]
+   // Final stabilization: delegating to the new atomic orchestrator.
+   await newBrain(nodeId, force);
 };
 
 /**
@@ -3424,7 +3226,8 @@ tx.set(lockRef, { nodeId, acquiredAt: now });
 export const runKitchenWatchdog = async () => {
   const now = Date.now();
   try {
-    const expiredCutoff = now - (120 * 1000);
+    // 🛡️ [WATCHDOG-GRACE] Increase to 10 minutes (600s) to allow for busy periods
+    const expiredCutoff = now - (600 * 1000); 
     const q = query(
       collection(db, "prepBatches"),
       where("status", "==", "PREPARING"),
@@ -3687,7 +3490,6 @@ export const markBatchReady = async (batchId: string, limitCount?: number): Prom
           tx.update(ref, { 
             serveFlowStatus: 'READY',
             items: (data.items || []).map(it => {
-               // 🛡️ [Strict Readiness] Match by itemId and ensure terminal statuses (SERVED/READY) are respected
                const isTarget = it.id === bData.itemId;
                if (isTarget && it.status !== 'SERVED' && it.status !== 'READY') {
                   return { ...it, status: 'READY' as any };
@@ -3701,6 +3503,14 @@ export const markBatchReady = async (batchId: string, limitCount?: number): Prom
               status: 'COLLECTING'
             }
           });
+
+          // 🍱 [SUBCOLLECTION-SYNC] - Unlock the student's QR view state
+          const itemRef = doc(db, "orders", ref.id, "items", bData.itemId);
+          tx.set(itemRef, { 
+            status: 'READY' as any, 
+            readyAt: now,
+            updatedAt: serverTimestamp() 
+          }, { merge: true });
       });
     });
   } catch (err) {
@@ -3969,11 +3779,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
     if (updatedCount > 0) {
       await masterBatch.commit();
       console.log(`⚡ [SONIC-SYNC] Re-queued ${updatedCount} orders atomically.`);
-      
-      // 🏎️ [INSTANT-PULSE] Trigger generator with 'force' flag after minimal propagation delay
-      setTimeout(() => {
-        runBatchGenerator(nodeId || 'requeue-pulse', true).catch(() => {});
-      }, 500);
+      // Pulse will happen on next heartbeat naturally
     }
     return updatedCount;
   } catch (error) {

@@ -187,6 +187,15 @@
       ]
     },
     {
+      "collectionGroup": "prepBatches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "itemId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "notificationLogs",
       "queryScope": "COLLECTION",
       "fields": [

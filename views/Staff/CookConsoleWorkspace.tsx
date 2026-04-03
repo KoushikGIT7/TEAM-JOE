@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
-  ChefHat, Zap, CheckCircle2, Sparkles, Filter, Lock, Clock
+  ChefHat, Zap, CheckCircle2, Sparkles, Filter, Lock, Clock, Loader2
 } from 'lucide-react';
 import { PrepBatch } from '../../types';
 import { startBatch, finalizeBatch } from '../../services/firestore-db';
@@ -102,13 +102,16 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
       );
 
     const displayBatches = activeBatches.map(b => {
-      const totalUnits = (b.items || []).reduce((sum, it) => sum + (it.quantity || 1), 0);
+      // ⚖️ [QUANTITY-FIX] Fallback to top-level 'quantity' for refill batches with no sub-items
+      const totalUnits = (b.items && b.items.length > 0)
+        ? b.items.reduce((sum, it) => sum + (it.quantity || 1), 0)
+        : (b.quantity || 1);
+      
       return {
         ...b,
-        status: optimisticStatus[b.id] ?? b.status, // already applied above but for safety
+        status: optimisticStatus[b.id] ?? b.status, 
         totalUnits,
         batchCreatedAt: (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0,
-        // 🆔 [BATCH-UNIQUE-IDENTITY]
         id: b.id
       };
     });
@@ -282,7 +285,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                     </div>
                   ))}
                 </div>
- 
+
                 {isPassive ? (
                    <div className="py-12 text-center animate-in fade-in zoom-in slide-in-from-bottom-4 duration-700">
                      <div className="inline-block px-10 py-4 bg-emerald-500/10 border border-emerald-500/30 rounded-full mb-6">
@@ -294,35 +297,38 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                   <button
                     onClick={() => handleStart(focus.id, focus.items)}
                     disabled={!!processingMap[focus.id] || isOffline}
-                    className={`${isMobile ? 'h-16' : 'h-20'} w-full bg-white text-black rounded-2xl lg:rounded-[1.5rem] font-black ${isMobile ? 'text-base' : 'text-lg'} uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] disabled:opacity-50`}
+                    className="h-24 w-full bg-white text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] disabled:opacity-50"
                   >
-                    <Zap className="w-5 h-5 lg:w-7 lg:h-7 fill-current" /> {isOffline ? "RECONNECTING..." : "Start Cooking"}
+                    {processingMap[focus.id] ? <Loader2 className="w-8 h-8 animate-spin" /> : <><ChefHat className="w-8 h-8" /><span>START PREPARING BATCH</span></>}
                   </button>
-                ) : (() => {
-                  const isOwner = !focus.ownerId || focus.ownerId === auth.currentUser?.uid;
-                  return (
-                    <div className="flex flex-col gap-3 lg:gap-4">
-                      <button
-                        onClick={() => handleFinalize(focus.id, focus.items)}
-                        disabled={!!processingMap[focus.id] || !isOwner || isOffline}
-                        className={`${isMobile ? 'h-16' : 'h-20'} w-full bg-emerald-500 text-white rounded-2xl lg:rounded-[1.5rem] font-black ${isMobile ? 'text-base' : 'text-lg'} uppercase italic tracking-tight flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20 disabled:opacity-50`}
-                      >
-                        {isOffline ? <><Clock className="w-5 h-5 lg:w-7 lg:h-7 animate-spin" /> Sync...</> : 
-                         isOwner ? <><CheckCircle2 className="w-5 h-5 lg:w-7 lg:h-7" /> Complete All</> : <><Lock className="w-5 h-5 lg:w-7 lg:h-7" /> Busy</>}
-                      </button>
-                      
-                      {focus.items?.length > 1 && (
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-5 gap-3">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
                         <button
-                          onClick={() => handleFinalize(focus.id, focus.items, 1)}
-                          disabled={!!processingMap[focus.id] || !isOwner || isOffline}
-                          className={`${isMobile ? 'h-12' : 'h-16'} w-full bg-white/[0.05] border border-white/10 text-white rounded-2xl lg:rounded-[1.5rem] font-black ${isMobile ? 'text-[10px]' : 'text-sm'} uppercase italic tracking-widest flex items-center justify-center gap-3 hover:bg-white/[0.1] transition-all disabled:opacity-50`}
+                          key={num}
+                          onClick={() => handleFinalize(focus.id, focus.items, num)}
+                          disabled={!!processingMap[focus.id] || num > (focus.totalUnits || focus.quantity)}
+                          className={`h-20 bg-white/[0.05] hover:bg-emerald-500 text-white hover:text-black border border-white/10 rounded-2xl font-black text-2xl transition-all flex items-center justify-center active:scale-95 disabled:opacity-20 ${num > (focus.totalUnits || focus.quantity) ? 'opacity-20 pointer-events-none' : ''}`}
                         >
-                          <Zap className="w-3 h-3 lg:w-4 lg:h-4 text-emerald-500" /> Push Single Item
-                         </button>
-                      )}
+                          {num}x
+                        </button>
+                      ))}
                     </div>
-                  );
-                })()}
+                    
+                    <button
+                      onClick={() => handleFinalize(focus.id, focus.items)}
+                      disabled={!!processingMap[focus.id] || isOffline}
+                      className="h-24 w-full bg-emerald-500 text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20"
+                    >
+                      {processingMap[focus.id] ? <Loader2 className="w-8 h-8 animate-spin" /> : <><CheckCircle2 className="w-8 h-8" /><span>FINALIZE FULL BATCH ({focus.totalUnits || focus.quantity})</span></>}
+                    </button>
+
+                    <p className="text-center text-[10px] font-black text-white/20 uppercase tracking-[0.4em] pt-4 italic">
+                      Tap a number to dispense partial items from tawa
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}

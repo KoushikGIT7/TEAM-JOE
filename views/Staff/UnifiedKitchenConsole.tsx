@@ -1,20 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  CheckCircle, ChevronRight, Clock, AlertTriangle, ShieldAlert, Zap, 
-  Send, Sparkles, Search, ChevronLeft, CheckCircle2, ClipboardList,
-  ShieldCheck, LayoutDashboard, LogOut, X, Flame
+  MonitorOff, LogOut
 } from 'lucide-react';
 import { onSnapshot, query, collectionGroup, where, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { UserProfile } from '../../types';
 import { 
-  processAtomicIntake,
-  runBatchGenerator
+  runBatchGenerator,
+  startSystemBrain,
+  stopSystemBrain
 } from '../../services/firestore-db';
-import { parseServingQR } from '../../services/qr';
-import CookConsoleWorkspace from './CookConsoleWorkspace';
+import StaffDashboardV3 from './v3/StaffDashboardV3';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
-import QRScanner from '../../components/QRScanner';
 
 interface UnifiedKitchenConsoleProps {
   profile: UserProfile;
@@ -22,269 +19,20 @@ interface UnifiedKitchenConsoleProps {
   onBack?: () => void;
 }
 
-interface UnifiedHeaderProps {
-  profile: UserProfile;
-  onLogout: () => void;
-  onBack?: () => void;
-  currentTime: Date;
-  activeWorkspace: 'COOK' | 'SERVER' | 'MIRROR';
-  setActiveWorkspace: (workspace: 'COOK' | 'SERVER' | 'MIRROR') => void;
-}
-
-const UnifiedHeader: React.FC<UnifiedHeaderProps> = ({ profile, onLogout, onBack, currentTime, activeWorkspace, setActiveWorkspace }) => {
-  return (
-    <header className="bg-white px-4 lg:px-8 py-3 lg:h-20 flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-200 shrink-0 shadow-sm z-30 gap-4 lg:gap-0">
-      <div className="flex items-center justify-between w-full lg:w-auto lg:justify-start gap-4 lg:gap-6">
-         <div className="bg-slate-900 px-3 py-1.5 lg:px-5 lg:py-2 rounded-lg">
-            <span className="text-white font-bold text-sm lg:text-lg tracking-tight uppercase">JOE CAFE</span>
-         </div>
-         
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full lg:w-auto overflow-x-auto custom-scrollbar flex-nowrap">
-            <button 
-              onClick={() => setActiveWorkspace('COOK')}
-              className={`px-4 lg:px-6 h-9 lg:h-12 rounded-lg lg:rounded-full font-black text-[9px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
-                activeWorkspace === 'COOK' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Cook
-            </button>
-            <button 
-              onClick={() => setActiveWorkspace('SERVER')}
-              className={`px-4 lg:px-6 h-9 lg:h-12 rounded-lg lg:rounded-full font-black text-[9px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
-                activeWorkspace === 'SERVER' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Server
-            </button>
-            <button 
-              onClick={() => setActiveWorkspace('MIRROR')}
-              className={`px-4 lg:px-6 h-9 lg:h-12 rounded-lg lg:rounded-full font-black text-[9px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
-                activeWorkspace === 'MIRROR' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Mirror
-            </button>
-          </div>
-      </div>
-
-      <div className="flex items-center justify-between lg:justify-end w-full lg:w-auto gap-4 lg:gap-8 overflow-x-auto flex-nowrap pb-1 lg:pb-0">
-         <div className="text-right flex flex-col items-start lg:items-end">
-            <span className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Live Ops</span>
-            <span className="text-lg lg:text-2xl font-black text-slate-900 font-mono tracking-tighter leading-none whitespace-nowrap">
-               {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-         </div>
-         
-         <div className="h-8 lg:h-10 w-[1px] bg-slate-200 shrink-0" />
-
-         <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-            {profile.role === 'ADMIN' && onBack && (
-              <button 
-                onClick={onBack}
-                className="px-3 lg:px-4 h-10 lg:h-11 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-bold text-[10px] lg:text-xs uppercase hover:bg-slate-100 transition-all flex items-center gap-1.5 lg:gap-2 whitespace-nowrap"
-              >
-                <LayoutDashboard className="w-3 h-3 lg:w-4 lg:h-4" />
-                <span className="hidden sm:inline">Dashboard</span>
-              </button>
-            )}
-            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-slate-900 flex items-center justify-center text-white font-bold shadow-lg">
-               {profile.name?.charAt(0) || 'S'}
-            </div>
-            <button onClick={onLogout} className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-100 transition-all">
-              <LogOut className="w-4 h-4 lg:w-5 lg:h-5" />
-            </button>
-         </div>
-      </div>
-    </header>
-  );
-};
-
-const KitchenConsoleInner: React.FC<{ profile: UserProfile; onLogout: () => void; onBack?: () => void }> = ({ profile, onLogout, onBack }) => {
-  const [activeWorkspace, setActiveWorkspace] = useState<'COOK' | 'SERVER' | 'MIRROR'>('COOK');
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 1024);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    const onOnline = () => setIsOffline(false);
-    const onOffline = () => setIsOffline(true);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => {
-       window.removeEventListener('online', onOnline);
-       window.removeEventListener('offline', onOffline);
-    };
-  }, []);
-  
-  const [scanQueue, setScanQueue] = useState<string[]>([]);
-
-  const [sonicMode, setSonicMode] = useState<{
-    status: 'SUCCESS' | 'ERROR' | 'IDLE';
-    title: string;
-    sub: string;
-    icon: 'CHECK' | 'X' | 'CLOCK';
-  }>({ status: 'IDLE', title: '', sub: '', icon: 'CHECK' });
-
-  const triggerSonicPulse = (status: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
-    setSonicMode({ status, title, sub, icon: status === 'SUCCESS' ? 'CHECK' : 'X' });
-    if ('vibrate' in navigator) {
-      if (status === 'SUCCESS') navigator.vibrate(100);
-      else navigator.vibrate([200, 100, 200]);
-    }
-
-    setTimeout(() => {
-       setSonicMode(prev => {
-          if (prev.status === 'IDLE') return prev;
-          return { ...prev, status: 'IDLE' };
-       });
-    }, 800);
-  };
-
-  const scanLockRef = useRef(false);
-  const setExternalMapRef = useRef<any>(null);
-
-  useEffect(() => {
-    const clockInterval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-
-    // Only the primary staff device running the SERVER workspace acts as the brain.
-    const isBrainEligible = (profile.role === 'SERVER' || profile.role === 'ADMIN' || profile.role === 'COOK') && (activeWorkspace === 'SERVER' || activeWorkspace === 'COOK');
-
-    if (isBrainEligible) {
-       import('../../services/firestore-db').then(m => m.startSystemBrain(profile.uid));
-    }
-
-    const unsubGenerator = onSnapshot(
-       query(collectionGroup(db, "items"), where("status", "in", ["PENDING", "RESERVED"]), limit(100)),
-       (snap) => {
-          if (!isBrainEligible) return;
-          if (snap.docs.length > 60) return;
-          runBatchGenerator(profile.uid);
-       }
-    );
-
-    const onOnline = () => {
-       if (isBrainEligible) runBatchGenerator(profile.uid);
-    };
-    window.addEventListener('online', onOnline);
-
-    return () => {
-      clearInterval(clockInterval);
-      if (unsubGenerator) unsubGenerator();
-      window.removeEventListener('online', onOnline);
-      import('../../services/firestore-db').then(m => m.stopSystemBrain());
-    };
-  }, [profile.uid, activeWorkspace]);
-
-  const handleQRScan = useCallback(async (rawData: string) => {
-    if (!rawData?.trim() || scanLockRef.current) return;
-
-    scanLockRef.current = true;
-    setIsCameraOpen(false);
-
-    try {
-        const intake = parseServingQR(rawData.trim());
-        if (!intake.orderId) throw new Error("INVALID_QR");
-        triggerSonicPulse('SUCCESS', 'VERIFYING...', `#${intake.orderId.slice(-4).toUpperCase()}`);
-
-        const { result, order } = await processAtomicIntake(rawData.trim(), profile.uid);
-
-        if (result === 'ALREADY_MANIFESTED' || result === 'MANIFESTED' || result === 'CONSUMED') {
-            const isDone = result === 'CONSUMED';
-            const label = isDone ? 'ORDER COMPLETE ✅' : (result === 'ALREADY_MANIFESTED' ? 'TOKEN ACTIVE ✅' : 'PARTIAL RELEASE ✅');
-            const sub = isDone ? 'ALL ITEMS READY FOR HANDOVER' : 'ITEMS LOADED ON SERVER SCREEN';
-            
-            // 🚀 [SIGNAL-PUSH]: Ensure items are in local memory so they show up instantly
-            if (setExternalMapRef.current && order.items) {
-               setExternalMapRef.current((prev: any) => ({ ...prev, [order.id]: order.items }));
-            }
-            
-            // Critical: Always add to manifest queue so server can see it
-            setScanQueue(prev => Array.from(new Set([...prev, order.id])));
-            triggerSonicPulse('SUCCESS', label, sub);
-        } else if (result === 'AWAITING_PAYMENT') {
-        triggerSonicPulse('ERROR', 'SCAN ERROR', result.replace('_', ' '));
-        }
-    } catch (err: any) {
-        triggerSonicPulse('ERROR', 'SCAN ERROR', (err.message || 'Unknown').toUpperCase().slice(0, 20));
-    } finally {
-        setTimeout(() => { scanLockRef.current = false; }, 800);
-    }
-  }, [profile.uid]);
-
-  const handleOrderPreload = useCallback((setter: any) => {
-    setExternalMapRef.current = setter;
-  }, []);
-
-  return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden text-slate-900 select-none">
-      {isOffline && (
-        <div className="bg-red-600 text-white px-8 py-2 text-center font-black text-[10px] uppercase tracking-widest animate-pulse flex items-center justify-center gap-3 shrink-0 z-50">
-           <AlertTriangle className="w-3 h-3" /> Connection unstable. Reconnecting to kitchen brain...
-        </div>
-      )}
-      <UnifiedHeader 
-        profile={profile} 
-        onLogout={onLogout} 
-        onBack={onBack}
-        currentTime={currentTime}
-        activeWorkspace={activeWorkspace}
-        setActiveWorkspace={setActiveWorkspace}
-      />
-      
-      <main className="flex-1 overflow-hidden relative">
-        {activeWorkspace === 'COOK' && (
-          <CookConsoleWorkspace isMobile={isMobile} />
-        )}
-        
-        {activeWorkspace === 'SERVER' && (
-          <ServerConsoleWorkspace 
-            scanQueue={scanQueue}
-            setScanQueue={setScanQueue as any}
-            setIsCameraOpen={setIsCameraOpen}
-            isMobile={isMobile}
-            onOrderDataPreload={handleOrderPreload}
-          />
-        )}
-        
-        {activeWorkspace === 'MIRROR' && (
-          <div className="h-full w-full bg-[#0a0a0c] overflow-hidden">
-            <CookConsoleWorkspace isPassive={true} />
-          </div>
-        )}
-
-        {sonicMode.status !== 'IDLE' && (
-          <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-75 ${
-              sonicMode.status === 'ERROR' ? 'bg-rose-600' : 'bg-emerald-600'
-          }`}>
-             <div className="bg-white/20 p-8 rounded-[3rem] backdrop-blur-3xl border border-white/30 shadow-2xl scale-110 mb-8">
-                {sonicMode.status === 'SUCCESS' ? <ShieldCheck className="w-24 h-24 text-white" /> : <ShieldAlert className="w-24 h-24 text-white" />}
-             </div>
-             <h1 className="text-4xl lg:text-6xl font-black text-white uppercase tracking-tighter italic mb-4 drop-shadow-2xl">{sonicMode.title}</h1>
-             <p className="text-base lg:text-xl font-black text-white/80 uppercase tracking-[0.3em] font-mono">{sonicMode.sub}</p>
-          </div>
-        )}
-
-        {isCameraOpen && (
-          <QRScanner
-            onScan={handleQRScan}
-            onClose={() => setIsCameraOpen(false)}
-          />
-        )}
-      </main>
-    </div>
-  );
-};
-
 const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, onLogout, onBack }) => {
+  const [isClassicMode, setIsClassicMode] = useState(false);
+
+  useEffect(() => {
+    // 🧠 [SYSTEM-BRAIN] Initialize the executive brain on this staff device
+    if (profile && (profile.role === 'SERVER' || profile.role === 'ADMIN' || profile.role === 'COOK')) {
+       startSystemBrain(profile.uid);
+    }
+
+    return () => {
+      stopSystemBrain();
+    };
+  }, [profile.uid, profile.role]);
+
   if (!profile) {
     return (
       <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
@@ -294,7 +42,54 @@ const UnifiedKitchenConsole: React.FC<UnifiedKitchenConsoleProps> = ({ profile, 
       </div>
     );
   }
-  return <KitchenConsoleInner profile={profile} onLogout={onLogout} onBack={onBack} />;
+
+  // 🚀 [MODERN-EXPERIENCE] V3 Dashboard
+  if (!isClassicMode) {
+      return (
+          <div className="relative h-screen bg-black overflow-hidden">
+              <StaffDashboardV3 
+                  profile={profile} 
+                  onLogout={onLogout} 
+                  onBack={onBack} 
+              />
+              {/* Internal toggle for rollout safety */}
+              <button 
+                  onClick={() => setIsClassicMode(true)}
+                  className="fixed bottom-4 left-4 z-[100] px-4 py-2 bg-white/5 hover:bg-white/10 text-white/20 hover:text-white/40 text-[10px] font-black uppercase tracking-widest rounded-lg border border-white/5 transition-all flex items-center gap-2"
+              >
+                  <MonitorOff className="w-3 h-3" /> Classic Console
+              </button>
+          </div>
+      );
+  }
+
+  // 🏛️ [LEGACY-MODE] Original Workspace (for rollout safety)
+  return (
+    <div className="h-screen flex flex-col bg-slate-950">
+        <header className="h-14 bg-slate-900 flex items-center justify-between px-6 border-b border-white/5">
+            <span className="text-white/40 font-black text-[10px] uppercase tracking-widest italic">Legacy Console Mode</span>
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={() => setIsClassicMode(false)} 
+                    className="text-emerald-400 font-black text-[10px] uppercase tracking-widest border border-emerald-500/30 px-3 py-1 rounded-full hover:bg-emerald-500/10 transition-all"
+                >
+                    Return to V3 Modern
+                </button>
+                <button onClick={onLogout} className="text-white/40 hover:text-white transition-colors">
+                    <LogOut className="w-4 h-4" />
+                </button>
+            </div>
+        </header>
+
+        <div className="flex-1 overflow-hidden relative">
+            {/* Minimal legacy fallback */}
+            <ServerConsoleWorkspace 
+                scanQueue={[]} 
+                setIsCameraOpen={() => {}} 
+            />
+        </div>
+    </div>
+  );
 };
 
 export default UnifiedKitchenConsole;

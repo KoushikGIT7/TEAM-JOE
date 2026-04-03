@@ -83,33 +83,58 @@ export interface PreparationStationConfig {
 export const PREPARATION_STATIONS: Record<string, PreparationStationConfig> = {
   dosa: {
     id: 'dosa',
-    maxConcurrentPreparation: 8, // 🍳 6-8 Masala or 9-10 Set Dosa (Survey Average)
+    maxConcurrentPreparation: 10, // 🍳 Optimized for high-volume Dosa tawa
     name: 'Dosa Counter',
     nameKn: 'ದೋಸೆ ಕೌಂಟರ್',
-    avgPrepTimeSeconds: 300, // ⏱️ 5 minutes per batch (Survey data)
+    avgPrepTimeSeconds: 300,
+  },
+  rice_frying: {
+    id: 'rice_frying',
+    maxConcurrentPreparation: 12, // 🍳 Wok-based frying partition
+    name: 'Rice Frying Counter',
+    nameKn: 'ರೈಸ್ ಫ್ರೈಯಿಂಗ್ ಕೌಂಟರ್',
+    avgPrepTimeSeconds: 420,
+  },
+  beverages: {
+    id: 'beverages',
+    maxConcurrentPreparation: 20, // ☕ Multi-glass tea/coffee tray batching
+    name: 'Tea & Coffee Section',
+    nameKn: 'ಟೀ ಮತ್ತು ಕಾಫಿ ವಿಭಾಗ',
+    avgPrepTimeSeconds: 120,
   },
   kitchen: {
     id: 'kitchen',
-    maxConcurrentPreparation: 20, // 🍲 High volume bulk Handi/Rice batches (Survey: 150+ plates)
-    name: 'Main Kitchen',
-    nameKn: 'ಮುಖ್ಯ ಅಡುಗೆಮನೆ',
-    avgPrepTimeSeconds: 1200, // ⏱️ 20 mins for re-batching Rice/Idli (Survey data)
+    maxConcurrentPreparation: 25, // 🍲 Bulk Handi/Idli/Bulk preps
+    name: 'Main Kitchen Prep',
+    nameKn: 'ಮುಖ್ಯ ಅಡುಗೆಮನೆ ತಯಾರಿ',
+    avgPrepTimeSeconds: 900,
   },
   default: {
     id: 'default',
-    maxConcurrentPreparation: 50, // 🍱 Fast Items / Pre-prepared Snacks
-    name: 'Instant Service',
-    nameKn: 'ತಕ್ಷಣದ ಸೇವೆ',
-    avgPrepTimeSeconds: 30,
+    maxConcurrentPreparation: 100, // 🍱 Instant Front-Counter Items (Plate Meal)
+    name: 'Front Counter',
+    nameKn: 'ಮುಂಭಾಗದ ಕೌಂಟರ್',
+    avgPrepTimeSeconds: 15,
   },
 };
 
-/** Categorization for Smart Kitchen Workflow */
+/** Categorization for Smart Kitchen Workflow (Physical Partitioning) */
 export const STATION_ID_BY_ITEM_ID: Record<string, string> = {
-  'BKT01': 'kitchen', 'BKT02': 'kitchen', 'BKT05': 'kitchen', 'BKT07': 'kitchen', 'BKT08': 'kitchen', 'BKT09': 'kitchen', // Tiffin items
-  'BKT03': 'dosa', 'BKT04': 'dosa', 'BKT06': 'dosa', // Dosa station items
-  'BKT10': 'kitchen',
-  'LCH02': 'kitchen', 'LCH04': 'kitchen', 'LCH05': 'kitchen',
+  // --- KITCHEN (Main Bulk) ---
+  'BKT01': 'kitchen', 'BKT02': 'kitchen', 'BKT05': 'kitchen', 'BKT07': 'kitchen', 'BKT08': 'kitchen', 'BKT09': 'kitchen', 
+  
+  // --- DOSA COUNTER ---
+  'BKT03': 'dosa', 'BKT04': 'dosa', 'BKT06': 'dosa', 
+
+  // --- RICE FRYING COUNTER ---
+  'LCH02': 'rice_frying', 'LCH04': 'rice_frying', 'LCH05': 'rice_frying', 'BKT10': 'rice_frying',
+  
+  // --- BEVERAGE STATION ---
+  'BEV01': 'beverages', 'BEV02': 'beverages', 'BEV03': 'beverages', 'BEV04': 'beverages', 'BEV05': 'beverages', 'BEV06': 'beverages',
+
+  // --- FRONT COUNTER (Instant) ---
+  'LCH01': 'default', 'LCH03': 'default', 'LCH06': 'default', 'LCH07': 'default',
+  'SNK01': 'default', 'SNK02': 'default', 'SNK03': 'default', 'SNK04': 'default',
 };
 
 // --- BILINGUAL UI LABELS ---
