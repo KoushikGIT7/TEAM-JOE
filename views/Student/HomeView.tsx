@@ -246,22 +246,21 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       } else {
         let newQty = newCart[item.id].quantity + delta;
 
-        // 🛑 MORNING DOSA LIMIT (Max 2 per student)
-        const currentHour = new Date().getHours();
-        const isMorning = currentHour >= 7 && currentHour <= 10;
         const isDosa = item.name.toLowerCase().includes('dosa');
-        if (isMorning && isDosa) {
-          if (newQty > 2) {
-            alert("Maximum 2 Dosas allowed per student during morning rush.");
-            newQty = 2; // Strict limit 2 per person
+
+        // 🛑 DOSA LIMIT (Max 1 per student)
+        if (isDosa) {
+          if (newQty > 1) {
+            alert("Maximum 1 Dosa allowed per scan for fast serving.");
+            newQty = 1; // Strict limit 1 per person
           }
         }
 
         // 🛑 MEAL LIMIT (Max 1 per student)
-        if (item.category === 'Lunch' || item.name.toLowerCase().includes('meal') || item.name.toLowerCase().includes('idli')) {
+        if (item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) {
           if (newQty > 1) {
             alert("This item is limited to 1 per scan for fast serving. Please scan again for another plate.");
-            newQty = 1; // Strict limit 1 for meals/idli
+            newQty = 1; // Strict limit 1 for meals
           }
         }
 
