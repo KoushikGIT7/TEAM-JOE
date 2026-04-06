@@ -18,36 +18,34 @@
     window.joeSubscribe = function() {
       console.log('🔔 [CLICK-DETECTION] Notification Bell tapped.');
       
-      if (!window.OneSignalDeferred) {
+      const os = (window as any).OneSignal;
+      if (!os) {
          console.warn('⚠️ [ONESIGNAL-MISSING] SDK script failed to load from CDN. Handshake impossible.');
          return;
       }
 
-      if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-        console.error('🛑 Critical: OneSignal REQUIRES HTTPS (Secure Context) or Localhost to function at the browser level.');
-        alert("Notification Engine blocked. You are running on an insecure connection (HTTP). OneSignal requires HTTPS.");
-        return;
-      }
-
-      window.OneSignalDeferred.push(async function(OneSignal) {
-        console.log('[JOE] Triggering Notification Handshake...');
+      window.OneSignalDeferred.push(async function() {
+        console.log('[JOE] Triggering Notification Handshake UI...');
         try {
-          // 🛡️ [DOUBLE-STRIKE] Request permission AND opt-in
-          const permission = await OneSignal.Notifications.requestPermission();
-          console.log('[JOE] Notification Status:', permission);
+          // In v16, we check the existing permission first
+          const currentPermission = os.Notifications.permission;
           
-          if (permission === 'granted') {
-            // Force opt-in if the student had manually disabled it before
-            if (OneSignal.User?.PushSubscription) {
-              await OneSignal.User.PushSubscription.optIn();
-              console.log('[JOE] Push registration forced active.');
-            }
-            window.dispatchEvent(new CustomEvent('joe_notif_granted'));
-          } else {
-             console.warn('[JOE] Handshake denied by student browser.');
+          if (!currentPermission) {
+             await os.Notifications.requestPermission();
+          } else if (currentPermission === 'granted') {
+             // Already granted? Re-register user and flip the UI
+             window.dispatchEvent(new CustomEvent('joe_notif_granted'));
+          }
+          
+          // Force Opt-In regardless of permission state to ensure Delivery
+          await os.User.PushSubscription.optIn();
+          console.log('[JOE] Handshake completed successfully.');
+          
+          if (os.Notifications.permission === 'granted') {
+             window.dispatchEvent(new CustomEvent('joe_notif_granted'));
           }
         } catch(e) {
-          console.error('[JOE] Critical Handshake failure:', e);
+          console.error('[JOE] Handshake failure:', e);
         }
       });
     };

@@ -1094,8 +1094,8 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     });
 
     const prepItems = itemsWithResolvedType.filter(it => it.orderType === 'PREPARATION_ITEM');
-    const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
-    const isDynamic = requestedQty > 0;
+    const isDynamic = prepItems.some(it => (STATION_ID_BY_ITEM_ID[it.id] || 'default') !== 'default');
+    const hasDosa = orderData.items.some(i => i.name.toLowerCase().includes('dosa'));
 
     // Build per-station requested quantities
     const qtyByStation: Record<string, number> = {};
@@ -1104,19 +1104,19 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         qtyByStation[station] = (qtyByStation[station] || 0) + it.quantity;
     });
 
-    // ⏲️ THE 5-MINUTE SLOT RESERVATION LOGIC (Station-Based Soft-Cap Packing)
-    // Avoids the "Shared Capacity" and "Slot Splitting" flaws.
-    let targetSlot = orderData.arrivalTime || 0;
-    
-    if (isDynamic && targetSlot === 0) {
-        // Read the panic button delay so new orders are naturally staggered
-        let currentGlobalDelay = 0;
-        try {
-           const sysSnap = await getDoc(doc(db, "system_settings", "main"));
-           if (sysSnap.exists()) currentGlobalDelay = sysSnap.data().globalDelayMins || 0;
-        } catch(e) {}
+    const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
 
-        const targetMins = (new Date().getHours() * 60) + new Date().getMinutes() + 5 + currentGlobalDelay;
+    // ⏲️ DYNAMIC TIMER LOGIC: 4 mins for DOSA varieties, 0 mins for all other items.
+    let targetSlot = 0; // Default to Instant
+    
+    if (isDynamic) {
+        // Dosa or preparation items - Use a 4 minute window by default
+        const nowMs = Date.now();
+        const fourMinsInMs = 4 * 60 * 1000;
+        
+        // Slot Stats logic for Dosa Counter only
+        const now = new Date();
+        const targetMins = (now.getHours() * 60) + now.getMinutes() + 4; // Start at +4 mins
         let testMins = Math.ceil(targetMins / 5) * 5; 
         let foundSlot = false;
         
@@ -1127,37 +1127,22 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
            try {
               const snap = await getDoc(doc(db, "slot_stats", slotTest.toString()));
               const statData = snap.exists() ? snap.data() : {};
+              const currentVol = statData['dosa'] || 0;
               
-              // 🛠️ SOFT-CAP PACKING: If current volume is < 10, we can add to it even if it pushes slightly over (e.g., 8 + 4 = 12).
-              let allStationsFit = true;
-              for (const [station] of Object.entries(qtyByStation)) {
-                 const currentVol = statData[station] || 0;
-                 if (currentVol >= 10) { // If it's already full, we can't pack more. Move to next slot.
-                    allStationsFit = false;
-                    break;
-                 }
-              }
-              
-              if (allStationsFit) {
+              if (currentVol < 10) { 
                  targetSlot = slotTest;
                  foundSlot = true;
                  break;
               }
            } catch { break; } 
-           
            testMins += 5;
         }
-        
         if (!foundSlot) targetSlot = (Math.floor(testMins / 60) % 24) * 100 + (testMins % 60);
 
-        // 🛑 Hard Morning Capacity Block (Max 25 mins of continuous Dosa: 8:40 to 9:05)
-        const now = new Date();
+        // Security: Block morning Dosa if past capacity
         const currentTimeInt = now.getHours() * 100 + now.getMinutes();
-        const isMorningRush = currentTimeInt >= 700 && currentTimeInt <= 905;
-        const hasDosa = orderData.items.some(i => i.name.toLowerCase().includes('dosa'));
-
-        if (isMorningRush && hasDosa && targetSlot > 905) {
-            throw new Error("Morning Dosa capacity is completely full! Kitchen is maxed out. Walk-in orders available after 9:05 AM.");
+        if (currentTimeInt >= 700 && currentTimeInt <= 905 && hasDosa && targetSlot > 905) {
+             throw new Error("Morning Dosa capacity is completely full! Walk-in orders available after 9:05 AM.");
         }
     }
     const finalizedBatchIds: string[] = [];

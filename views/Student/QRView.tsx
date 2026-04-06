@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ChevronLeft, CheckCircle2, ChefHat, Clock, Check, PackageCheck, AlertCircle } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, ChefHat, Clock, Check, PackageCheck, AlertCircle, ArrowLeft, ShoppingBag } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order, CartItem } from '../../types';
@@ -264,45 +264,59 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     prevItemsRef.current = items;
   }, [items, isFullyServed]);
 
-  if (loading) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
-  if (!order) return <div className="h-screen w-full flex items-center justify-center bg-white">Order missing</div>;
+  // 🧭 [AUTOMATIC-TRANSITION-ENGINE]: Redirect once 100% fulfilled
+  useEffect(() => {
+    if (isFullyServed) {
+       const timer = setTimeout(() => {
+          onBack(); 
+       }, 3000);
+       return () => clearTimeout(timer);
+    }
+  }, [isFullyServed, onBack]);
+
+  if (loading || !order) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
 
   const activeItem = items[activeItemIdx] || items[0];
 
   return (
     <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white overflow-x-hidden font-sans select-none relative">
-      <div className="px-6 py-8 flex items-center justify-between">
-        <button onClick={onBack} className="p-3 bg-gray-50 rounded-2xl active:scale-95 transition-all">
-          <ChevronLeft className="w-5 h-5 text-gray-400" />
+      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-6 border-b border-slate-50 flex items-center justify-between">
+        <button onClick={onBack} disabled={isFullyServed} className="w-11 h-11 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all">
+          <ArrowLeft className="w-5 h-5 text-slate-600" />
         </button>
-        <div className="text-right">
-          <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-0.5">Order ID</p>
-          <p className="text-sm font-black text-gray-900 tracking-tight italic">#{orderId.slice(-6).toUpperCase()}</p>
+        <div className="flex flex-col items-center">
+           <h2 className="text-[10px] font-black uppercase text-slate-300 tracking-[0.2em] mb-0.5">Serving Token</h2>
+           <p className="text-sm font-black text-slate-800 tracking-tighter">#{order.id.slice(-8).toUpperCase()}</p>
         </div>
-      </div>
-
-      <div className="px-8 mb-8 text-center text-balance">
-        <h1 className="text-3xl font-black text-gray-900 tracking-tighter leading-none mb-2">
-          {isDone ? 'Enjoy your meal!' : isMissed ? 'Slot Missed' : 'Scan to Collect'}
-        </h1>
-        <p className="text-sm font-bold text-gray-400 leading-tight">
-          {isDone ? 'Handover completed successfully.' : 'Your QR code will unlock as soon as food is ready.'}
-        </p>
+        <button onClick={onViewOrders} className="w-11 h-11 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all text-slate-400">
+           <ShoppingBag className="w-5 h-5" />
+        </button>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-6">
-        <RichQRCard 
-          qrString={generateQRPayloadSync(order, activeItem.id)}
-          activeItem={activeItem}
-          isVisible={qrVisible}
-          isServed={isDone}
-          isMissed={isMissed}
-          activeColors={activeColors}
-          itemConfig={getItemConfig(activeItem.id)}
-        />
+        {isFullyServed ? (
+          <div className="flex flex-col items-center justify-center animate-in zoom-in fade-in duration-700">
+             <div className="w-40 h-40 bg-emerald-50 rounded-[40%] flex items-center justify-center mb-8 shadow-2xl shadow-emerald-500/10">
+                <CheckCircle2 className="w-20 h-20 text-emerald-500" />
+             </div>
+             <h3 className="text-4xl font-black text-slate-900 tracking-tight leading-none text-center">Meals Served!</h3>
+             <p className="text-base font-bold text-slate-400 mt-4 text-center px-8">Your entire order has been successfully picked up. Enjoy your meal!</p>
+             <p className="text-[10px] uppercase font-black text-emerald-500 mt-12 tracking-[0.2em] animate-pulse">Auto-redirecting in 3s...</p>
+          </div>
+        ) : (
+          <RichQRCard 
+            qrString={generateQRPayloadSync(order, activeItem.id)}
+            activeItem={activeItem}
+            isVisible={qrVisible}
+            isServed={isDone}
+            isMissed={isMissed}
+            activeColors={activeColors}
+            itemConfig={getItemConfig(activeItem.id)}
+          />
+        )}
       </div>
 
-      {items.length > 1 && (
+      {items.length > 1 && !isFullyServed && (
         <div className="px-6 py-6 border-t border-gray-50 bg-gray-50/30 overflow-x-auto">
           <div className="flex items-center justify-center gap-5">
             {items.map((item, idx) => (
