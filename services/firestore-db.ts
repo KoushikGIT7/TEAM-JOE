@@ -1189,13 +1189,13 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
             }
             await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
 
-            // 🍱 Real-time Batching Injection (Transactional Root)
+            // 🍱 [LIGHTNING-INJECTION]: Create prepBatch directly from client for zero-latency kitchen visibility
             if (finalizedOrder.paymentStatus === 'SUCCESS') {
                 const now = Date.now();
+                
+                // 1. Update individual item statuses
                 await Promise.all(itemsWithResolvedType.map((it: any) => {
                    const itRef = doc(db, "orders", id, "items", it.id);
-                   
-                   // 🛡️ [ROOT-FIX]: ONLY Trust the resolved orderType. Dosas are PREPARATION_ITEMs.
                    const isFast = it.orderType === 'FAST_ITEM';
                    
                    return setDoc(itRef, { 
@@ -1206,6 +1206,32 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
                      updatedAt: serverTimestamp() 
                    }, { merge: true });
                 }));
+
+                // 2. Inject into kitchen production (prepBatches) immediately
+                if (isDynamic) {
+                   for (const [station, qty] of Object.entries(qtyByStation)) {
+                      // Filter items for THIS specific station
+                      const stationItems = prepItems.filter(it => (STATION_ID_BY_ITEM_ID[it.id] || 'default') === station);
+                      if (stationItems.length === 0) continue;
+
+                      // Create a record that the cook listens to via onSnapshot
+                      await addDoc(collection(db, "prepBatches"), {
+                         stationId: station,
+                         items: stationItems.map(it => ({
+                            orderId: id,
+                            itemId: it.id,
+                            name: it.name,
+                            quantity: it.quantity,
+                            userName: finalizedOrder.userName
+                         })),
+                         status: 'QUEUED',
+                         createdAt: serverTimestamp(),
+                         updatedAt: serverTimestamp(),
+                         orderIds: [id],
+                         arrivalTimeSlot: targetSlot
+                      });
+                   }
+                }
             } else {
                 console.log(`[BATCH-BYPASS] skipping batch for pending payment: ${id}`);
             }
