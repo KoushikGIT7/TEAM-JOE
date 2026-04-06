@@ -69,11 +69,10 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
        const paidAt = data.paidAt?.toMillis?.() || data.paidAt || now;
        const waitTimeMins = (now - paidAt) / 60000;
        
-       let tier = 1;
+       let tier = 2; // Standard Kitchen Tier
        if (data.reQueuedAt) tier = 5;
        else if (waitTimeMins > 10) tier = 4;
        else if (waitTimeMins > 5) tier = 3;
-       else if (sId !== 'dosa') tier = 2;
 
        return {
          ...data,

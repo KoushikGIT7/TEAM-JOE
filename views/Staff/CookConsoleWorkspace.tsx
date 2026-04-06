@@ -124,10 +124,10 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
       if (a.status === 'PREPARING' && b.status !== 'PREPARING') return -1;
       if (b.status === 'PREPARING' && a.status !== 'PREPARING') return 1;
 
-      // Primary FIFO within status
-      return (a.batchCreatedAt || 0) - (b.batchCreatedAt || 0);
-    }).slice(0, stationCapacity); 
-  }, [batches, optimisticStatus, activeStation, isMobile]);
+    // Primary FIFO within status
+    return (a.batchCreatedAt || 0) - (b.batchCreatedAt || 0);
+  });
+}, [batches, optimisticStatus, activeStation, isMobile]);
 
   const activeItemsSlice = useMemo(() => (sortedItems || []).slice(0, 2), [sortedItems]);
 
@@ -198,7 +198,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
   if (sortedItems.length === 0) {
     return (
       <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] relative">
-        <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} />
+        <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} batches={batches} />
         <div className="flex-1 flex flex-col items-center justify-center text-center p-20 select-none">
           <div className="w-32 h-32 rounded-[3rem] bg-white/5 border-4 border-white/10 flex items-center justify-center mb-8">
             <Sparkles className="w-12 h-12 text-white/20" />
@@ -222,7 +222,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
         </div>
       )}
 
-      <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} />
+      <StationBar stations={stations} active={activeStation} setActive={setActiveStation} fallback={false} batches={batches} />
 
       <div className={`flex flex-1 overflow-hidden ${isMobile ? 'flex-col' : 'flex-row'}`}>
         {!isPassive && (
@@ -340,24 +340,39 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
 
 // ── SHARED STATION BAR ─────────────────────────────────────────────────────
 const StationBar = ({
-  stations, active, setActive, fallback,
-}: { stations: string[]; active: string; setActive: (s: string) => void; fallback: boolean }) => (
-  <div className="h-16 border-b border-white/5 flex items-center px-6 gap-3 bg-white/[0.01] shrink-0 overflow-x-auto no-scrollbar">
-    <Filter className="w-4 h-4 text-slate-500 shrink-0" />
-    {Array.from(new Set(stations)).map(s => (
-      <button
-        key={s}
-        onClick={() => setActive(s)}
-        className={`px-5 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${active === s ? 'bg-white text-black' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}
-      >
-        {s.replace('_', ' ')}
-      </button>
-    ))}
-    <div className="ml-auto flex items-center gap-2 shrink-0">
-      <span className={`w-2 h-2 rounded-full ${fallback ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
-      <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">{fallback ? 'Fallback Sync' : 'WebSocket Live'}</span>
+  stations, active, setActive, fallback, batches
+}: { stations: string[]; active: string; setActive: (s: string) => void; fallback: boolean, batches: any[] }) => {
+  const getCount = (sId: string) => {
+    if (sId === 'ALL') return batches.length;
+    return batches.filter(b => (b.stationId || 'GENERAL') === sId).length;
+  };
+
+  return (
+    <div className="h-16 border-b border-white/5 flex items-center px-6 gap-3 bg-white/[0.01] shrink-0 overflow-x-auto no-scrollbar">
+      <Filter className="w-4 h-4 text-slate-500 shrink-0" />
+      {Array.from(new Set(stations)).map(s => {
+        const count = getCount(s);
+        return (
+          <button
+            key={s}
+            onClick={() => setActive(s)}
+            className={`px-5 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-all flex items-center gap-2 ${active === s ? 'bg-white text-black' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}
+          >
+            {s.replace('_', ' ')}
+            {count > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-md text-[8px] ${active === s ? 'bg-black text-white' : 'bg-white/10 text-white/40'}`}>
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+      <div className="ml-auto flex items-center gap-2 shrink-0">
+        <span className={`w-2 h-2 rounded-full ${fallback ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
+        <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">{fallback ? 'Fallback Sync' : 'WebSocket Live'}</span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default CookConsoleWorkspace;
