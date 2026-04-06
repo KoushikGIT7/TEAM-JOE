@@ -23,7 +23,7 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
   // 🥊 ASYNC LOCKS (Optimistic UI)
   const isProcessingScannerRef = useRef(false);
 
-  const resetToIdle = useCallback((delay = 2000) => {
+  const resetToIdle = useCallback((delay = 1200) => {
     setTimeout(() => {
       setScanState('IDLE');
       setFeedback('');
@@ -48,7 +48,7 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       if (result === 'CONSUMED') {
         setScanState('ERROR');
         setFeedback('ALREADY SERVED');
-        resetToIdle();
+        resetToIdle(1000); // ⚡ [Frictionless Error Reset]
         return;
       }
 
@@ -60,7 +60,7 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       if (!targetItem && targetItemId !== 'all') {
          setScanState('ERROR');
          setFeedback('WRONG ITEM SELECTION');
-         resetToIdle(3000);
+         resetToIdle(1000);
          return;
       }
 
@@ -72,7 +72,7 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       if (isReadySet.length === 0) {
          setScanState('COOKING');
          setFeedback('SELECT READY ITEM FIRST');
-         resetToIdle(3000);
+         resetToIdle(1800); // Long enough to read
          return;
       }
 
@@ -87,19 +87,19 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       if ('speechSynthesis' in window) {
         const msg = new SpeechSynthesisUtterance();
         msg.text = 'Served';
-        msg.rate = 1.4;
+        msg.rate = 1.6; // 🔥 [Agile speech]
         window.speechSynthesis.speak(msg);
       }
 
       setScanState('SUCCESS');
       setStudentName(order.userName || 'Student');
       setServedItems(isReadySet.map(i => i.name));
-      resetToIdle(1800);
+      resetToIdle(800); // ⚡ [Rapid-Fire Handover]
 
     } catch (err: any) {
       setScanState('ERROR');
       setFeedback(err.message || 'UNABLE TO SERVE');
-      resetToIdle();
+      resetToIdle(1000);
     }
   }, [profile.uid, resetToIdle]);
 

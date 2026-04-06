@@ -15,30 +15,18 @@ interface QRViewProps {
   onViewOrders?: () => void;
 }
 
-const ITEM_COLOR_MAP: Record<string, { color: string; glow: string; label: string; emoji: string }> = {
-  'BKT01': { color: '#EF4444', glow: 'rgba(239,68,68,0.7)',   label: 'IDLI (2PCS)',   emoji: '🔴' },
-  'BKT08': { color: '#EF4444', glow: 'rgba(239,68,68,0.7)',   label: 'POHA',         emoji: '🔴' },
-  'BKT09': { color: '#EF4444', glow: 'rgba(239,68,68,0.7)',   label: 'UPMA',         emoji: '🔴' },
-  'BKT03': { color: '#F97316', glow: 'rgba(249,115,22,0.7)',  label: 'MASALA DOSA',  emoji: '🟠' },
-  'BKT06': { color: '#F97316', glow: 'rgba(249,115,22,0.7)',  label: 'ONION DOSA',   emoji: '🟠' },
-  'BKT10': { color: '#F97316', glow: 'rgba(249,115,22,0.7)',  label: 'BREAD OMELETTE', emoji: '🟠' },
-  'BKT04': { color: '#22C55E', glow: 'rgba(34,197,94,0.7)',   label: 'SET DOSA',     emoji: '🟢' },
-  'BKT02': { color: '#22C55E', glow: 'rgba(34,197,94,0.7)',   label: 'TOMATO BATH',  emoji: '🟢' },
-  'BKT05': { color: '#22C55E', glow: 'rgba(34,197,94,0.7)',   label: 'LEMON RICE',   emoji: '🟢' },
-  'BKT07': { color: '#22C55E', glow: 'rgba(34,197,94,0.7)',   label: 'MEDU VADA',    emoji: '🟢' },
-  'LCH01': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'PLATE MEAL',   emoji: '🟡' },
-  'LCH02': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'EGG RICE',     emoji: '🟡' },
-  'LCH03': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'JEERA RICE',   emoji: '🟡' },
-  'LCH04': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'EGG BHURJI',   emoji: '🟡' },
-  'LCH05': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'MASALA OMELETTE', emoji: '🟡' },
-  'LCH06': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'VEG BIRYANI',  emoji: '🟡' },
-  'LCH07': { color: '#EAB308', glow: 'rgba(234,179,8,0.7)',   label: 'CURD RICE',    emoji: '🟡' },
-  'BEV01': { color: '#3B82F6', glow: 'rgba(59,130,246,0.7)',  label: 'CHAI / TEA',   emoji: '🔵' },
-  'BEV02': { color: '#3B82F6', glow: 'rgba(59,130,246,0.7)',  label: 'COFFEE',       emoji: '🔵' },
-  'BEV03': { color: '#3B82F6', glow: 'rgba(59,130,246,0.7)',  label: 'HOT MILK',     emoji: '🔵' },
+const ITEM_COLOR_MAP: Record<string, { color: string; label: string; emoji: string }> = {
+  'BKT01': { color: '#94A3B8', label: 'IDLI (2PCS)',   emoji: '⚪' }, // Grey-White
+  'BKT03': { color: '#F97316', label: 'MASALA DOSA',  emoji: '🟠' }, // Saffron
+  'BKT06': { color: '#D946EF', label: 'ONION DOSA',   emoji: '🟣' }, // Purple
+  'BKT04': { color: '#22C55E', label: 'SET DOSA',     emoji: '🟢' }, // Green
+  'BKT10': { color: '#F43F5E', label: 'BREAD OMELETTE', emoji: '🔴' },
+  'LCH01': { color: '#EAB308', label: 'PLATE MEAL',   emoji: '🟡' },
+  'BEV01': { color: '#3B82F6', label: 'CHAI / TEA',   emoji: '🔵' },
+  'BEV02': { color: '#3B82F6', label: 'COFFEE',       emoji: '🔵' },
 };
 
-const DEFAULT_COLOR = { color: '#8B5CF6', glow: 'rgba(139,92,246,0.7)', label: 'ITEM', emoji: '⭐' };
+const DEFAULT_COLOR = { color: '#8B5CF6', label: 'ITEM', emoji: '⭐' };
 const getItemConfig = (itemId: string) => ITEM_COLOR_MAP[itemId] || DEFAULT_COLOR;
 
 const getItemBadge = (item: CartItem): 'SERVED' | 'READY' | 'COOKING' | 'QUEUED' => {
@@ -56,54 +44,51 @@ interface RichQRCardProps {
   isVisible: boolean;
   isServed: boolean;
   isMissed: boolean;
-  activeColors: string[];
   itemConfig: any;
 }
 
 const RichQRCard: React.FC<RichQRCardProps> = ({
-  qrString, activeItem, isVisible, isServed, isMissed, activeColors, itemConfig
+  qrString, activeItem, isVisible, isServed, isMissed, itemConfig
 }) => {
   const badge = getItemBadge(activeItem);
   const qty = activeItem.quantity ?? 1;
   const isDosaType = DOSA_LOCK_IDS.has(activeItem.id);
   const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
-  const qrUnlocked = isVisible && !isMissed && !isAlreadyServed && (!isDosaType || (badge !== 'QUEUED' && badge !== 'COOKING'));
+  
+  // 🛡️ [STRICT-KITCHEN-LOCK]: Dosas require READY status. Others release immediately if order is active.
+  const qrUnlocked = isVisible && !isMissed && !isAlreadyServed && (!isDosaType || badge === 'READY');
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative p-1.5 rounded-[3rem] transition-all duration-700">
+      <div className="relative p-2 rounded-[3.5rem] transition-all duration-700">
         
-        {/* 🌀 HIGH-VELOCITY RAINBOW LASER (Anti-Screenshot) */}
-        {!isAlreadyServed && (
-          <div className="absolute -inset-10 z-0 overflow-hidden rounded-[50%] blur-3xl pointer-events-none opacity-40">
-             <div 
-               className="absolute -inset-[50%] animate-rotate" 
-               style={{ 
-                 background: `conic-gradient(from 0deg, #3b82f6, #ef4444, #22c55e, #eab308, #3b82f6)`
-               }}
-             />
+        {/* ⚡ SONIC LASER BORDER (Item Color Linked) */}
+        {qrUnlocked && (
+          <div className="laser-container" style={{ '--laser-color': itemConfig.color } as any}>
+            <div className="laser-line" />
+            <div className="laser-mask" />
           </div>
         )}
 
-        <div className={`relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10 transition-all duration-700 ${qrUnlocked ? 'animate-float animate-glow' : ''}`} style={{ '--glow-color': itemConfig.glow } as any}>
+        <div className={`relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-sm border border-gray-100 flex items-center justify-center z-10 transition-all duration-700`}>
           
           {/* ⚡ LASER SCAN LINE */}
           {qrUnlocked && (
-            <div className="absolute inset-x-0 h-0.5 bg-emerald-500/40 blur-[2px] z-30 animate-scan pointer-events-none" />
+            <div className="absolute inset-x-0 h-0.5 bg-emerald-500/20 blur-[1px] z-30 animate-scan pointer-events-none" />
           )}
 
           {qrUnlocked && (
-            <div className={`transition-all duration-700 bg-white p-5 rounded-3xl shadow-inner contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
+            <div className={`transition-all duration-700 bg-white p-5 rounded-3xl contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
               <QRCodeSVG value={qrString} size={230} level="M" fgColor="#000000" bgColor="#FFFFFF" />
             </div>
           )}
 
-          {/* 🛡️ LIVE SECURITY TICK (Prevents Screenshots) */}
+          {/* 🛡️ LIVE SECURITY TICK (Anti-Screenshot) */}
           {qrUnlocked && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-               <span className="text-[10px] font-mono font-black text-white tracking-widest whitespace-nowrap">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-white/80 backdrop-blur-md px-3 py-1 rounded-full border border-black/5 shadow-sm">
+               <span className="text-[10px] font-mono font-black text-slate-900 tracking-widest whitespace-nowrap">
                  {(new Date()).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                 <span className="opacity-50 ml-1">.{(Date.now() % 1000).toString().padStart(3, '0').slice(0, 1)}s</span>
+                 <span className="opacity-30 ml-1">.{(Date.now() % 1000).toString().padStart(3, '0').slice(0, 1)}s</span>
                </span>
             </div>
           )}
@@ -118,23 +103,23 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
           )}
 
           {!qrUnlocked && !isServed && !isMissed && !isAlreadyServed && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/95 animate-in fade-in duration-500">
-               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-xl ${badge === 'COOKING' ? 'bg-orange-500' : 'bg-gray-800'}`}>
-                 {badge === 'COOKING' ? <ChefHat className="w-10 h-10 text-white" /> : <Clock className="w-10 h-10 text-white" />}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white animate-in fade-in duration-500">
+               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center ${badge === 'COOKING' ? 'bg-orange-50' : 'bg-slate-50'}`}>
+                 {badge === 'COOKING' ? <ChefHat className="w-10 h-10 text-orange-500" /> : <Clock className="w-10 h-10 text-slate-400" />}
                </div>
                <div className="text-center px-6">
-                 <p className="text-lg font-black text-gray-900 tracking-tight">{badge === 'COOKING' ? 'Cooking Now' : 'Queued'}</p>
-                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1.5">QR unlocks when ready</p>
+                 <p className="text-lg font-black text-slate-900 tracking-tight">{badge === 'COOKING' ? 'Cooking Now' : 'In Queue'}</p>
+                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 italic">QR Unlocks when Ready</p>
                </div>
             </div>
           )}
 
           {(isAlreadyServed || isServed) && !isMissed && (
-            <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500 z-40">
+            <div className="absolute inset-0 bg-white flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500 z-40">
               <div className="w-24 h-24 bg-emerald-50 rounded-[40%] flex items-center justify-center mb-4">
                  <CheckCircle2 className="w-12 h-12 text-emerald-500" />
               </div>
-              <p className="text-lg font-black text-gray-900 tracking-tighter uppercase leading-none italic">Handover Complete</p>
+              <p className="text-lg font-black text-slate-900 tracking-tighter uppercase leading-none italic">Handover Complete</p>
               <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-2">{itemConfig.label} Served</p>
             </div>
           )}
@@ -310,7 +295,6 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
             isVisible={qrVisible}
             isServed={isDone}
             isMissed={isMissed}
-            activeColors={activeColors}
             itemConfig={getItemConfig(activeItem.id)}
           />
         )}

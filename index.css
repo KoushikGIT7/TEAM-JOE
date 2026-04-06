@@ -152,3 +152,42 @@ input[type=range]::-webkit-slider-thumb {
   background-size: 200% 200%;
   animation: bg-shimmer 10s infinite linear;
 }
+
+/* ⚡ SONIC LASER BORDER ENGINE */
+@keyframes laser-rotate {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.laser-container {
+  position: absolute;
+  inset: -12px;
+  overflow: hidden;
+  border-radius: 3.5rem;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.laser-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 300%;
+  height: 300%;
+  background: conic-gradient(
+    from 0deg, 
+    transparent 0deg, 
+    transparent 320deg, 
+    var(--laser-color, #10b981) 340deg, 
+    var(--laser-color, #10b981) 360deg
+  );
+  animation: laser-rotate 3s infinite linear;
+}
+
+.laser-mask {
+  position: absolute;
+  inset: 6px;
+  background: white;
+  border-radius: 3rem;
+  z-index: 1;
+}

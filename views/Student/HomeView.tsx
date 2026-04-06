@@ -4,7 +4,7 @@ import { getOrderUIState } from '../../utils/orderLifecycle';
 import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
-import { CATEGORIES } from '../../constants';
+import { CATEGORIES, STATION_ID_BY_ITEM_ID, FAST_ITEM_CATEGORIES } from '../../constants';
 import { getMenuOnce, listenToUserOrders, saveCartDraft } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import Logo from '../../components/Logo';
@@ -80,7 +80,18 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     setCart(prev => {
       const newCart = { ...prev };
       if (!newCart[item.id]) {
-        if (delta > 0) newCart[item.id] = { ...item, quantity: 1, orderType: item.orderType || 'PREPARATION_ITEM', status: 'PENDING' };
+        if (delta > 0) {
+            const hasStation = !!STATION_ID_BY_ITEM_ID[item.id];
+            const isCategoryFast = !!FAST_ITEM_CATEGORIES.includes(item.category || '');
+            const resolvedOrderType = hasStation ? 'PREPARATION_ITEM' : (isCategoryFast ? 'FAST_ITEM' : 'PREPARATION_ITEM');
+            
+            newCart[item.id] = { 
+                ...item, 
+                quantity: 1, 
+                orderType: resolvedOrderType, 
+                status: (resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING') 
+            };
+        }
       } else {
         let newQty = newCart[item.id].quantity + delta;
         const isDosa = item.name.toLowerCase().includes('dosa');
