@@ -65,23 +65,25 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
 }) => {
   const badge = getItemBadge(activeItem);
   const qty = activeItem.quantity ?? 1;
-  const config = getItemConfig(activeItem.id);
   const isDosaType = DOSA_LOCK_IDS.has(activeItem.id);
-  const qrUnlocked = isVisible && !isMissed && (!isDosaType || (badge !== 'QUEUED' && badge !== 'COOKING'));
+  const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
+  const qrUnlocked = isVisible && !isMissed && !isAlreadyServed && (!isDosaType || (badge !== 'QUEUED' && badge !== 'COOKING'));
 
   return (
     <div className="flex flex-col items-center">
       <div className="relative p-1.5 rounded-[3rem] transition-all duration-700">
         
         {/* 🌀 HIGH-VELOCITY RAINBOW LASER (Anti-Screenshot) */}
-        <div className="absolute -inset-10 z-0 overflow-hidden rounded-[50%] blur-3xl pointer-events-none opacity-40">
-           <div 
-             className="absolute -inset-[50%] animate-rotate" 
-             style={{ 
-               background: `conic-gradient(from 0deg, #3b82f6, #ef4444, #22c55e, #eab308, #3b82f6)`
-             }}
-           />
-        </div>
+        {!isAlreadyServed && (
+          <div className="absolute -inset-10 z-0 overflow-hidden rounded-[50%] blur-3xl pointer-events-none opacity-40">
+             <div 
+               className="absolute -inset-[50%] animate-rotate" 
+               style={{ 
+                 background: `conic-gradient(from 0deg, #3b82f6, #ef4444, #22c55e, #eab308, #3b82f6)`
+               }}
+             />
+          </div>
+        )}
 
         <div className={`relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10 transition-all duration-700 ${qrUnlocked ? 'animate-float animate-glow' : ''}`} style={{ '--glow-color': itemConfig.glow } as any}>
           
@@ -90,9 +92,11 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
             <div className="absolute inset-x-0 h-0.5 bg-emerald-500/40 blur-[2px] z-30 animate-scan pointer-events-none" />
           )}
 
-          <div className={`transition-all duration-700 bg-white p-5 rounded-3xl shadow-inner contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
-            <QRCodeSVG value={qrString} size={230} level="M" fgColor="#000000" bgColor="#FFFFFF" />
-          </div>
+          {qrUnlocked && (
+            <div className={`transition-all duration-700 bg-white p-5 rounded-3xl shadow-inner contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
+              <QRCodeSVG value={qrString} size={230} level="M" fgColor="#000000" bgColor="#FFFFFF" />
+            </div>
+          )}
 
           {/* 🛡️ LIVE SECURITY TICK (Prevents Screenshots) */}
           {qrUnlocked && (
@@ -106,14 +110,14 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
 
           {qrUnlocked && (
             <div className="absolute bottom-4 right-4 z-20">
-              <div className="text-white text-sm font-black px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5" style={{ background: config.color }}>
+              <div className="text-white text-sm font-black px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5" style={{ background: itemConfig.color }}>
                 <span className="text-[10px] opacity-70">QTY</span>
                 <span className="text-base leading-none">{qty}</span>
               </div>
             </div>
           )}
 
-          {!qrUnlocked && !isServed && !isMissed && (
+          {!qrUnlocked && !isServed && !isMissed && !isAlreadyServed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/95 animate-in fade-in duration-500">
                <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-xl ${badge === 'COOKING' ? 'bg-orange-500' : 'bg-gray-800'}`}>
                  {badge === 'COOKING' ? <ChefHat className="w-10 h-10 text-white" /> : <Clock className="w-10 h-10 text-white" />}
@@ -125,31 +129,35 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
             </div>
           )}
 
+          {(isAlreadyServed || isServed) && !isMissed && (
+            <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500 z-40">
+              <div className="w-24 h-24 bg-emerald-50 rounded-[40%] flex items-center justify-center mb-4">
+                 <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+              </div>
+              <p className="text-lg font-black text-gray-900 tracking-tighter uppercase leading-none italic">Handover Complete</p>
+              <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-2">{itemConfig.label} Served</p>
+            </div>
+          )}
+
           {isMissed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/98 z-30 animate-in fade-in duration-500">
               <AlertCircle className="w-14 h-14 text-amber-500" />
               <p className="text-sm font-black text-gray-800 uppercase tracking-widest">Window Missed</p>
             </div>
           )}
-
-          {isServed && (
-            <div className="absolute inset-0 bg-white/97 flex flex-col items-center justify-center animate-in fade-in duration-500 z-40">
-              <CheckCircle2 className="w-20 h-20 text-green-500 mb-2" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-green-600">Served</span>
-            </div>
-          )}
         </div>
       </div>
 
-      <div className={`mt-6 px-6 py-3 rounded-full flex items-center gap-4 transition-all duration-700 shadow-lg ${qrUnlocked ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-50'}`} style={{ background: qrUnlocked ? config.color : '#f1f5f9' }}>
-        <span className="text-xl">{config.emoji}</span>
+      <div className={`mt-6 px-6 py-3 rounded-full flex items-center gap-4 transition-all duration-700 shadow-lg ${qrUnlocked ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-50'}`} style={{ background: qrUnlocked ? itemConfig.color : (isAlreadyServed ? '#10b981' : '#f1f5f9') }}>
+        <span className="text-xl">{isAlreadyServed ? '✅' : itemConfig.emoji}</span>
         <div className="flex flex-col">
-          <p className={`text-xs font-black uppercase tracking-[0.1em] ${qrUnlocked ? 'text-white' : 'text-gray-400'}`}>{config.label}</p>
-          <p className={`text-[9px] font-bold ${qrUnlocked ? 'text-white/80' : 'text-gray-400'}`}>
-            {qrUnlocked ? `Fresh & Ready for Scan` : 'Being Prepared in Kitchen'}
+          <p className={`text-xs font-black uppercase tracking-[0.1em] ${qrUnlocked || isAlreadyServed ? 'text-white' : 'text-gray-400'}`}>
+            {isAlreadyServed ? 'Order Collected' : itemConfig.label}
+          </p>
+          <p className={`text-[9px] font-bold ${qrUnlocked || isAlreadyServed ? 'text-white/80' : 'text-gray-400'}`}>
+            {isAlreadyServed ? 'Proceed to next section if any' : (qrUnlocked ? `Fresh & Ready for Scan` : 'Being Prepared in Kitchen')}
           </p>
         </div>
-        {qrUnlocked && <div className="ml-2 w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-black text-white">x{qty}</div>}
       </div>
     </div>
   );

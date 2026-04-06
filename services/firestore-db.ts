@@ -2379,6 +2379,11 @@ export const serveOrderItemsAtomic = async (orderId: string, itemIds: string[], 
       // OPTIMIZATION: Ensure we don't carry heavy base64 images in order updates
       const updatedItems = (orderData.items || []).map((it: any) => {
         if (itemIds.includes(it.id)) {
+          // 🛡️ [DOUBLE-SERVE-GUARD]: strictly block if already served
+          if (it.status === 'SERVED' || it.status === 'COMPLETED') {
+             throw new Error("ITEM_ALREADY_SERVED");
+          }
+
           const qty = it.remainingQty !== undefined ? it.remainingQty : it.quantity;
           if (qty > 0) {
             return {
@@ -2415,6 +2420,12 @@ export const serveOrderItemsAtomic = async (orderId: string, itemIds: string[], 
       }
 
       tx.update(orderRef, updateData);
+
+      // Sync items subcollection
+      itemIds.forEach(id => {
+         const itemRef = doc(db, 'orders', orderId, 'items', id);
+         tx.update(itemRef, { status: 'SERVED', updatedAt: serverTimestamp() });
+      });
     });
   } catch (error) {
     console.error("Error in serveOrderItemsAtomic:", error);
