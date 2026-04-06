@@ -126,26 +126,16 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
   return (
     <div className="h-[100dvh] w-screen bg-black overflow-hidden relative font-sans text-white select-none">
       
-      {/* 🍱 STATION SELECTOR (Static Admin Overrides) */}
-      <div className="absolute top-0 left-0 right-0 z-[150] bg-zinc-900/40 backdrop-blur-3xl border-b border-white/5 p-3 flex items-center justify-between pointer-events-auto">
-        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pr-12">
-           <button 
-             onClick={() => setSelectedStation('all')}
-             className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedStation === 'all' ? 'bg-primary text-white scale-105' : 'bg-white/5 text-white/40'}`}
-           >
-             All Counters
-           </button>
-           {Object.values(PREPARATION_STATIONS).map(station => (
-             <button 
-               key={station.id}
-               onClick={() => setSelectedStation(station.id)}
-               className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${selectedStation === station.id ? 'bg-emerald-500 text-white scale-105 shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-white/40'}`}
-             >
-               {station.name}
-             </button>
-           ))}
+      {/* 🍱 HEADER / STATUS */}
+      <div className="absolute top-0 left-0 right-0 z-[150] bg-zinc-900/40 backdrop-blur-3xl border-b border-white/5 p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+           <Zap className="w-5 h-5 text-emerald-400 fill-emerald-400" />
+           <div>
+             <h2 className="text-xs font-black uppercase tracking-widest text-white leading-none">Universal Scanner</h2>
+             <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mt-1 italic animate-pulse tracking-[0.2em]">Ready for Pickup</p>
+           </div>
         </div>
-        <button onClick={onLogout} className="p-3 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all active:scale-90 absolute right-3">
+        <button onClick={onLogout} className="p-3 bg-white/5 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all active:scale-90">
            <LogOut className="w-5 h-5" />
         </button>
       </div>

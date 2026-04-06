@@ -32,7 +32,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
     const canShowQR = shouldShowQR(order);
     const statusMsg = getOrderStatusMessage(order);
     const dateObj = new Date(order.createdAt);
-    const formattedDate = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const formattedDate = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     const formattedTime = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
     const getStatusColor = () => {
@@ -42,53 +42,71 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
       return 'bg-amber-50 text-amber-600 border-amber-100';
     };
 
+    const getItemBadge = (status: string) => {
+      switch (status) {
+        case 'SERVED': return <span className="text-[8px] font-black text-emerald-500 uppercase tracking-tighter flex items-center gap-0.5"><CheckCircle2 className="w-2" /> SERVED</span>;
+        case 'READY': return <span className="text-[8px] font-black text-blue-500 uppercase tracking-tighter animate-pulse">READY</span>;
+        case 'PREPARING': return <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter">COOKING</span>;
+        default: return <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">QUEUED</span>;
+      }
+    };
+
     return (
       <div 
-        className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm transition-all active:scale-[0.98] cursor-pointer hover:shadow-md mb-4"
+        className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm transition-all active:scale-[0.98] cursor-pointer hover:shadow-md mb-6"
         onClick={() => canShowQR && onQROpen?.(order.id)}
       >
-        <div className="flex justify-between items-start mb-4">
+        <div className="flex justify-between items-start mb-5 pb-4 border-b border-slate-50">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
               <Receipt className="w-6 h-6 text-slate-400" />
             </div>
             <div>
-              <h4 className="text-sm font-black text-slate-800 tracking-tight">Order #{order.id.slice(-6).toUpperCase()}</h4>
-              <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mt-0.5 uppercase tracking-tighter">
-                {formattedDate} • {formattedTime}
-              </p>
+              <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-0.5 italic">Order Verified</p>
+              <h4 className="text-base font-black text-slate-800 tracking-tighter leading-none">#{order.id.slice(-8).toUpperCase()}</h4>
             </div>
           </div>
-          <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${getStatusColor()}`}>
+          <div className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${getStatusColor()}`}>
             {statusMsg}
           </div>
         </div>
 
         {/* Dynamic Items List */}
-        <div className="space-y-2 mb-6 ml-1">
+        <div className="space-y-3 mb-6">
           {(order.items || []).map((item, idx) => (
-            <div key={idx} className="flex justify-between items-center text-xs">
-              <span className="font-bold text-slate-600">{item.quantity}x {item.name}</span>
-              <span className="font-black text-slate-300 text-[10px]">₹{item.price * item.quantity}</span>
+            <div key={idx} className="flex justify-between items-start">
+              <div className="flex flex-col">
+                <span className="text-xs font-black text-slate-700 leading-none">{item.quantity}x {item.name}</span>
+                <div className="mt-1">{getItemBadge(item.status)}</div>
+              </div>
+              <span className="font-black text-slate-400 text-[10px]">₹{item.price * item.quantity}</span>
             </div>
           ))}
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-dashed border-slate-100">
+        <div className="flex items-center justify-between pt-5 border-t border-dashed border-slate-200">
           <div className="flex flex-col">
-             <span className="text-[10px] font-black uppercase text-slate-300 tracking-wider">Paid Amount</span>
-             <span className="text-lg font-black italic text-slate-900">₹{order.totalAmount || 0}</span>
+             <span className="text-[9px] font-black uppercase text-slate-300 tracking-wider">Total Amount</span>
+             <span className="text-xl font-black italic text-slate-900 leading-none mt-1">₹{order.totalAmount || 0}</span>
+             <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">
+               {formattedDate} • {formattedTime}
+             </p>
           </div>
           {canShowQR ? (
             <button 
               onClick={(e) => { e.stopPropagation(); onQROpen?.(order.id); }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary/10 text-primary rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-90 transition-all"
+              className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-[1.2rem] font-black text-[10px] uppercase tracking-widest active:scale-90 transition-all shadow-lg shadow-primary/20"
             >
               <QrCode className="w-4 h-4" /> View Token
             </button>
           ) : (
-            <div className="flex items-center gap-2 text-emerald-500 font-black text-[10px] uppercase tracking-widest">
-              Success <CheckCircle2 className="w-3" />
+            <div className="flex flex-col items-end gap-1">
+               <div className="px-3 py-1 bg-emerald-50 text-emerald-500 rounded-lg font-black text-[8px] uppercase tracking-widest border border-emerald-100 flex items-center gap-1">
+                 Verified <CheckCircle2 className="w-2.5" />
+               </div>
+               {order.paymentType && (
+                 <span className="text-[8px] font-black text-slate-300 uppercase">{order.paymentType} Payment</span>
+               )}
             </div>
           )}
         </div>
