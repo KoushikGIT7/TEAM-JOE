@@ -1190,13 +1190,12 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
             await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
 
             // 🍱 Real-time Batching Injection (Transactional Root)
-            // CRITICAL FIX: Only batch if payment is confirmed.
-            // 🍱 Real-time Batching Injection (Transactional Root)
             if (finalizedOrder.paymentStatus === 'SUCCESS') {
                 const now = Date.now();
                 await Promise.all(itemsWithResolvedType.map((it: any) => {
                    const itRef = doc(db, "orders", id, "items", it.id);
-                   const isFast = it.orderType === 'FAST_ITEM' || ['Lunch', 'Beverages', 'Snacks'].includes(it.category);
+                   // FIX: Include 'Breakfast' and use the resolved orderType (more robust)
+                   const isFast = it.orderType === 'FAST_ITEM' || ['Breakfast', 'Lunch', 'Beverages', 'Snacks'].includes(it.category || '');
                    return setDoc(itRef, { 
                      ...it, 
                      status: isFast ? 'READY' : 'PENDING', 

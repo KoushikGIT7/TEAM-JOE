@@ -77,7 +77,10 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       }
 
       // 🧹 [ATOMIC-SERVE]: Use single transaction for precision item serving
-      const readyItemIds = isReadySet.map(i => i.id);
+      // Use both id and itemId for server-side compatibility
+      const readyItemIds = isReadySet.map(i => i.id || i.itemId).filter(id => !!id) as string[];
+      if (readyItemIds.length === 0) throw new Error("ITEM_IDENTITY_LOST");
+
       await serveOrderItemsAtomic(order.id, readyItemIds, profile.uid);
 
       // 🎤 [SONIC-VOICE-FEEDBACK]: confirmed item
