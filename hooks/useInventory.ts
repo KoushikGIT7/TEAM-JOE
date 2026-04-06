@@ -5,7 +5,9 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { getInventoryMetaOnce, getStockStatus } from '../services/firestore-db';
+import { onSnapshot, collection } from 'firebase/firestore';
+import { db } from '../firebase';
+import { getStockStatus } from '../services/firestore-db';
 import type { InventoryMetaItem, StockStatus } from '../types';
 
 export interface StockInfo {
@@ -24,19 +26,18 @@ export function useInventory(): {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetch = async () => {
-      try {
-        const items = await getInventoryMetaOnce();
-        setMetaList(items);
-        setLoading(false);
-      } catch (e) {
-        console.error("Inventory fetch failed:", e);
-      }
-    };
-    fetch();
-    // Refresh stock every 30 seconds instead of real-time listener (Quota protection)
-    const t = setInterval(fetch, 30000);
-    return () => clearInterval(t);
+    setLoading(true);
+    // 📡 [SONIC-INVENTORY]: High-speed real-time sync for sub-second stock updates
+    const unsub = onSnapshot(collection(db, "inventory_meta"), (snap) => {
+      const items = snap.docs.map(doc => ({ ...doc.data() } as InventoryMetaItem));
+      setMetaList(items);
+      setLoading(false);
+    }, (err) => {
+      console.error("🔥 Inventory sync dropped:", err);
+      setLoading(false);
+    });
+
+    return () => unsub();
   }, []);
 
   const stockByItemId = useMemo(() => {

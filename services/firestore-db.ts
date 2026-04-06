@@ -1168,14 +1168,50 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         finalizedOrder.qr = { token, status: 'ACTIVE', createdAt };
     }
 
-    // 1. PRIMARY STRIKE — Commit the Order
-    const orderRef = doc(db, "orders", id);
-    await setDoc(orderRef, {
-        ...orderToFirestore(finalizedOrder),
-        createdAt: createdAt, // Use the actual number used for hashing (CRITICAL)
-        updatedAt: serverTimestamp()
+    // 🛡️ [ATOMIC-INVENTORY-GUARD]: Verify and reserve stock within a single transaction
+    const orderId = id;
+    await runTransaction(db, async (transaction) => {
+        // 1. READ PHASE: Check actual live stock for ALL items in cart
+        const stockSnaps = await Promise.all(itemsWithResolvedType.map(it => 
+            transaction.get(doc(db, "inventory_meta", it.id))
+        ));
+
+        // 2. VALIDATION PHASE: Fail if ANY item is oversold
+        stockSnaps.forEach((snap, idx) => {
+            const requested = itemsWithResolvedType[idx].quantity;
+            const itemName = itemsWithResolvedType[idx].name;
+            
+            if (snap.exists()) {
+                const data = snap.data();
+                const available = Number(data.totalStock || 0) - Number(data.consumed || 0);
+                if (available < requested) {
+                    throw new Error(`Insufficient stock for ${itemName}. Only ${available} units remaining.`);
+                }
+            } else {
+                // For items without inventory tracking, we allow the order (legacy support)
+                console.log(`[INVENTORY-BYPASS] No meta found for ${itemName}. Skipping guard.`);
+            }
+        });
+
+        // 3. WRITE PHASE: Commit Order and Decrement Stock
+        const orderRef = doc(db, "orders", orderId);
+        transaction.set(orderRef, {
+            ...orderToFirestore(finalizedOrder),
+            createdAt: createdAt,
+            updatedAt: serverTimestamp()
+        });
+
+        // Atomic Decrement for each item
+        itemsWithResolvedType.forEach(it => {
+            const metaRef = doc(db, "inventory_meta", it.id);
+            transaction.set(metaRef, { 
+                consumed: increment(it.quantity),
+                updatedAt: serverTimestamp() 
+            }, { merge: true });
+        });
     });
-    console.log("🍱 [ROOT-FIX] Order successfully committed:", id);
+
+    console.log("🍱 [ROOT-FIX] Order committed with Atomic Inventory Guard:", orderId);
 
     // 2. SECONDARY TRACKING (Pulse Counters & Batching)
     if (isDynamic) {
