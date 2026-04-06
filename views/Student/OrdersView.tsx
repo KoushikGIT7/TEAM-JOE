@@ -36,7 +36,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
     const formattedTime = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
     const getStatusColor = () => {
-      if (uiState === 'READY') return 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse';
+      if (uiState === 'QR_ACTIVE') return 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse';
       if (uiState === 'SCANNED' || uiState === 'COMPLETED' || order.orderStatus === 'SERVED') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
       if (uiState === 'REJECTED' || uiState === 'CANCELLED') return 'bg-rose-50 text-rose-600 border-rose-100';
       return 'bg-amber-50 text-amber-600 border-amber-100';

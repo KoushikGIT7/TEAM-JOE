@@ -25,7 +25,14 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [loading, setLoading] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
+  const [isNotifGranted, setIsNotifGranted] = useState(Notification.permission === 'granted');
   const { stockByItemId, isOutOfStock } = useInventory();
+
+  useEffect(() => {
+    const handleNotifUpdate = () => setIsNotifGranted(true);
+    window.addEventListener('joe_notif_granted', handleNotifUpdate);
+    return () => window.removeEventListener('joe_notif_granted', handleNotifUpdate);
+  }, []);
 
   useEffect(() => {
     getMenuOnce().then(items => { setMenu(items); setLoading(false); }).catch(() => setLoading(false));
@@ -136,7 +143,16 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <button onClick={() => setIsDrawerOpen(true)} className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all"><Menu className="w-6 h-6 text-slate-600" /></button>
             <h2 className="text-lg font-black text-slate-800 tracking-tighter">{profile?.name || 'Welcome'}</h2>
           </div>
-          <button className="w-11 h-11 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100"><Bell className="w-5 h-5 text-slate-400" /></button>
+          <button 
+            onClick={() => (window as any).joeSubscribe?.()}
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-all duration-700 active:scale-90 ${
+              isNotifGranted 
+              ? 'bg-emerald-50 text-emerald-500 border-emerald-100 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+              : 'bg-slate-50 text-slate-400 border-slate-100'
+            }`}
+          >
+            <Bell className={`w-5 h-5 ${isNotifGranted ? 'fill-current' : ''}`} />
+          </button>
         </div>
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
