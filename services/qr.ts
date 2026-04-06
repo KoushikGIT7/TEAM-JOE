@@ -377,10 +377,18 @@ export const parseQRPayload = async (qrString: string): Promise<{
        };
     }
 
-    // 1. Check if it matches new dot-separated format (Compact)
+    // 1. Check if it matches new dot-separated format (Compact: v1.ORDER_ID.ITEM_ID.SIGNATURE.EXPIRY)
     if (trimmedData.startsWith('v1.')) {
       const parts = trimmedData.split('.');
-      if (parts.length >= 4) {
+      if (parts.length >= 5) {
+        return {
+          version: parts[0],
+          orderId: parts[1],
+          secureHash: parts[3], // Now index 3
+          expiresAt: parseInt(parts[4], 10) // Now index 4
+        };
+      } else if (parts.length === 4) {
+        // Fallback for legacy 4-part v1 format
         return {
           version: parts[0],
           orderId: parts[1],

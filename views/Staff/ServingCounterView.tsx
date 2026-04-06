@@ -54,8 +54,8 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
 
       const allItems = order.items || [];
       
-      // 🔬 [ITEM-LOCKED-LOGIC]: Only serve the specific item being scanned
-      const targetItem = allItems.find(it => it.id === targetItemId || targetItemId === 'all');
+      // 🔬 [ITEM-LOCKED-LOGIC]: Only serve the specific item being scanned (Check both id and itemId for server-side compatibility)
+      const targetItem = allItems.find(it => (it.id === targetItemId || it.itemId === targetItemId) || targetItemId === 'all');
       
       if (!targetItem && targetItemId !== 'all') {
          setScanState('ERROR');
