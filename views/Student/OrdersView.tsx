@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, QrCode, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { ArrowLeft, QrCode, CheckCircle2, Clock, AlertCircle, ShoppingBag, Receipt, ArrowRight } from 'lucide-react';
 import { UserProfile, Order } from '../../types';
 import { listenToAllUserOrders } from '../../services/firestore-db';
 import { getOrderStatusMessage, getOrderUIState, shouldShowQR, groupOrdersByStatus } from '../../utils/orderLifecycle';
+import FoodLoader from '../../components/Common/FoodLoader';
 
 interface OrdersViewProps {
   profile: UserProfile | null;
@@ -12,13 +13,14 @@ interface OrdersViewProps {
 
 const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) => {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!profile?.uid) return;
     const unsub = listenToAllUserOrders(profile.uid, (data) => {
-      // Real-time updates trigger instantly via Firestore listener
       const sorted = [...data].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setOrders(sorted);
+      setLoading(false);
     });
     return unsub;
   }, [profile?.uid]);
@@ -29,152 +31,116 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
     const uiState = getOrderUIState(order);
     const canShowQR = shouldShowQR(order);
     const statusMsg = getOrderStatusMessage(order);
-    const createdTime = new Date(order.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    const scannedTime = order.scannedAt ? new Date(order.scannedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : null;
+    const dateObj = new Date(order.createdAt);
+    const formattedDate = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const formattedTime = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-    let statusIcon = <Clock className="w-4 h-4" />;
-    let statusColor = 'text-primary';
-
-    if (uiState === 'SCANNED' || uiState === 'COMPLETED') {
-      statusIcon = <CheckCircle2 className="w-4 h-4" />;
-      statusColor = 'text-success';
-    } else if (uiState === 'REJECTED' || uiState === 'CANCELLED') {
-      statusIcon = <AlertCircle className="w-4 h-4" />;
-      statusColor = 'text-error';
-    }
+    const getStatusColor = () => {
+      if (uiState === 'READY') return 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse';
+      if (uiState === 'SCANNED' || uiState === 'COMPLETED' || order.orderStatus === 'SERVED') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
+      if (uiState === 'REJECTED' || uiState === 'CANCELLED') return 'bg-rose-50 text-rose-600 border-rose-100';
+      return 'bg-amber-50 text-amber-600 border-amber-100';
+    };
 
     return (
       <div 
-        className="bg-white border border-black/5 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
-        onClick={() => {
-          if (canShowQR && onQROpen) {
-            onQROpen(order.id);
-          }
-        }}
+        className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm transition-all active:scale-[0.98] cursor-pointer hover:shadow-md mb-4"
+        onClick={() => canShowQR && onQROpen?.(order.id)}
       >
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-xs font-black text-textSecondary uppercase tracking-widest">Order</p>
-            <p className="text-lg font-black text-textMain">#{order.id.slice(-8).toUpperCase()}</p>
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
+              <Receipt className="w-6 h-6 text-slate-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-slate-800 tracking-tight">Order #{order.id.slice(-6).toUpperCase()}</h4>
+              <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mt-0.5 uppercase tracking-tighter">
+                {formattedDate} • {formattedTime}
+              </p>
+            </div>
           </div>
-          <div className={`flex items-center gap-1 ${statusColor} text-xs font-black uppercase tracking-widest`}>
-            {statusIcon}
-            <span>{statusMsg}</span>
+          <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${getStatusColor()}`}>
+            {statusMsg}
           </div>
         </div>
 
-        {/* Status Timeline */}
-        <div className="flex items-center gap-1 mb-4 h-1 px-1">
-           {[ 'SCHEDULED', 'PREPARING', 'READY', 'SERVED' ].map((step, idx) => {
-              const currentIdx = 
-                uiState === 'COMPLETED' || order.orderStatus === 'SERVED' || order.orderStatus === 'COMPLETED' ? 3 :
-                order.serveFlowStatus === 'READY' || order.serveFlowStatus === 'ALMOST_READY' ? 2 :
-                order.serveFlowStatus === 'PREPARING' ? 1 : 0;
-              
-              const isPast = idx < currentIdx;
-              const isCurrent = idx === currentIdx;
-              
-              return (
-                <div key={step} className="flex-1 flex items-center gap-1">
-                   <div className={`h-full flex-1 rounded-full transition-all duration-700 ${
-                     isPast ? 'bg-green-500' : isCurrent ? 'bg-indigo-500 animate-pulse' : 'bg-slate-100'
-                   }`} />
-                </div>
-              )
-           })}
-        </div>
-
-        {/* Items */}
-        <div className="space-y-1 text-sm text-textSecondary mb-3">
-          {order.items.map(it => (
-            <div key={it.id} className="flex justify-between">
-              <span>{it.name}</span>
-              <span className="font-black text-textMain">x{it.quantity}</span>
+        {/* Dynamic Items List */}
+        <div className="space-y-2 mb-6 ml-1">
+          {(order.items || []).map((item, idx) => (
+            <div key={idx} className="flex justify-between items-center text-xs">
+              <span className="font-bold text-slate-600">{item.quantity}x {item.name}</span>
+              <span className="font-black text-slate-300 text-[10px]">₹{item.price * item.quantity}</span>
             </div>
           ))}
         </div>
 
-        {/* Footer */}
-        <div className="mt-3 flex justify-between items-center text-xs font-black text-textSecondary border-t border-black/5 pt-3">
+        <div className="flex items-center justify-between pt-4 border-t border-dashed border-slate-100">
           <div className="flex flex-col">
-            <span>Created: {createdTime}</span>
-            {scannedTime && <span>Scanned: {scannedTime}</span>}
+             <span className="text-[10px] font-black uppercase text-slate-300 tracking-wider">Paid Amount</span>
+             <span className="text-lg font-black italic text-slate-900">₹{order.totalAmount || 0}</span>
           </div>
-          <span className="text-textMain">₹{order.totalAmount}</span>
+          {canShowQR ? (
+            <button 
+              onClick={(e) => { e.stopPropagation(); onQROpen?.(order.id); }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary/10 text-primary rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-90 transition-all"
+            >
+              <QrCode className="w-4 h-4" /> View Token
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-emerald-500 font-black text-[10px] uppercase tracking-widest">
+              Success <CheckCircle2 className="w-3" />
+            </div>
+          )}
         </div>
-
-        {/* QR Action */}
-        {canShowQR && (
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onQROpen?.(order.id);
-            }}
-            className="w-full mt-3 bg-primary/10 text-primary font-black py-2 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
-          >
-            <QrCode className="w-4 h-4" />
-            Show QR
-          </button>
-        )}
       </div>
     );
   };
 
+  if (loading) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
+
   return (
-    <div className="min-h-screen bg-background pb-10 max-w-md mx-auto">
-      <div className="sticky top-0 bg-white/90 backdrop-blur border-b border-black/5 p-4 flex items-center gap-3 z-10">
-        <button onClick={onBack} className="w-11 h-11 rounded-2xl bg-gray-50 flex items-center justify-center border border-black/5 active:scale-95 transition-all">
-          <ArrowLeft className="w-5 h-5 text-textSecondary" />
+    <div className="min-h-screen bg-slate-50 pb-20 max-w-md mx-auto relative overflow-x-hidden flex flex-col font-sans border-x border-slate-100 shadow-2xl">
+      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-6 border-b border-slate-100 flex items-center gap-4">
+        <button onClick={onBack} className="w-11 h-11 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all">
+          <ArrowLeft className="w-5 h-5 text-slate-600" />
         </button>
-        <h1 className="text-xl font-black text-textMain">My Orders</h1>
-        {orders.length > 0 && <span className="ml-auto text-xs font-black text-textSecondary bg-gray-100 px-3 py-1 rounded-full">{orders.length}</span>}
+        <h2 className="text-xl font-black text-slate-800 tracking-tighter">Receipts & Orders</h2>
       </div>
 
-      {orders.length === 0 ? (
-        <div className="p-10 text-center">
-          <Clock className="w-12 h-12 text-textSecondary/30 mx-auto mb-4" />
-          <p className="text-textSecondary font-bold">No orders found</p>
-          <p className="text-xs text-textSecondary/60 mt-2">Your orders will appear here</p>
-        </div>
-      ) : (
-        <div className="p-4 space-y-4">
-          {/* Active Orders */}
-          {active.length > 0 && (
-            <div>
-              <h2 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-3 px-2">Active Orders ({active.length})</h2>
-              <div className="space-y-3">
-                {active.map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {orders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center px-10">
+            <div className="w-24 h-24 bg-white rounded-[2.5rem] border border-slate-100 flex items-center justify-center mb-6 shadow-sm">
+              <ShoppingBag className="w-10 h-10 text-slate-200" />
             </div>
-          )}
+            <h3 className="text-lg font-black text-slate-800 mb-2 tracking-tighter">Kitchen is quiet...</h3>
+            <p className="text-sm font-bold text-slate-400 max-w-[180px] mx-auto leading-relaxed">No orders found. Head to the menu to start your hunger journey.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+             {active.length > 0 && (
+               <div className="mb-8">
+                 <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4 ml-2">Active Tracker ({active.length})</h2>
+                 {active.map(o => <OrderCard key={o.id} order={o} />)}
+               </div>
+             )}
+             
+             {scanned.length > 0 && (
+               <div className="mb-8">
+                 <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4 ml-2">Currently Scanning ({scanned.length})</h2>
+                 {scanned.map(o => <OrderCard key={o.id} order={o} />)}
+               </div>
+             )}
 
-          {/* Scanned Orders */}
-          {scanned.length > 0 && (
-            <div>
-              <h2 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-3 px-2 mt-6">Scanned ({scanned.length})</h2>
-              <div className="space-y-3">
-                {scanned.map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Completed Orders */}
-          {completed.length > 0 && (
-            <div>
-              <h2 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-3 px-2 mt-6">Completed ({completed.length})</h2>
-              <div className="space-y-3">
-                {completed.map(order => (
-                  <OrderCard key={order.id} order={order} />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+             {completed.length > 0 && (
+               <div>
+                 <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4 ml-2">History ({completed.length})</h2>
+                 {completed.map(o => <OrderCard key={o.id} order={o} />)}
+               </div>
+             )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

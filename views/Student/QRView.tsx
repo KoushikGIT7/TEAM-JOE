@@ -216,6 +216,9 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     return colors.length > 0 ? colors : ['#3b82f6'];
   }, [mergedOrder]);
 
+  const items = mergedOrder?.items || [];
+  const isFullyServed = useMemo(() => items.length > 0 && items.every(it => it.status === 'SERVED' || it.status === 'COMPLETED'), [items]);
+
   useEffect(() => {
     if (!mergedOrder?.items || !prevItemsRef.current) {
       prevItemsRef.current = mergedOrder?.items || null;
@@ -231,18 +234,26 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     if (gotReady) {
       setFlashState('GREEN');
       if ('vibrate' in navigator) navigator.vibrate([50, 50, 150]);
+      
+      // Notify student
+      if ('speechSynthesis' in window && !isFullyServed) {
+         const msg = new SpeechSynthesisUtterance();
+         msg.text = "Food is ready! Head to the counter.";
+         msg.rate = 1.3;
+         window.speechSynthesis.speak(msg);
+      }
+      
       setTimeout(() => setFlashState(null), 2500);
     }
     prevItemsRef.current = mergedOrder.items;
-  }, [mergedOrder?.items]);
+  }, [mergedOrder?.items, isFullyServed]);
 
   if (loading) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
   if (!mergedOrder) return <div className="h-screen w-full flex items-center justify-center bg-white">Order missing</div>;
 
-  const items = mergedOrder.items || [];
   const activeItem = items[activeItemIdx] || items[0];
   const qrVisible = !!mergedOrder && (shouldShowQR(mergedOrder) || items.some(i => i.status === 'READY'));
-  const isDone = mergedOrder.orderStatus === 'SERVED' || mergedOrder.orderStatus === 'COMPLETED' || mergedOrder.qrState === 'SCANNED';
+  const isDone = isFullyServed || mergedOrder.orderStatus === 'COMPLETED' || mergedOrder.qrState === 'SCANNED';
   const isMissed = mergedOrder.orderStatus === 'MISSED';
 
   return (

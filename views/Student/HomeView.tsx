@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, AlertCircle, Sparkles, Bell } from 'lucide-react';
+import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, AlertCircle, Sparkles, Bell, Receipt } from 'lucide-react';
 import { getOrderUIState } from '../../utils/orderLifecycle';
 import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
@@ -33,6 +33,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   useEffect(() => {
     if (profile?.uid) {
+      // 🔔 [IDENTITY-SYNC]: Hydrate OneSignal with the student's unique ID
+      if ((window as any).joeSyncUser) {
+        (window as any).joeSyncUser(profile.uid);
+      }
       return listenToUserOrders(profile.uid, (orders) => {
         setMyOrders([...orders].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
       });
@@ -112,9 +116,17 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
           <p className="text-[10px] uppercase font-black text-slate-300 tracking-[0.2em] mt-1 italic">Verified Official Profile</p>
         </div>
         <div className="space-y-4">
-          <button onClick={onLogout} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 active:scale-95 transition-all">
-            <LogOut className="w-4 h-4" /> Logout
+          <button 
+             onClick={() => { setIsDrawerOpen(false); if (onViewOrders) onViewOrders(); }}
+             className="w-full py-5 bg-slate-50 text-slate-700 rounded-3xl font-black text-xs uppercase flex items-center justify-center gap-3 active:scale-95 transition-all border border-slate-100"
+          >
+            <Receipt className="w-4 h-4" /> My Order History
           </button>
+          <div className="pt-2 border-t border-slate-50">
+            <button onClick={onLogout} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 active:scale-95 transition-all">
+              <LogOut className="w-4 h-4" /> Logout
+            </button>
+          </div>
         </div>
       </aside>
 
