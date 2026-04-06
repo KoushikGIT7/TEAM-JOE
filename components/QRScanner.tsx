@@ -9,29 +9,33 @@ interface QRScannerProps {
 
 /** 
  * [ULTRA-FAST HARDWARE SCANNER]
- * Uses @yudiel/react-qr-scanner for direct MediaStream access and
- * native BarcodeDetector API for zero-latency capture.
+ * Uses @yudiel/react-qr-scanner for direct MediaStream access.
+ * Optimized for 'Rapid-Fire' scanning with 300ms payload debouncing.
  */
 const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
-  const hasScanned = useRef(false);
+  const lastScanRef = useRef<{ payload: string; time: number } | null>(null);
 
   const handleScan = (detectedCodes: IDetectedBarcode[]) => {
-    if (hasScanned.current || !detectedCodes || detectedCodes.length === 0) return;
+    if (!detectedCodes || detectedCodes.length === 0) return;
     
     const token = detectedCodes[0].rawValue;
-    if (token) {
-      hasScanned.current = true; // Temporary lock against double-fire
-      
-      // Release lock after 2 seconds to allow continuous scanning
-      setTimeout(() => {
-        hasScanned.current = false;
-      }, 2000);
-      
-      // Haptic confirmation
-      if ('vibrate' in navigator) navigator.vibrate(100);
-      
-      onScan(token);
+    if (!token) return;
+
+    const now = Date.now();
+    
+    // ⚡ [RAPID-FIRE-LOGIC]
+    // 1. If it's a NEW token, scan it INSTANTLY (latency = 0)
+    // 2. If it's the SAME token, wait 2 seconds before re-triggering (prevents loops)
+    if (lastScanRef.current && lastScanRef.current.payload === token) {
+        if (now - lastScanRef.current.time < 2000) return;
     }
+
+    lastScanRef.current = { payload: token, time: now };
+    
+    // Low-latency haptic feedback
+    if ('vibrate' in navigator) navigator.vibrate(50);
+    
+    onScan(token);
   };
 
   return (
@@ -57,15 +61,16 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
           <Scanner 
             onScan={handleScan}
             formats={['qr_code']}
+            allowMultiple={true} // Crucial for rapid-fire
             components={{
-              onOff: true,       // Toggle flashlight
-              torch: true,       // Flashlight button enabled
-              zoom: false,       // Maximize FoV
-              finder: false,     // Custom CSS finder below
+              onOff: true,
+              torch: true,
+              zoom: false,
+              finder: false,
             }}
             styles={{
               container: { width: '100%', height: '100%' },
-              video: { objectFit: 'cover' } // Fills the container smoothly
+              video: { objectFit: 'cover' }
             }}
           />
            

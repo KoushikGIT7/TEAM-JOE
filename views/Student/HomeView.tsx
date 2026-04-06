@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, CheckCircle2, AlertCircle, Sparkles, Bell } from 'lucide-react';
+import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, AlertCircle, Sparkles, Bell } from 'lucide-react';
 import { getOrderUIState } from '../../utils/orderLifecycle';
 import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
@@ -41,11 +41,9 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   const activeOrder = useMemo(() => {
     return myOrders.find((o) => {
-      // 🛡️ [BANNER-PURGE]: Remove order from home screen if it is terminal or already checked-in/scanned
       const terminalStates = ['REJECTED', 'CANCELLED', 'COMPLETED', 'SERVED', 'EXPIRED', 'ABANDONED'];
       if (terminalStates.includes(o.orderStatus)) return false;
       if (o.qrState === 'SCANNED' || o.serveFlowStatus === 'SERVED' || o.serveFlowStatus === 'SERVED_PARTIAL') return false;
-      
       return o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED' || o.paymentStatus === 'PENDING';
     });
   }, [myOrders]);
@@ -74,21 +72,17 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         if (delta > 0) newCart[item.id] = { ...item, quantity: 1, orderType: item.orderType || 'PREPARATION_ITEM', status: 'PENDING' };
       } else {
         let newQty = newCart[item.id].quantity + delta;
-        
-        // 🛑 [STRICT-LIMITS]: origin/main compliance for fast serving
         const isDosa = item.name.toLowerCase().includes('dosa');
         if (isDosa && newQty > 1) {
-            alert("Maximum 1 Dosa allowed per scan for fast serving.");
+            alert("Maximum 1 Dosa allowed per scan.");
             newQty = 1;
         }
         if ((item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) && newQty > 1) {
             alert("Items in this category are limited to 1 per scan.");
             newQty = 1;
         }
-
         const maxAllowed = stockByItemId[item.id]?.available ?? 999;
         if (newQty > maxAllowed) newQty = maxAllowed;
-
         if (newQty <= 0) delete newCart[item.id];
         else newCart[item.id] = { ...newCart[item.id], quantity: newQty };
       }
@@ -100,41 +94,45 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-32 max-w-md mx-auto relative overflow-hidden flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 pb-32 max-w-md mx-auto relative overflow-x-hidden flex flex-col font-sans border-x border-slate-100 shadow-2xl">
       
       {isDrawerOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={() => setIsDrawerOpen(false)} />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 w-4/5 bg-white z-[110] transition-transform duration-500 p-8 shadow-2xl flex flex-col ${isDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      {/* Drawer - Strictly Mobile Constrained */}
+      <aside className={`fixed inset-y-0 left-0 w-4/5 max-w-[320px] bg-white z-[110] transition-transform duration-500 p-8 shadow-2xl flex flex-col ${isDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex justify-between items-center mb-12">
           <Logo size="sm" />
           <button onClick={() => setIsDrawerOpen(false)} className="p-3 bg-gray-50 rounded-2xl"><CloseIcon /></button>
         </div>
         <div className="flex flex-col items-center mb-10">
-          <div className="w-20 h-20 bg-primary text-white rounded-3xl flex items-center justify-center font-black text-3xl mb-4">{profile?.name?.[0] || 'U'}</div>
+          <div className="w-20 h-20 bg-primary text-white rounded-3xl flex items-center justify-center font-black text-3xl mb-4 shadow-xl shadow-primary/20">{profile?.name?.[0] || 'U'}</div>
           <h3 className="text-xl font-black text-slate-800">{profile?.name || 'User'}</h3>
+          <p className="text-[10px] uppercase font-black text-slate-300 tracking-[0.2em] mt-1 italic">Verified Official Profile</p>
         </div>
         <div className="space-y-4">
-          <button onClick={onLogout} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2">Logout</button>
+          <button onClick={onLogout} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 active:scale-95 transition-all">
+            <LogOut className="w-4 h-4" /> Logout
+          </button>
         </div>
       </aside>
 
-      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-4 border-b border-slate-100">
+      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-4 border-b border-slate-100 max-w-md mx-auto w-full">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsDrawerOpen(true)} className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center"><Menu className="w-6 h-6" /></button>
+            <button onClick={() => setIsDrawerOpen(true)} className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all"><Menu className="w-6 h-6 text-slate-600" /></button>
             <h2 className="text-lg font-black text-slate-800 tracking-tighter">{profile?.name || 'Welcome'}</h2>
           </div>
-          <button className="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center"><Bell className="w-5 h-5 text-slate-400" /></button>
+          <button className="w-11 h-11 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100"><Bell className="w-5 h-5 text-slate-400" /></button>
         </div>
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
-          <input type="text" placeholder="Search menu..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none" />
+          <input type="text" placeholder="Search menu..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none ring-primary/10 focus:ring-4 transition-all" />
         </div>
-        <div className="flex gap-2 overflow-x-auto hide-scrollbar">
+        <div className="flex gap-2 overflow-x-auto hide-scrollbar scroll-smooth">
           {CATEGORIES.map(cat => (
-            <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest ${selectedCategory === cat ? 'bg-primary text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>
+            <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105' : 'bg-white text-slate-400 border border-slate-100'}`}>
               {cat}
             </button>
           ))}
@@ -144,16 +142,20 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       <div className="flex-1 overflow-y-auto pt-4">
         {activeOrder && (
           <div className="px-4 mb-6">
-            <div onClick={() => onViewQR && onViewQR(activeOrder.id)} className={`p-6 rounded-[2rem] border-2 shadow-sm transition-all active:scale-95 ${uiState === 'MISSED' ? 'bg-rose-50 border-rose-200 animate-pulse' : activeOrderFlow === 'READY' ? 'bg-emerald-50 border-emerald-200' : 'bg-indigo-50 border-indigo-200'}`}>
+            <div onClick={() => onViewQR && onViewQR(activeOrder.id)} className={`p-6 rounded-[2rem] border-2 shadow-sm transition-all active:scale-95 cursor-pointer ${uiState === 'MISSED' ? 'bg-rose-50 border-rose-200 animate-pulse' : activeOrderFlow === 'READY' ? 'bg-emerald-50 border-emerald-200' : 'bg-indigo-50 border-indigo-200'}`}>
               <div className="flex gap-4 items-center">
-                <div className={`p-3 rounded-2xl ${uiState === 'MISSED' ? 'bg-rose-500' : activeOrderFlow === 'READY' ? 'bg-emerald-500' : 'bg-white shadow-sm'}`}>
-                  {uiState === 'MISSED' ? <AlertCircle className="text-white" /> : activeOrderFlow === 'READY' ? <Sparkles className="text-white" /> : <Clock className="text-indigo-500" />}
+                <div className={`p-4 rounded-2xl ${uiState === 'MISSED' ? 'bg-rose-500 shadow-lg shadow-rose-200' : activeOrderFlow === 'READY' ? 'bg-emerald-500 shadow-lg shadow-emerald-200' : 'bg-white shadow-sm'}`}>
+                  {uiState === 'MISSED' ? <AlertCircle className="text-white" /> : activeOrderFlow === 'READY' ? <Sparkles className="text-white animate-spin-slow" /> : <Clock className="text-indigo-500 animate-pulse" />}
                 </div>
                 <div>
-                  <h4 className="text-lg font-black text-slate-800">
+                  <h4 className="text-lg font-black text-slate-800 leading-tight">
                     {uiState === 'MISSED' ? '⚠️ Slot Missed - Re-Queuing' : activeOrderFlow === 'READY' ? '🎉 Food is Ready!' : '🥣 Preparing Meal'}
                   </h4>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">#{activeOrder.id.slice(-6).toUpperCase()}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">#{activeOrder.id.slice(-6).toUpperCase()}</p>
+                    <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                    <p className="text-[10px] font-bold text-primary uppercase">Tap to View QR</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -168,23 +170,29 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               const inStock = !isOutOfStock(item.id);
               const qty = cart[item.id]?.quantity || 0;
               return (
-                <div key={item.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 flex flex-col">
-                  <div className="h-40 relative">
+                <div key={item.id} className="bg-white rounded-[2rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
+                  <div className="h-36 relative">
                     <SmartImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                    {!inStock && <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center text-white text-[10px] font-black uppercase">Sold Out</div>}
+                    {!inStock && <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center text-white text-[10px] font-black uppercase tracking-widest">Sold Out</div>}
+                    <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2 py-0.5 rounded-lg text-[8px] font-black uppercase text-slate-500 border border-slate-100">
+                        {item.category}
+                    </div>
                   </div>
                   <div className="p-4 flex flex-col flex-1">
-                    <h3 className="text-sm font-black text-slate-800 line-clamp-2 min-h-[40px]">{item.name}</h3>
-                    <div className="mt-auto flex items-center justify-between pt-2">
-                       <span className="text-base font-black text-slate-900">₹{item.price}</span>
+                    <h3 className="text-xs font-black text-slate-800 line-clamp-2 min-h-[32px] leading-snug">{item.name}</h3>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                      {item.orderType === 'FAST_ITEM' ? '⚡ Instant Pickup' : '🔥 Kitchen Cooked'}
+                    </p>
+                    <div className="mt-auto flex items-center justify-between pt-3">
+                       <span className="text-sm font-black text-slate-900 italic">₹{item.price}</span>
                        {qty > 0 ? (
-                         <div className="flex items-center gap-3 bg-slate-50 p-1 rounded-full border border-slate-100">
-                           <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-sm"><Minus className="w-3" /></button>
-                           <span className="text-xs font-black">{qty}</span>
-                           <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center shadow-sm"><Plus className="w-3" /></button>
+                         <div className="flex items-center gap-2.5 bg-slate-50 p-1 rounded-full border border-slate-100">
+                           <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-all border border-slate-200"><Minus className="w-3 text-slate-600" /></button>
+                           <span className="text-xs font-black min-w-[12px] text-center">{qty}</span>
+                           <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary text-white rounded-xl flex items-center justify-center shadow-md active:scale-90 transition-all shadow-primary/20"><Plus className="w-3" /></button>
                          </div>
                        ) : (
-                         <button onClick={() => updateCart(item, 1)} disabled={!inStock} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase ${inStock ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 text-slate-300'}`}>Add</button>
+                         <button onClick={() => updateCart(item, 1)} disabled={!inStock} className={`px-5 py-2 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95 ${inStock ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>Add</button>
                        )}
                     </div>
                   </div>
@@ -196,10 +204,19 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       </div>
 
       {cartItemsCount > 0 && (
-        <div className="fixed bottom-0 inset-x-0 p-6 bg-white/90 backdrop-blur-2xl border-t z-50">
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md p-6 bg-white/90 backdrop-blur-2xl border-t border-slate-100 z-50">
           <div className="flex items-center justify-between gap-6">
-            <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{cartItemsCount} Items</p><p className="text-2xl font-black text-slate-900">₹{cartTotal}</p></div>
-            <button onClick={onProceed} className="flex-1 bg-primary text-white font-black text-sm uppercase py-5 rounded-2xl shadow-xl active:scale-95 transition-all">Process Order</button>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{cartItemsCount} {cartItemsCount === 1 ? 'Item' : 'Items'} Selected</p>
+              <p className="text-2xl font-black text-slate-900 tracking-tight italic">₹{cartTotal}</p>
+            </div>
+            <button 
+                onClick={onProceed} 
+                className="flex-1 bg-gray-900 text-white font-black text-xs uppercase tracking-widest py-5 rounded-[2rem] shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
+            >
+              Process Order
+              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-[10px]">{cartItemsCount}</div>
+            </button>
           </div>
         </div>
       )}

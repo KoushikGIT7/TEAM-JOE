@@ -2122,9 +2122,9 @@ const QR_VALIDATION_CACHE: Record<string, { time: number, result: any }> = {};
 export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
     const now = Date.now();
     
-    // 🛡️ [CACHE-LOCK] Reject rapid redundant scans (1s TTL)
+    // 🛡️ [CACHE-LOCK] Reject rapid redundant scans (400ms TTL)
     const cached = QR_VALIDATION_CACHE[qrPayload];
-    if (cached && (now - cached.time) < 1000) return cached.result;
+    if (cached && (now - cached.time) < 400) return cached.result;
 
     try {
         const payload = parseServingQR(qrPayload);

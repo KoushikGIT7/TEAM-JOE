@@ -129,7 +129,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   // ── WAITING STATE ──────────────────────────────────────────────────────────
   if (state === 'WAITING') {
     return (
-      <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-8 overflow-hidden">
+      <div className="h-screen bg-white flex flex-col w-full max-w-md mx-auto p-8 overflow-hidden border-x border-slate-50">
         <div className="flex-1 flex flex-col items-center justify-center gap-8">
 
           {/* Animated waiting badge */}
@@ -189,7 +189,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
 
   // ── CHECKOUT (IDLE / PROCESSING) ───────────────────────────────────────────
   return (
-    <div className="h-screen bg-[#F8FAFC] flex flex-col max-w-md mx-auto">
+    <div className="h-screen bg-[#F8FAFC] flex flex-col w-full max-w-md mx-auto border-x border-slate-50 relative">
 
       {/* Header */}
       <header className="px-5 py-5 bg-white flex items-center gap-4 border-b border-black/5">
@@ -278,7 +278,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       </div>
 
       {/* Fixed footer */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-5 bg-white/95 backdrop-blur-xl border-t border-black/5 z-20">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md p-5 bg-white/95 backdrop-blur-xl border-t border-black/5 z-20">
         <div className="flex justify-between items-center mb-4 px-1">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payable</span>
           <span className="text-3xl font-black text-gray-900">₹{total}</span>
