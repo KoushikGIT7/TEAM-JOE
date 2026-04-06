@@ -3,7 +3,7 @@ import { ChevronLeft, CheckCircle2, ChefHat, Clock, Check, PackageCheck, AlertCi
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order, CartItem } from '../../types';
-import { shouldShowQR, getOrderUIState } from '../../utils/orderLifecycle';
+import { shouldShowQR } from '../../utils/orderLifecycle';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { generateQRPayloadSync } from '../../services/qr';
@@ -15,7 +15,6 @@ interface QRViewProps {
   onViewOrders?: () => void;
 }
 
-// ─── Food Signature Colors ──────────────────────────────────────────────────
 const ITEM_COLOR_MAP: Record<string, { color: string; glow: string; label: string; emoji: string }> = {
   'BKT01': { color: '#EF4444', glow: 'rgba(239,68,68,0.7)',   label: 'IDLI (2PCS)',   emoji: '🔴' },
   'BKT08': { color: '#EF4444', glow: 'rgba(239,68,68,0.7)',   label: 'POHA',         emoji: '🔴' },
@@ -51,19 +50,17 @@ const getItemBadge = (item: CartItem): 'SERVED' | 'READY' | 'COOKING' | 'QUEUED'
 
 const DOSA_LOCK_IDS = new Set(['BKT03', 'BKT04', 'BKT06']);
 
-// ─── Rich QR Card ────────────────────────────────────────────────────────────
 interface RichQRCardProps {
   qrString: string;
   activeItem: CartItem;
   isVisible: boolean;
-  flashState: 'GREEN' | 'RED' | null;
   isServed: boolean;
   isMissed: boolean;
   activeColors: string[];
 }
 
 const RichQRCard: React.FC<RichQRCardProps> = ({
-  qrString, activeItem, isVisible, flashState, isServed, isMissed, activeColors
+  qrString, activeItem, isVisible, isServed, isMissed, activeColors
 }) => {
   const badge = getItemBadge(activeItem);
   const qty = activeItem.quantity ?? 1;
@@ -75,19 +72,17 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
     <div className="flex flex-col items-center">
       <div className="relative p-1.5 rounded-[3rem] transition-all duration-700">
         
-        {/* 🌀 DYNAMIC MULTI-STATION PULSE RINGS */}
-        <div className="absolute -inset-10 z-0 overflow-hidden rounded-[50%] blur-2xl pointer-events-none">
+        {/* 🌀 HIGH-VELOCITY RAINBOW LASER (Anti-Screenshot) */}
+        <div className="absolute -inset-10 z-0 overflow-hidden rounded-[50%] blur-3xl pointer-events-none opacity-40">
            <div 
-             className="absolute inset-0 opacity-30 animate-rotate" 
+             className="absolute -inset-[50%] animate-rotate" 
              style={{ 
-               background: activeColors.length > 1 
-                 ? `conic-gradient(from 0deg, ${activeColors.join(', ')}, ${activeColors[0]})` 
-                 : `radial-gradient(circle, ${activeColors[0]} 40%, transparent 70%)` 
+               background: `conic-gradient(from 0deg, #3b82f6, #ef4444, #22c55e, #eab308, #3b82f6)`
              }}
            />
         </div>
 
-        <div className="relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10">
+        <div className="relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10 transition-transform duration-500 hover:scale-[1.02]">
           
           {/* ⚡ LASER SCAN LINE */}
           {qrUnlocked && (
@@ -97,6 +92,16 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
           <div className={`transition-all duration-700 bg-white p-5 rounded-3xl shadow-inner contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
             <QRCodeSVG value={qrString} size={230} level="M" fgColor="#000000" bgColor="#FFFFFF" />
           </div>
+
+          {/* 🛡️ LIVE SECURITY TICK (Prevents Screenshots) */}
+          {qrUnlocked && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+               <span className="text-[10px] font-mono font-black text-white tracking-widest whitespace-nowrap">
+                 {(new Date()).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                 <span className="opacity-50 ml-1">.{(Date.now() % 1000).toString().padStart(3, '0').slice(0, 1)}s</span>
+               </span>
+            </div>
+          )}
 
           {qrUnlocked && (
             <div className="absolute bottom-4 right-4 z-20">
@@ -154,7 +159,7 @@ const ItemDotByQR: React.FC<{ item: CartItem; isActive: boolean; onClick: () => 
   return (
     <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all ${isActive ? 'scale-110' : 'scale-90 opacity-60'}`}>
       <div className={`w-14 h-14 rounded-2xl border-4 flex items-center justify-center text-xl transition-all ${isActive ? 'shadow-lg border-gray-900 bg-white' : 'border-gray-100 bg-gray-50'}`} style={{ borderColor: isActive ? config.color : undefined }}>
-        {item.status === 'SERVED' ? <Check className="w-6 h-6 text-green-500" /> : config.emoji}
+        {item.status === 'SERVED' || item.status === 'COMPLETED' ? <Check className="w-6 h-6 text-green-500" /> : config.emoji}
       </div>
     </button>
   );
@@ -166,7 +171,8 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const [loading, setLoading] = useState(true);
   const [flashState, setFlashState] = useState<'GREEN' | 'RED' | null>(null);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
-  
+  const [tick, setTick] = useState(0);
+
   const isMounted = useRef(true);
   const prevItemsRef = useRef<any[] | null>(null);
 
@@ -174,6 +180,25 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
+
+  const items = useMemo(() => {
+    if (!order) return [];
+    return (order.items || []).map(root => {
+      const live = liveItems.find(it => it.id === root.id || it.itemId === root.id);
+      return live ? { ...root, ...live } : root;
+    });
+  }, [order, liveItems]);
+
+  const isFullyServed = useMemo(() => items.length > 0 && items.every(it => it.status === 'SERVED' || it.status === 'COMPLETED'), [items]);
+  const qrVisible = !!order && (shouldShowQR(order) || items.some(i => i.status === 'READY'));
+  const isDone = isFullyServed || order?.orderStatus === 'COMPLETED' || order?.orderStatus === 'SERVED';
+  const isMissed = order?.orderStatus === 'MISSED';
+
+  useEffect(() => {
+    if (!qrVisible || isDone) return;
+    const interval = setInterval(() => setTick(t => t + 1), 100);
+    return () => clearInterval(interval);
+  }, [qrVisible, isDone]);
 
   useEffect(() => {
     if (!orderId) return;
@@ -193,40 +218,26 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     });
   }, [orderId]);
 
-  const mergedOrder = useMemo(() => {
-    if (!order) return null;
-    return {
-      ...order,
-      items: (order.items || []).map(root => {
-        const live = liveItems.find(it => it.id === root.id || it.itemId === root.id);
-        return live ? { ...root, ...live } : root;
-      })
-    };
-  }, [order, liveItems]);
-
   const activeColors = useMemo(() => {
-    if (!mergedOrder) return ['#3b82f6'];
+    if (!order) return ['#3b82f6'];
     const colors: string[] = [];
-    mergedOrder.items?.forEach(it => {
+    items.forEach(it => {
       if (it.status === 'READY') {
         const config = getItemConfig(it.id);
         if (!colors.includes(config.color)) colors.push(config.color);
       }
     });
     return colors.length > 0 ? colors : ['#3b82f6'];
-  }, [mergedOrder]);
-
-  const items = mergedOrder?.items || [];
-  const isFullyServed = useMemo(() => items.length > 0 && items.every(it => it.status === 'SERVED' || it.status === 'COMPLETED'), [items]);
+  }, [order, items]);
 
   useEffect(() => {
-    if (!mergedOrder?.items || !prevItemsRef.current) {
-      prevItemsRef.current = mergedOrder?.items || null;
+    if (items.length === 0 || !prevItemsRef.current) {
+      prevItemsRef.current = items;
       return;
     }
     
     let gotReady = false;
-    mergedOrder.items.forEach(it => {
+    items.forEach(it => {
       const prev = prevItemsRef.current!.find(p => p.id === it.id);
       if (prev && prev.status !== 'READY' && it.status === 'READY') gotReady = true;
     });
@@ -234,30 +245,23 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     if (gotReady) {
       setFlashState('GREEN');
       if ('vibrate' in navigator) navigator.vibrate([50, 50, 150]);
-      
-      // Notify student
       if ('speechSynthesis' in window && !isFullyServed) {
-         const msg = new SpeechSynthesisUtterance();
-         msg.text = "Food is ready! Head to the counter.";
+         const msg = new SpeechSynthesisUtterance("Food is ready! Head to the counter.");
          msg.rate = 1.3;
          window.speechSynthesis.speak(msg);
       }
-      
       setTimeout(() => setFlashState(null), 2500);
     }
-    prevItemsRef.current = mergedOrder.items;
-  }, [mergedOrder?.items, isFullyServed]);
+    prevItemsRef.current = items;
+  }, [items, isFullyServed]);
 
   if (loading) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
-  if (!mergedOrder) return <div className="h-screen w-full flex items-center justify-center bg-white">Order missing</div>;
+  if (!order) return <div className="h-screen w-full flex items-center justify-center bg-white">Order missing</div>;
 
   const activeItem = items[activeItemIdx] || items[0];
-  const qrVisible = !!mergedOrder && (shouldShowQR(mergedOrder) || items.some(i => i.status === 'READY'));
-  const isDone = isFullyServed || mergedOrder.orderStatus === 'COMPLETED' || mergedOrder.qrState === 'SCANNED';
-  const isMissed = mergedOrder.orderStatus === 'MISSED';
 
   return (
-    <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white overflow-x-hidden font-sans select-none">
+    <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white overflow-x-hidden font-sans select-none relative">
       <div className="px-6 py-8 flex items-center justify-between">
         <button onClick={onBack} className="p-3 bg-gray-50 rounded-2xl active:scale-95 transition-all">
           <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -268,7 +272,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
         </div>
       </div>
 
-      <div className="px-8 mb-8 text-center">
+      <div className="px-8 mb-8 text-center text-balance">
         <h1 className="text-3xl font-black text-gray-900 tracking-tighter leading-none mb-2">
           {isDone ? 'Enjoy your meal!' : isMissed ? 'Slot Missed' : 'Scan to Collect'}
         </h1>
@@ -279,10 +283,9 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <RichQRCard 
-          qrString={mergedOrder.qr?.token || generateQRPayloadSync(mergedOrder)}
+          qrString={order.qr?.token || generateQRPayloadSync(order)}
           activeItem={activeItem}
           isVisible={qrVisible}
-          flashState={flashState}
           isServed={isDone}
           isMissed={isMissed}
           activeColors={activeColors}
@@ -314,8 +317,8 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
              <CheckCircle2 className="w-20 h-20 text-green-500" />
            </div>
            <h2 className="text-4xl font-black text-gray-900 mb-4 tracking-tighter">Meal Served!</h2>
-           <p className="text-gray-400 font-bold text-center leading-relaxed max-w-xs mb-10">
-             Successfully handed over at the counter.
+           <p className="text-gray-400 font-bold text-center leading-relaxed max-w-xs mb-10 text-balance">
+             Successfully handed over at the counter. Thank you!
            </p>
            <button onClick={onBack} className="w-full py-5 bg-green-600 text-white rounded-[2rem] text-xs font-black uppercase tracking-widest shadow-lg">Done</button>
          </div>
