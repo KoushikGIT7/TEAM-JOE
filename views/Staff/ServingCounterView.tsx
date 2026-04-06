@@ -103,11 +103,11 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       const readyItemIds = readyItems.map(i => i.id);
       await serveOrderItemsAtomic(order.id, readyItemIds, profile.uid);
 
-      // 🎤 [SONIC-VOICE-FEEDBACK]: Minimal and fast
+      // 🎤 [SONIC-VOICE-FEEDBACK]: Snappy and confirmed
       if ('speechSynthesis' in window) {
         const msg = new SpeechSynthesisUtterance();
-        msg.text = `Serving ${readyItems.length} items for ${order.userName || 'student'}`;
-        msg.rate = 1.3;
+        msg.text = 'Order Completed';
+        msg.rate = 1.4;
         window.speechSynthesis.speak(msg);
       }
 

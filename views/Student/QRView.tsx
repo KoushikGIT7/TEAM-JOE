@@ -76,24 +76,26 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
       <div className="relative p-1.5 rounded-[3rem] transition-all duration-700">
         
         {/* 🌀 DYNAMIC MULTI-STATION PULSE RINGS */}
-        <div className="absolute inset-0 z-0">
-           {activeColors.map((color, idx) => (
-              <div 
-                key={color}
-                className="absolute inset-0 rounded-[3rem] border-[14px] opacity-10"
-                style={{ 
-                  borderColor: color,
-                  boxShadow: `0 0 40px ${color}44`,
-                  animation: `pulse-slow 3s infinite ${idx * 0.8}s ease-in-out`
-                }}
-              />
-           ))}
+        <div className="absolute -inset-10 z-0 overflow-hidden rounded-[50%] blur-2xl pointer-events-none">
+           <div 
+             className="absolute inset-0 opacity-30 animate-rotate" 
+             style={{ 
+               background: activeColors.length > 1 
+                 ? `conic-gradient(from 0deg, ${activeColors.join(', ')}, ${activeColors[0]})` 
+                 : `radial-gradient(circle, ${activeColors[0]} 40%, transparent 70%)` 
+             }}
+           />
         </div>
 
-        <div className="relative w-[340px] h-[340px] rounded-[2.5rem] overflow-hidden bg-white shadow-2xl border-[8px] border-gray-50 flex items-center justify-center z-10">
+        <div className="relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10">
           
-          <div className={`transition-all duration-700 bg-white p-6 rounded-3xl shadow-inner contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
-            <QRCodeSVG value={qrString} size={290} level="M" fgColor="#000000" bgColor="#FFFFFF" />
+          {/* ⚡ LASER SCAN LINE */}
+          {qrUnlocked && (
+            <div className="absolute inset-x-0 h-0.5 bg-emerald-500/40 blur-[2px] z-30 animate-scan pointer-events-none" />
+          )}
+
+          <div className={`transition-all duration-700 bg-white p-5 rounded-3xl shadow-inner contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
+            <QRCodeSVG value={qrString} size={230} level="M" fgColor="#000000" bgColor="#FFFFFF" />
           </div>
 
           {qrUnlocked && (
