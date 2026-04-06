@@ -238,7 +238,7 @@ export const generateQRPayload = async (order: Order): Promise<string> => {
 /**
  * Synchronous version
  */
-export const generateQRPayloadSync = (order: Order): string => {
+export const generateQRPayloadSync = (order: Order, itemId: string = 'all'): string => {
   const expiresAt = (order.createdAt || Date.now()) + QR_EXPIRY_MS;
   const createdAt = order.createdAt || Date.now();
   
@@ -247,7 +247,8 @@ export const generateQRPayloadSync = (order: Order): string => {
   const cafeteriaId = String(order.cafeteriaId || "JOE_CAFETERIA_01");
   
   const signature = generateSecureHashSync(order.id, userId, cafeteriaId, createdAt, expiresAt);
-  return `v1.${order.id}.${signature}.${expiresAt}`;
+  // Format: v1.ORDER_ID.ITEM_ID.SIGNATURE.EXPIRY
+  return `v1.${order.id}.${itemId}.${signature}.${expiresAt}`;
 };
 
 /**
@@ -256,6 +257,7 @@ export const generateQRPayloadSync = (order: Order): string => {
 export interface ParsedIntakeQR {
   raw: string;
   orderId: string;
+  itemId: string; // The specific item being scanned (or 'all')
   paymentMode: 'CASH' | 'UPI' | 'UNKNOWN';
   timestamp?: number;
   qrKind: 'SECURE_V1' | 'LEGACY_CASH' | 'PLAINTEXT' | 'MALFORMED';
@@ -272,13 +274,14 @@ export interface ParsedIntakeQR {
  * 3. Fallback: order_XXXX (Plaintext)
  */
 export const parseServingQR = (rawData: string): ParsedIntakeQR => {
-  if (!rawData) return { raw: '', orderId: '', paymentMode: 'UNKNOWN', qrKind: 'MALFORMED' };
+  if (!rawData) return { raw: '', orderId: '', itemId: 'all', paymentMode: 'UNKNOWN', qrKind: 'MALFORMED' };
   let data = rawData.trim();
   
   // 🔬 Diagnostic Capture
   const result: ParsedIntakeQR = {
     raw: data,
     orderId: '',
+    itemId: 'all', // Default to all if not specified
     paymentMode: 'UNKNOWN',
     qrKind: 'MALFORMED'
   };
@@ -305,11 +308,19 @@ export const parseServingQR = (rawData: string): ParsedIntakeQR => {
   if (data.includes('v1.')) {
      const parts = data.split('.');
      const vIdx = parts.findIndex(p => p.startsWith('v1'));
-     if (vIdx !== -1 && parts.length >= vIdx + 3) {
+     if (vIdx !== -1 && parts.length >= vIdx + 4) {
         result.orderId = normalizeId(parts[vIdx+1]);
+        result.itemId = parts[vIdx+2]; // Extracted target item
         result.qrKind = 'SECURE_V1';
         result.paymentMode = 'UPI'; 
-        result.timestamp = parseInt(parts[vIdx+3] || '0', 10);
+        result.timestamp = parseInt(parts[vIdx+4] || '0', 10);
+        return result;
+     } else if (vIdx !== -1 && parts.length === vIdx + 3) {
+        // Fallback for legacy v1 format without itemId
+        result.orderId = normalizeId(parts[vIdx+1]);
+        result.itemId = 'all';
+        result.qrKind = 'SECURE_V1';
+        result.paymentMode = 'UPI';
         return result;
      }
   }

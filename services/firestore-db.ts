@@ -2129,6 +2129,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
     try {
         const payload = parseServingQR(qrPayload);
         const orderId = payload?.orderId;
+        const targetItemId = payload?.itemId || 'all';
         if (!orderId) throw new Error("INVALID_QR_PAYLOAD");
 
         const orderRef = doc(db, 'orders', orderId);
@@ -2161,7 +2162,8 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                 }));
                 const finalResult = { 
                     order: { ...orderDoc, items: refinedItems }, 
-                    result: 'ALREADY_MANIFESTED' as const 
+                    result: 'ALREADY_MANIFESTED' as const,
+                    targetItemId
                 };
                 QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
                 return finalResult;
@@ -2278,7 +2280,8 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
 
             const finalResult = { 
                 order: { ...orderDoc, ...updateData, items: refinedItems }, 
-                result 
+                result,
+                targetItemId
             };
             
             QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };

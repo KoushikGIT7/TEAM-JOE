@@ -43,7 +43,7 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       // 🚀 [ZERO-LATENCY-BEEP]: Confirm scan instantly in the UI
       if ('vibrate' in navigator) navigator.vibrate(50);
       
-      const { order, result } = await validateQRForServing(data.trim(), profile.uid);
+      const { order, result, targetItemId } = await validateQRForServing(data.trim(), profile.uid);
 
       if (result === 'CONSUMED') {
         setScanState('ERROR');
@@ -52,68 +52,45 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
         return;
       }
 
-      if (result === 'AWAITING_PAYMENT') {
-        setScanState('ERROR');
-        setFeedback('PAYMENT PENDING');
-        resetToIdle();
-        return;
-      }
-
-      // 🛡️ [STATION-SHIELD]: Filter items to only those belonging to this physical counter
       const allItems = order.items || [];
-      const stationItems = allItems.filter(it => {
-        const itemStation = STATION_ID_BY_ITEM_ID[it.id] || 'default';
-        return selectedStation === 'all' || itemStation === selectedStation;
-      });
-
-      const readyItems = stationItems.filter(it =>
-        it.status === 'READY' || it.status === 'PENDING' || it.orderType === 'FAST_ITEM'
-      );
       
-      const otherStationReady = allItems.filter(it => {
-        const itemStation = STATION_ID_BY_ITEM_ID[it.id] || 'default';
-        const isMatch = selectedStation === 'all' || itemStation === selectedStation;
-        const isReady = it.status === 'READY' || it.status === 'PENDING' || it.orderType === 'FAST_ITEM';
-        return !isMatch && isReady;
-      });
-
-      if (readyItems.length === 0) {
-        if (otherStationReady.length > 0) {
-            setScanState('ERROR');
-            setFeedback("WRONG COUNTER - GO TO CORRECT STATION");
-            resetToIdle(3000);
-            return;
-        }
-
-        const cookingItems = stationItems.filter(it =>
-            it.status !== 'READY' && it.status !== 'SERVED' && it.orderType !== 'FAST_ITEM' && it.status !== 'PENDING'
-        );
-
-        if (cookingItems.length > 0) {
-            setScanState('COOKING');
-            setFeedback("STILL COOKING - READY SOON");
-            resetToIdle(3000);
-            return;
-        }
-        
-        throw new Error("NO READY ITEMS FOUND");
+      // 🔬 [ITEM-LOCKED-LOGIC]: Only serve the specific item being scanned
+      const targetItem = allItems.find(it => it.id === targetItemId || targetItemId === 'all');
+      
+      if (!targetItem && targetItemId !== 'all') {
+         setScanState('ERROR');
+         setFeedback('WRONG ITEM SELECTION');
+         resetToIdle(3000);
+         return;
       }
 
-      // 🧹 [ATOMIC-SERVE]: Use single transaction for rapid multi-item serving
-      const readyItemIds = readyItems.map(i => i.id);
+      // Check if that specific item is ready
+      const isReadySet = targetItemId === 'all' 
+         ? allItems.filter(it => it.status === 'READY' || it.orderType === 'FAST_ITEM')
+         : (targetItem?.status === 'READY' || targetItem?.status === 'PENDING' || targetItem?.orderType === 'FAST_ITEM' ? [targetItem] : []);
+
+      if (isReadySet.length === 0) {
+         setScanState('COOKING');
+         setFeedback('SELECT READY ITEM FIRST');
+         resetToIdle(3000);
+         return;
+      }
+
+      // 🧹 [ATOMIC-SERVE]: Use single transaction for precision item serving
+      const readyItemIds = isReadySet.map(i => i.id);
       await serveOrderItemsAtomic(order.id, readyItemIds, profile.uid);
 
-      // 🎤 [SONIC-VOICE-FEEDBACK]: Snappy and confirmed
+      // 🎤 [SONIC-VOICE-FEEDBACK]: confirmed item
       if ('speechSynthesis' in window) {
         const msg = new SpeechSynthesisUtterance();
-        msg.text = 'Order Completed';
+        msg.text = 'Served';
         msg.rate = 1.4;
         window.speechSynthesis.speak(msg);
       }
 
       setScanState('SUCCESS');
       setStudentName(order.userName || 'Student');
-      setServedItems(readyItems.map(i => i.name));
+      setServedItems(isReadySet.map(i => i.name));
       resetToIdle(1800);
 
     } catch (err: any) {
@@ -121,7 +98,7 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       setFeedback(err.message || 'UNABLE TO SERVE');
       resetToIdle();
     }
-  }, [profile.uid, resetToIdle, selectedStation]);
+  }, [profile.uid, resetToIdle]);
 
   return (
     <div className="h-[100dvh] w-screen bg-black overflow-hidden relative font-sans text-white select-none">

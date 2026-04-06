@@ -284,7 +284,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
 
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <RichQRCard 
-          qrString={order.qr?.token || generateQRPayloadSync(order)}
+          qrString={generateQRPayloadSync(order, activeItem.id)}
           activeItem={activeItem}
           isVisible={qrVisible}
           isServed={isDone}
