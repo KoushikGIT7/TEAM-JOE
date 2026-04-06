@@ -51,23 +51,16 @@ export const DEFAULT_SERVING_RATE_PER_MIN = 10;
 // --- ZERO-WAIT WORKFLOW CONFIG ---
 
 /** Categories designated as FAST_ITEM (instantly serveable from counter) */
-export const FAST_ITEM_CATEGORIES: readonly string[] = ['Lunch', 'Beverages', 'Snacks'];
+export const FAST_ITEM_CATEGORIES: readonly string[] = ['Breakfast', 'Lunch', 'Beverages', 'Snacks'];
 
 /** Fixed prep time (seconds) for items not requiring a kitchen queue */
-export const DEFAULT_PREP_TIME_SECONDS = 45;
+export const DEFAULT_PREP_TIME_SECONDS = 0;
 
 /** Kitchen Queue Mapping: Specific prep time by item ID */
 export const PREP_TIME_BY_ITEM: Record<string, number> = {
   'BKT03': 60,  // Masala Dosa
   'BKT04': 45,  // Set Dosa
   'BKT06': 60,  // Onion Dosa
-  'BKT10': 90,  // Bread Omelette (Kitchen)
-  'LCH02': 90,  // Egg Rice (Wok prep)
-  'LCH04': 60,  // Egg Bhurji
-  'LCH05': 60,  // Omelette
-  'BEV01': 0, 'BEV02': 0, 'BEV03': 0, 'BEV04': 0, 'BEV05': 0, 'BEV06': 0, // Fast
-  'LCH01': 0, 'LCH03': 0, 'LCH06': 0, 'LCH07': 0, // Fast meals
-  'SNK01': 0, 'SNK02': 0, 'SNK03': 0, 'SNK04': 0, // Pre-prepared snacks
 };
 
 // --- STATIONS (Slot Control) ---
@@ -83,35 +76,14 @@ export interface PreparationStationConfig {
 export const PREPARATION_STATIONS: Record<string, PreparationStationConfig> = {
   dosa: {
     id: 'dosa',
-    maxConcurrentPreparation: 10, // 🍳 Optimized for high-volume Dosa tawa
+    maxConcurrentPreparation: 10,
     name: 'Dosa Counter',
     nameKn: 'ದೋಸೆ ಕೌಂಟರ್',
     avgPrepTimeSeconds: 300,
   },
-  rice_frying: {
-    id: 'rice_frying',
-    maxConcurrentPreparation: 12, // 🍳 Wok-based frying partition
-    name: 'Rice Frying Counter',
-    nameKn: 'ರೈಸ್ ಫ್ರೈಯಿಂಗ್ ಕೌಂಟರ್',
-    avgPrepTimeSeconds: 420,
-  },
-  beverages: {
-    id: 'beverages',
-    maxConcurrentPreparation: 20, // ☕ Multi-glass tea/coffee tray batching
-    name: 'Tea & Coffee Section',
-    nameKn: 'ಟೀ ಮತ್ತು ಕಾಫಿ ವಿಭಾಗ',
-    avgPrepTimeSeconds: 120,
-  },
-  kitchen: {
-    id: 'kitchen',
-    maxConcurrentPreparation: 25, // 🍲 Bulk Handi/Idli/Bulk preps
-    name: 'Main Kitchen Prep',
-    nameKn: 'ಮುಖ್ಯ ಅಡುಗೆಮನೆ ತಯಾರಿ',
-    avgPrepTimeSeconds: 900,
-  },
   default: {
     id: 'default',
-    maxConcurrentPreparation: 100, // 🍱 Instant Front-Counter Items (Plate Meal)
+    maxConcurrentPreparation: 100,
     name: 'Front Counter',
     nameKn: 'ಮುಂಭಾಗದ ಕೌಂಟರ್',
     avgPrepTimeSeconds: 15,
@@ -120,21 +92,10 @@ export const PREPARATION_STATIONS: Record<string, PreparationStationConfig> = {
 
 /** Categorization for Smart Kitchen Workflow (Physical Partitioning) */
 export const STATION_ID_BY_ITEM_ID: Record<string, string> = {
-  // --- KITCHEN (Main Bulk) ---
-  'BKT01': 'kitchen', 'BKT02': 'kitchen', 'BKT05': 'kitchen', 'BKT07': 'kitchen', 'BKT08': 'kitchen', 'BKT09': 'kitchen', 
-  
-  // --- DOSA COUNTER ---
+  // --- DOSA COUNTER (The only dynamic prep) ---
   'BKT03': 'dosa', 'BKT04': 'dosa', 'BKT06': 'dosa', 
 
-  // --- RICE FRYING COUNTER ---
-  'LCH02': 'rice_frying', 'LCH04': 'rice_frying', 'LCH05': 'rice_frying', 'BKT10': 'rice_frying',
-  
-  // --- BEVERAGE STATION ---
-  'BEV01': 'beverages', 'BEV02': 'beverages', 'BEV03': 'beverages', 'BEV04': 'beverages', 'BEV05': 'beverages', 'BEV06': 'beverages',
-
-  // --- FRONT COUNTER (Instant) ---
-  'LCH01': 'default', 'LCH03': 'default', 'LCH06': 'default', 'LCH07': 'default',
-  'SNK01': 'default', 'SNK02': 'default', 'SNK03': 'default', 'SNK04': 'default',
+  // Any other item defaults to Front Counter ('default') internally in isStaticItem
 };
 
 // --- BILINGUAL UI LABELS ---

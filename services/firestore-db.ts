@@ -141,12 +141,12 @@ export const isStaticItem = (item: any): boolean => {
   ]);
   if (item.id && FAST_ITEM_IDS.has(item.id)) return true;
 
-  // 3. Category-level fallback — Beverages are always fast
-  const cat = (item.category || '').toLowerCase();
-  if (cat === 'beverages') return true;
+  // 4. DOSA-DRIVEN ENGINE: Only Dosa varieties (Masala, Set, Onion) are dynamic.
+  const DOSA_IDS = new Set(['BKT03', 'BKT04', 'BKT06']);
+  if (item.id && DOSA_IDS.has(item.id)) return false;
 
-  // 4. Everything else (Breakfast tiffin, kitchen-cooked Lunch) → dynamic
-  return false;
+  // Everything else (Idli, Rice, Tea, etc.) is 'Scan & Serve' (Fast)
+  return true;
 };
 
 const orderToFirestore = (order: Order) => ({
