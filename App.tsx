@@ -14,8 +14,9 @@ import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
 import CashierView from './views/Staff/CashierView';
+import ServingCounterView from './views/Staff/ServingCounterView';
 import AdminDashboard from './views/Admin/Dashboard';
-import UnifiedKitchenConsole from './views/Staff/UnifiedKitchenConsole';
+import CookView from './views/Staff/CookView';
 import LoginView from './views/Auth/LoginView';
 
 import FoodLoader from './components/Common/FoodLoader';
@@ -110,7 +111,7 @@ const App: React.FC = () => {
     switch (r) {
       case 'ADMIN': return 'ADMIN';
       case 'CASHIER': return 'CASHIER';
-      case 'SERVER':
+      case 'SERVER': return 'SERVING_COUNTER';
       case 'COOK': return 'KITCHEN';
       case 'GUEST': 
       case 'STUDENT': return 'STUDENT_HOME';
@@ -212,12 +213,19 @@ const App: React.FC = () => {
           />
         );
       case 'KITCHEN':
-      case 'SERVING_COUNTER':
         return (
-          <UnifiedKitchenConsole
+          <CookView
             profile={profile!}
             onLogout={handleLogout}
             onBack={() => setView('ADMIN')}
+          />
+        );
+      case 'SERVING_COUNTER':
+        return (
+          <ServingCounterView
+            profile={profile!}
+            onLogout={handleLogout}
+            onOpenKitchen={() => setView('KITCHEN')}
           />
         );
       case 'STUDENT_HOME':

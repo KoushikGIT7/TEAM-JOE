@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { app } from '../firebase';
+import app from '../firebase';
 import { joeSounds } from '../utils/audio';
 
 /**

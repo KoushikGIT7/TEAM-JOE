@@ -50,6 +50,7 @@ async function createTestOrder(): Promise<{ order: Order; qrCode: string }> {
     paymentStatus: 'SUCCESS',
     orderStatus: 'ACTIVE',
     qrStatus: 'ACTIVE',
+    queueStatus: 'IN_QUEUE',
     createdAt,
     cafeteriaId: 'MAIN_CAFE'
   };

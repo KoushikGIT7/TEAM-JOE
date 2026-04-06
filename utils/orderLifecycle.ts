@@ -10,6 +10,7 @@ export type OrderUIState =
   | 'PENDING_PAYMENT'      // Awaiting payment (cash only)
   | 'PAYMENT_PROCESSING'   // Payment in progress
   | 'AWAITING_QR'          // Payment successful, QR generating
+  | 'KITCHEN_PREPARING'    // Order contains unready kitchen items (HIDE QR)
   | 'QR_ACTIVE'            // QR ready, awaiting scan
   | 'SCANNED'              // Cashier scanned QR
   | 'COMPLETED'            // Order completed/served
@@ -52,8 +53,11 @@ export const getOrderUIState = (order: Order): OrderUIState => {
   // 💰 PAYMENT STATES
   if (order.paymentStatus === 'PENDING' || order.paymentStatus === 'INITIATED') return 'PENDING_PAYMENT';
 
-  // 📱 ACTIVE QR
+  // 🥘 KITCHEN LOCKOUT removed as requested - QR now shows immediately after payment
+  // Per-item locking is handled in the QRView component
   const isPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
+
+  // 📱 ACTIVE QR
   const hasActiveQR = order.qrStatus === 'ACTIVE' || order.qr?.status === 'ACTIVE' || !!order.qr?.token;
   
   if (isPaid && (hasActiveQR || order.qrStatus === 'SCANNED')) {
@@ -107,6 +111,8 @@ export const getOrderStatusMessage = (order: Order): string => {
       return 'Processing Payment...';
     case 'AWAITING_QR':
       return 'Generating QR...';
+    case 'KITCHEN_PREPARING':
+      return 'Kitchen is Cooking... Please Wait';
     case 'QR_ACTIVE':
       return 'Ready for Pickup - Show QR';
     case 'SCANNED':
@@ -145,7 +151,7 @@ export const groupOrdersByStatus = (orders: Order[]): {
 
   orders.forEach(order => {
     const state = getOrderUIState(order);
-    if (state === 'QR_ACTIVE' || state === 'AWAITING_QR' || state === 'PENDING_PAYMENT' || state === 'MISSED') {
+    if (state === 'QR_ACTIVE' || state === 'AWAITING_QR' || state === 'PENDING_PAYMENT' || state === 'MISSED' || state === 'KITCHEN_PREPARING') {
       active.push(order);
     } else if (state === 'SCANNED') {
       scanned.push(order);

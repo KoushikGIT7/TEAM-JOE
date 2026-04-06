@@ -17,7 +17,7 @@ export const INITIAL_MENU: MenuItem[] = [
   { id: 'BKT01', name: 'Idli (2pcs)',           price: 20, costPrice: 8,  category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Idli_Sambar.JPG/640px-Idli_Sambar.JPG', active: true },
   { id: 'BKT02', name: 'Tomato Bath',           price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/South_Indian_Tomato_Rice.jpg/640px-South_Indian_Tomato_Rice.jpg', active: true },
   { id: 'BKT03', name: 'Masala Dosa',           price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Dosa_at_Sree_Krishna_Inn.jpg/640px-Dosa_at_Sree_Krishna_Inn.jpg', active: true },
-  { id: 'BKT04', name: 'Set Dosa (3pcs)',        price: 40, costPrice: 16, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Set_Dosey.jpg/640px-Set_Dosey.jpg', active: true },
+  { id: 'BKT04', name: 'Set Dosa (3pcs)',        price: 40, costPrice: 16, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=400&q=80', active: true },
   { id: 'BKT05', name: 'Lemon Rice',             price: 30, costPrice: 10, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Lemon_rice.jpg/640px-Lemon_rice.jpg', active: true },
   { id: 'BKT06', name: 'Onion Dosa',             price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Dosa_with_chutney.jpg/640px-Dosa_with_chutney.jpg', active: true },
   { id: 'BKT07', name: 'Medu Vada (1pc)',        price: 10, costPrice: 4,  category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Medu_vada_%281%29.jpg/640px-Medu_vada_%281%29.jpg', active: true },
@@ -36,7 +36,7 @@ export const INITIAL_MENU: MenuItem[] = [
   { id: 'LCH02', name: 'Egg Rice',         price: 60, costPrice: 28, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Egg_fried_rice.jpg/640px-Egg_fried_rice.jpg', active: true },
   { id: 'LCH03', name: 'Jeera Rice',       price: 50, costPrice: 20, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Jeera_Rice.jpg/640px-Jeera_Rice.jpg', active: true },
   { id: 'LCH04', name: 'Egg Bhurji',       price: 30, costPrice: 14, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Egg_bhurji%28anda_bhurji%29.jpg/640px-Egg_bhurji%28anda_bhurji%29.jpg', active: true },
-  { id: 'LCH05', name: 'Masala Omelette',  price: 40, costPrice: 18, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Masala_Omelette.jpg/640px-Masala_Omelette.jpg', active: true },
+  { id: 'LCH05', name: 'Masala Omelette',  price: 40, costPrice: 18, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1510693206972-df098062cb71?w=400&q=80', active: true },
   { id: 'LCH06', name: 'Veg Biryani',      price: 70, costPrice: 30, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Hyderabadi_Vegetable_Biryani.jpg/640px-Hyderabadi_Vegetable_Biryani.jpg', active: true },
   { id: 'LCH07', name: 'Curd Rice',        price: 40, costPrice: 15, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Curd_Rice.jpg/640px-Curd_Rice.jpg', active: true },
 ];

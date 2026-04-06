@@ -20,7 +20,12 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
     
     const token = detectedCodes[0].rawValue;
     if (token) {
-      hasScanned.current = true; // Hard-lock immediately
+      hasScanned.current = true; // Temporary lock against double-fire
+      
+      // Release lock after 2 seconds to allow continuous scanning
+      setTimeout(() => {
+        hasScanned.current = false;
+      }, 2000);
       
       // Haptic confirmation
       if ('vibrate' in navigator) navigator.vibrate(100);
@@ -53,7 +58,6 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
             onScan={handleScan}
             formats={['qr_code']}
             components={{
-              audio: false,      // We use manual JoeSounds instead
               onOff: true,       // Toggle flashlight
               torch: true,       // Flashlight button enabled
               zoom: false,       // Maximize FoV

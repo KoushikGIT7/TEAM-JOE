@@ -1,14 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, CreditCard, Smartphone, Landmark, Banknote, ShieldCheck, Loader2, CheckCircle2, Clock, ChevronRight, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, Smartphone, Banknote, ChevronRight, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { UserProfile, CartItem } from '../../types';
-import { createOrder, listenToOrder, getOrder, getOrderingEnabled } from '../../services/firestore-db';
-import { db } from '../../firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { submitOrderUTR } from '../../services/firestore-db';
-import { QRCodeSVG } from 'qrcode.react';
+import { createOrder, listenToOrder, getOrderingEnabled } from '../../services/firestore-db';
+import { doc, serverTimestamp } from 'firebase/firestore';
 import { joeSounds } from '../../utils/audio';
 import { sonicVoice } from '../../services/voice-engine';
-
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -19,466 +15,286 @@ interface PaymentViewProps {
 const UPI_PA = 'fcgtub@oksbi';
 const UPI_PN = 'JOE Cafeteria';
 
-const generateSecureUPILinks = (id: string, amt: number) => {
-  const shortId = id.slice(-4).toUpperCase();
-  const tn = encodeURIComponent(`ORD-${shortId}`);
-  const pn = encodeURIComponent(UPI_PN);
-  // 🛡️ [SECURE & CLEAN UPI INTENT] 
-  // We remove 'tn' (note) because many banks flag intent links with custom notes 
-  // as security risks for new merchant accounts.
-  const query = `?pa=${UPI_PA}&pn=${pn}&am=${amt}&cu=INR`;
-
-  return {
-    generic: `upi://pay${query}`,
-    phonepe: `phonepe://pay${query}`,
-    gpay: `upi://pay${query}`,
-    paytm: `paytmmp://pay${query}`
-  };
-};
-
 const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'CASH_WAITING' | 'REJECTED' | 'SUCCESS'>('IDLE');
-  const [selectedMethod, setSelectedMethod] = useState<string>('UPI');
+  const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'WAITING' | 'SUCCESS'>('IDLE');
+  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'CASH'>('UPI');
   const [orderId, setOrderId] = useState<string | null>(null);
-  const [orderStatus, setOrderStatus] = useState<'PENDING' | 'APPROVED' | null>(null);
-  const [rejectionMessage, setRejectionMessage] = useState<string>('');
-  const [orderingDisabled, setOrderingDisabled] = useState<boolean>(false);
-  const [utr, setUtr] = useState<string>('');
-  const [isSubmittingUtr, setIsSubmittingUtr] = useState<boolean>(false);
-  const [payStatus, setPayStatus] = useState<string>('INITIATED');
-  const [timer, setTimer] = useState<number>(60);
-  const [showManualUtr, setShowManualUtr] = useState<boolean>(false);
+  const [orderingDisabled, setOrderingDisabled] = useState(false);
+  const [activeAttemptKey] = useState(() => `idemp_${profile?.uid || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
 
   useEffect(() => {
-    let interval: any;
-    if (state === 'CASH_WAITING' && timer > 0 && selectedMethod === 'UPI') {
-      interval = setInterval(() => setTimer(prev => prev - 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [state, timer, selectedMethod]);
-
-  useEffect(() => {
-    const savedCart = localStorage.getItem('joe_cart');
-    if (savedCart) {
-      try {
-        setCart(JSON.parse(savedCart));
-      } catch (e) {
-        console.error("Cart parse error", e);
-      }
-    }
+    const saved = localStorage.getItem('joe_cart');
+    if (saved) { try { setCart(JSON.parse(saved)); } catch {} }
   }, []);
 
   useEffect(() => {
-    getOrderingEnabled().then((enabled) => setOrderingDisabled(!enabled)).catch(() => setOrderingDisabled(false));
+    getOrderingEnabled().then(e => setOrderingDisabled(!e)).catch(() => setOrderingDisabled(false));
   }, []);
 
-  // 🔄 HYDRATION LOGIC: Restore orphaned payment sessions (Fixes BUG 1)
+  // Restore orphaned session
   useEffect(() => {
-    const savedOrderId = localStorage.getItem('activeOrderId');
-    if (savedOrderId && !orderId) {
-      console.log('🔄 [HYDRATION] Restoring active payment session:', savedOrderId);
-      setOrderId(savedOrderId);
-      setState('CASH_WAITING');
-    }
+    const savedId = localStorage.getItem('activeOrderId');
+    if (savedId && !orderId) { setOrderId(savedId); setState('WAITING'); }
   }, [orderId]);
 
+  // Listen for cashier approval — CASH only
   useEffect(() => {
-    if (orderId) {
-      let hasNavigated = false;
-      console.log('📡 [LISTENER] Subscribing to order state machine:', orderId);
-      
-      const unsubscribe = listenToOrder(orderId, (order) => {
-        if (!order) return;
-        
-        console.log('📟 [STATUS-PULSE] New status:', order.paymentStatus);
-        setPayStatus(order.paymentStatus);
-        
-        // 🔒 STRICT NAVIGATION RULE (Fixes BUG 3)
-        // Only redirect to success/QR if cashier has VERIFIED 
-        if (order.paymentStatus === 'VERIFIED') {
-          console.log('✅ [HANDSHAKE] Verification received. Clearing session...');
-          localStorage.removeItem('activeOrderId');
-          setOrderStatus('APPROVED');
-          joeSounds.playPaymentConfirmed();
-          sonicVoice.announceOrderComplete();
-          
-          if (!hasNavigated) {
-            hasNavigated = true;
-            onSuccess(orderId);
-          }
-          return;
-        }
-
-        if ((order.paymentStatus === 'REJECTED' || order.orderStatus === 'REJECTED') && !hasNavigated) {
-          console.log('❌ [REJECTED] Payment failed. Resetting state...');
-          setOrderStatus(null);
-          setUtr(''); // Clear previous UTR for retry
-          setRejectionMessage('❌ Payment Rejected. Please pay again.');
-          setState('IDLE'); // Stay on page, allow retry
-        }
-      });
-      return unsubscribe;
-    }
-  }, [orderId, onSuccess, onBack]);
-
-  const handleUTRSubmit = async () => {
-    if (!orderId || utr.length < 4) return;
-    setIsSubmittingUtr(true);
-    try {
-      console.log('📤 [UTR-SYNC] Submitting last 4 digits:', utr);
-      const orderRef = doc(db, "orders", orderId);
-      await updateDoc(orderRef, { 
-        paymentStatus: 'UTR_SUBMITTED', 
-        utrLast4: utr,
-        utrSubmittedAt: Date.now()
-      });
-      console.log('✅ [UTR-SYNC] Firestore persistent.');
-    } catch (err: any) {
-      console.error('❌ [UTR-SYNC] Submission error:', err);
-      
-      // 🛡️ [RECOVERY-LOGIC] If order was deleted/failed, clear staleness
-      if (err?.code === 'not-found' || err?.message?.includes('not-found') || err?.message?.includes('No document to update')) {
-         console.warn("⚠️ [STALE-SESSION] Order missing. Resetting...");
-         localStorage.removeItem('activeOrderId');
-         setOrderId(null);
-         setState('IDLE');
-         alert('Session expired or cleared. Please place your order again.');
-         return;
+    if (!orderId || selectedMethod !== 'CASH') return;
+    let navigated = false;
+    const unsub = listenToOrder(orderId, (order) => {
+      if (!order) return;
+      if (order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') {
+        localStorage.removeItem('activeOrderId');
+        joeSounds.playPaymentConfirmed();
+        sonicVoice.announceOrderComplete();
+        if (!navigated) { navigated = true; onSuccess(orderId); }
       }
-
-      if (!err?.message?.includes('permission-denied')) {
-        alert(err.message || 'Verification failed. Contact staff.');
+      if ((order.paymentStatus === 'REJECTED' || order.orderStatus === 'REJECTED') && !navigated) {
+        localStorage.removeItem('activeOrderId');
+        setOrderId(null);
+        setState('IDLE');
       }
-    } finally {
-      setIsSubmittingUtr(false);
-    }
-  };
+    });
+    return unsub;
+  }, [orderId, selectedMethod, onSuccess]);
 
-  const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const isDynamic = cart.some(it => it.orderType === 'PREPARATION_ITEM');
-
-  // 🛡️ RE-ORDERING ROOT FIX:
-  // We use a state-locked attempt key. It stays the same during a single 'Processing' 
-  // attempt to block double-clicks, but it is guaranteed to be unique for every 
-  // fresh checkout session because it is initialized with the current millisecond.
-  const [activeAttemptKey] = useState(() => `idemp_${profile?.uid || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
+  const total = cart.reduce((acc, it) => acc + it.price * it.quantity, 0);
 
   const handlePayment = async () => {
     if (state === 'PROCESSING') return;
     setState('PROCESSING');
-
     try {
-      // 🛡️ [SONIC-PAY] UI Logic
-      const isUPI = selectedMethod === 'UPI';
-      const isCash = selectedMethod === 'CASH';
-      const idempotencyKey = activeAttemptKey;
-
-      // 🛑 Restriction: Max 1 Plate Meal per order
-      const plateMealQty = cart
-        .filter(it => it.category === 'Lunch')
-        .reduce((sum, it) => sum + it.quantity, 0);
-
-      if (plateMealQty > 1) {
-        throw new Error("Restriction: Only 1 Plate Meal (Lunch) is allowed per person.");
-      }
-
-      // 👤 Identify Guest/User
-      let guestId = profile?.uid;
-      if (!guestId) {
-        const stored = sessionStorage.getItem('joe_guest_id');
-        guestId = stored || `guest_${Math.random().toString(36).substr(2, 12)}`;
-        if (!stored) sessionStorage.setItem('joe_guest_id', guestId);
-      }
-      const guestName = profile?.name || 'Guest';
+      const guestId = profile?.uid || (() => {
+        const s = sessionStorage.getItem('joe_guest_id') || `guest_${Math.random().toString(36).substr(2, 12)}`;
+        sessionStorage.setItem('joe_guest_id', s); return s;
+      })();
 
       const newOrderId = await createOrder({
         userId: guestId,
-        userName: guestName,
+        userName: profile?.name || 'Guest',
         items: cart,
         totalAmount: total,
-        paymentType: selectedMethod as any,
-        paymentStatus: isCash ? 'AWAITING_CONFIRMATION' : 'INITIATED',
+        paymentType: selectedMethod,
+        // UPI = auto-verified (trust-based, gateway integration later)
+        // CASH = awaits cashier confirmation
+        paymentStatus: selectedMethod === 'UPI' ? 'SUCCESS' : 'AWAITING_CONFIRMATION',
         queueStatus: 'NOT_IN_QUEUE',
-        arrivalTime: undefined, 
         orderStatus: 'PENDING',
-        cashRequestedAt: isCash ? serverTimestamp() : undefined,
-        qrStatus: 'PENDING_PAYMENT',
+        cashRequestedAt: selectedMethod === 'CASH' ? serverTimestamp() : undefined,
+        qrStatus: selectedMethod === 'UPI' ? 'ACTIVE' : 'PENDING_PAYMENT',
         cafeteriaId: 'MAIN_CAFE',
-        idempotencyKey
-      });
+        idempotencyKey: activeAttemptKey,
+      } as any);
 
       setOrderId(newOrderId);
-      localStorage.setItem('activeOrderId', newOrderId); // 🛡️ Anchor the session
+      localStorage.setItem('activeOrderId', newOrderId);
       localStorage.removeItem('joe_cart');
-      joeSounds.playOrderPlaced(); 
-      setState('CASH_WAITING');
-      return;
+      joeSounds.playOrderPlaced();
 
+      if (selectedMethod === 'UPI') {
+        // Try to open UPI app — fails silently on desktop, works on mobile
+        try {
+          const query = `?pa=${UPI_PA}&pn=${encodeURIComponent(UPI_PN)}&am=${total}&cu=INR`;
+          const a = document.createElement('a');
+          a.href = `upi://pay${query}`;
+          a.click();
+        } catch (_) { /* UPI not available on this device — that's fine */ }
+        // Navigate to QR immediately regardless (auto-verified)
+        localStorage.removeItem('activeOrderId');
+        joeSounds.playPaymentConfirmed();
+        onSuccess(newOrderId);
+        return;
+      }
+
+      setState('WAITING');
     } catch (err: any) {
-      console.error("Payment Flow Failed:", err);
       setState('IDLE');
-      alert(err?.message || 'Payment failed. Please try again.');
+      alert(err?.message || 'Failed. Please try again.');
     }
   };
 
-  const handleCancelOrder = async () => {
+  const handleCancel = async () => {
     if (orderId) {
       try {
-        // Only update orderStatus — the rule for update only checks
-        // that staff OR owner-updates-notifiedAt. Cancel is a staff action
-        // in the strict model, but the customer is explicitly waiting for
-        // cash and should be able to cancel their own pending-payment order.
-        // The order rule allows staff update; for now we attempt it and
-        // navigate back either way.
-        await updateDoc(doc(db, 'orders', orderId), {
-          orderStatus: 'CANCELLED',
-          paymentStatus: 'REJECTED'
-        });
-      } catch (err) {
-        // Non-fatal: cashier can also cancel at the counter
-        console.warn('Could not auto-cancel order:', err);
-      }
+        const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore');
+        const { db } = await import('../../firebase');
+        await updateDoc(firestoreDoc(db, 'orders', orderId), { orderStatus: 'CANCELLED', paymentStatus: 'REJECTED' });
+      } catch {}
     }
-    // Always navigate back regardless of cancel success
+    localStorage.removeItem('activeOrderId');
     onBack();
   };
 
-  const methods = [
-    { id: 'UPI', name: 'UPI Pay', icon: Smartphone, color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-    { id: 'CARD', name: 'Debit/Credit Card', icon: CreditCard, color: 'bg-blue-50 text-blue-600 border-blue-100' },
-    { id: 'NET', name: 'Net Banking', icon: Landmark, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-    { id: 'CASH', name: 'Pay with Cash', icon: Banknote, color: 'bg-amber-50 text-amber-600 border-amber-100' }
-  ];
-
-  if (state === 'SUCCESS') {
+  // ── WAITING STATE ──────────────────────────────────────────────────────────
+  if (state === 'WAITING') {
     return (
-      <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-8 text-center animate-in fade-in zoom-in duration-500">
-        <div className="flex-1 flex flex-col items-center justify-center">
-          <div className="w-24 h-24 bg-success/10 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl shadow-success/10">
-            <CheckCircle2 className="w-12 h-12 text-success" />
-          </div>
-          <h2 className="text-3xl font-black text-textMain mb-4 tracking-tighter">Payment Success!</h2>
-          <p className="text-textSecondary mb-10 text-lg font-medium">Your order has been placed and is being processed.</p>
+      <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-8 overflow-hidden">
+        <div className="flex-1 flex flex-col items-center justify-center gap-8">
 
-          <div className="w-full space-y-4">
-            <button
-              onClick={() => orderId && onSuccess(orderId)}
-              className="w-full bg-primary text-white font-black py-5 rounded-2xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all text-lg"
-            >
-              Show Meal Token <ChevronRight className="w-6 h-6" />
-            </button>
-
-            <button
-              onClick={onBack}
-              className="w-full bg-gray-50 text-textSecondary font-black py-5 rounded-2xl border border-black/5 active:scale-95 transition-all text-sm uppercase tracking-widest"
-            >
-              Back to Menu
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (state === 'CASH_WAITING') {
-    const isUPI = selectedMethod === 'UPI';
-    const shortId = orderId?.slice(-4).toUpperCase();
-
-    return (
-      <div className="h-screen bg-white flex flex-col max-w-md mx-auto p-8 text-center animate-in fade-in duration-500 overflow-y-auto">
-        <div className="flex-1 flex flex-col items-center justify-center">
-          {/* 🟢 TOP LAYER: VERIFICATION RADIUS */}
-          <div className="relative mb-12">
-            <div className={`w-48 h-48 rounded-[4rem] border-4 flex flex-col items-center justify-center transition-all duration-700 ${orderStatus === 'APPROVED' ? 'bg-emerald-50 border-emerald-500 shadow-2xl shadow-emerald-500/10' :
-                'bg-slate-50 border-slate-200'
-              }`}>
-              {orderStatus === 'APPROVED' ? (
-                <div className="animate-in zoom-in duration-500 flex flex-col items-center">
-                  <CheckCircle2 className="w-16 h-16 text-emerald-600 mb-2" />
-                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Verified</span>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center">
-                  <span className="text-4xl font-black text-slate-900 tracking-tighter mb-1 select-all italic">#{shortId}</span>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Order Ref</span>
-                </div>
-              )}
-
-              {/* 🟡 PULSE RING */}
-              {orderStatus !== 'APPROVED' && isUPI && (
-                <div className="absolute inset-0 border-[6px] border-emerald-500 rounded-[4rem] animate-ping opacity-10" />
-              )}
-            </div>
-
-            {/* 💰 FLOATING PRICE TAG */}
-            <div className="absolute -bottom-4 bg-slate-900 text-white px-6 py-2 rounded-2xl shadow-xl border border-white/10">
-              <span className="text-lg font-black italic">₹{total}</span>
-            </div>
-          </div>
-
-          {/* 🟢 MIDDLE LAYER: STATUS & FEEDBACK */}
-          <div className="max-w-xs space-y-4 mb-10">
-            <h2 className="text-2xl font-black text-slate-900 uppercase italic leading-none tracking-tighter">
-              {orderStatus === 'APPROVED' ? 'Success! Move forward' : (isUPI ? 'Automatic Syncing...' : 'Awaiting Cashier')}
-            </h2>
-            <p className="text-slate-500 text-sm font-medium leading-relaxed">
-              {orderStatus === 'APPROVED'
-                ? 'Payment confirmed by bank. Your food is in preparation.'
-                : (isUPI ? `Checking for your ₹${total} transaction. Time remaining: ${timer}s` : 'Show your phone screen to the cashier for manual activation.')
+          {/* Animated waiting badge */}
+          <div className="relative">
+            <div className="w-40 h-40 rounded-[3.5rem] bg-gray-50 border-4 border-gray-100 flex flex-col items-center justify-center shadow-2xl shadow-black/5">
+              {selectedMethod === 'UPI'
+                ? <Smartphone className="w-14 h-14 text-blue-500 mb-2" />
+                : <Banknote className="w-14 h-14 text-amber-500 mb-2" />
               }
-            </p>
-            {/* 🟢 BOTTOM LAYER: PERMANENT UTR SYNC */}
-            {isUPI && orderStatus !== 'APPROVED' && (
-              <div className="w-full space-y-6">
-                {payStatus === 'UTR_SUBMITTED' ? (
-                  <div className="w-full bg-emerald-50 p-10 rounded-[3rem] border-2 border-emerald-100 flex flex-col items-center animate-in zoom-in duration-500 text-center">
-                    <div className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-xl shadow-emerald-200">
-                      <CheckCircle2 className="w-10 h-10 text-white" />
-                    </div>
-                    <h3 className="text-xl font-black text-emerald-900 uppercase italic mb-2 tracking-tighter">Reference Submitted</h3>
-                    <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
-                      Our system is verifying your ₹{total} payment. <br />
-                      This takes 10–60 seconds.
-                    </p>
-                    <div className="mt-8 flex items-center gap-2">
-                      <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
-                      <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Waiting for Bank Sync</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-6 w-full">
-                    {/* 🛡️ THE SCANNER: Only QR Code */}
-                    <div className="w-full bg-white p-8 rounded-[3rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center animate-in zoom-in duration-500">
-                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-8">Official QR Scanner</div>
-
-                      <div className="p-4 bg-white rounded-[2.5rem] border-4 border-slate-50 shadow-inner mb-8">
-                        <QRCodeSVG
-                          value={generateSecureUPILinks(orderId || '', total).generic}
-                          size={200}
-                          level="H"
-                          className="bg-white p-2"
-                        />
-                      </div>
-
-                      {/* 📱 SMART INSTRUCTIONS */}
-                      <div className="w-full bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-2 mb-2">
-                        <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Smart Guide:</p>
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">1</div>
-                            <p className="text-[11px] font-bold text-slate-600">Take a Screenshot of this QR</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">2</div>
-                            <p className="text-[11px] font-bold text-slate-600">Open UPI App & Pay via Gallery</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] flex items-center justify-center font-black">3</div>
-                            <p className="text-[11px] font-bold text-slate-600">Enter your 4-digit Ref below</p>
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-[9px] font-black text-slate-200 uppercase tracking-widest mt-2">{UPI_PA}</p>
-                    </div>
-
-                    {/* 🏁 FINAL STEP: UTR SYNC */}
-                    <div className="w-full bg-slate-900 p-8 rounded-[3rem] shadow-2xl shadow-slate-900/40 relative overflow-hidden">
-                      <div className="relative z-10">
-                        <p className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.4em] mb-6 text-center">Verify Transaction</p>
-                        <div className="relative mb-6">
-                          <input
-                            type="text"
-                            maxLength={12}
-                            placeholder="LAST 4 DIGITS"
-                            className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-5 text-center text-3xl font-mono font-black tracking-[0.3em] outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all text-white placeholder:text-white/20"
-                            value={utr}
-                            onChange={(e) => setUtr(e.target.value.replace(/\D/g, ''))}
-                          />
-                          {utr.length >= 4 && (
-                            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 animate-in zoom-in"><ShieldCheck className="w-8 h-8" /></div>
-                          )}
-                        </div>
-                        <button
-                          onClick={handleUTRSubmit}
-                          disabled={utr.length < 4 || isSubmittingUtr}
-                          className="w-full bg-emerald-500 text-white font-black py-6 rounded-2xl shadow-xl disabled:opacity-20 active:scale-95 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-[0.3em] italic"
-                        >
-                          {isSubmittingUtr ? <Loader2 className="w-6 h-6 animate-spin text-white" /> : <CheckCircle2 className="w-6 h-6" />}
-                          CONFIRM PAYMENT
-                        </button>
-                      </div>
-                      <ShieldCheck className="absolute bottom-[-40px] right-[-40px] w-64 h-64 text-white/5 -rotate-12" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {orderStatus === 'APPROVED' && (
-              <div className="w-full animate-in zoom-in duration-1000 delay-300">
-                <button
-                  onClick={() => orderId && onSuccess(orderId)}
-                  className="w-full bg-emerald-600 text-white font-black py-6 rounded-2xl shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-4 active:scale-95 transition-all text-[12px] uppercase tracking-[0.3em]"
-                >
-                  Show Meal QR <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-            )}
+              <span className="text-xs font-black text-gray-400 uppercase tracking-widest">
+                {selectedMethod === 'UPI' ? 'UPI' : 'CASH'}
+              </span>
+            </div>
+            <div className="absolute inset-0 border-4 border-blue-300 rounded-[3.5rem] animate-ping opacity-20" />
           </div>
 
-          {/* CANCEL OPS */}
-          <div className="mt-10 opacity-30">
-            <button onClick={handleCancelOrder} className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-1">Cancel Order Entry</button>
+          {/* Amount */}
+          <div className="bg-gray-900 text-white px-10 py-4 rounded-2xl">
+            <span className="text-4xl font-black italic">₹{total}</span>
+          </div>
+
+          {/* Status message */}
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+              {selectedMethod === 'UPI' ? 'Awaiting Cashier Confirmation' : 'Visit the Cash Counter'}
+            </h2>
+            <p className="text-gray-400 font-medium text-sm leading-relaxed max-w-[280px] mx-auto">
+              {selectedMethod === 'UPI'
+                ? 'Pay via UPI and wait for staff to confirm your payment.'
+                : 'Show your order reference to the cashier and pay cash.'}
+            </p>
+          </div>
+
+          {/* Order reference */}
+          {orderId && (
+            <div className="bg-gray-50 border border-gray-100 rounded-2xl px-8 py-4 text-center">
+              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Order Reference</p>
+              <p className="text-2xl font-black text-gray-900 tracking-widest">#{orderId.slice(-6).toUpperCase()}</p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 text-gray-400">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-xs font-black uppercase tracking-widest">Waiting for confirmation...</span>
           </div>
         </div>
+
+        <button
+          onClick={handleCancel}
+          className="w-full py-4 text-xs font-black uppercase tracking-widest text-gray-300 active:scale-95 transition-all"
+        >
+          Cancel Order
+        </button>
       </div>
     );
   }
 
+  // ── CHECKOUT (IDLE / PROCESSING) ───────────────────────────────────────────
   return (
     <div className="h-screen bg-[#F8FAFC] flex flex-col max-w-md mx-auto">
-      <header className="p-4 bg-white flex items-center gap-4 border-b border-black/5">
-        <button onClick={onBack} className="p-2 -ml-2 text-textMain"><ChevronLeft className="w-6 h-6" /></button>
-        <h2 className="text-xl font-black text-textMain">Checkout</h2>
+
+      {/* Header */}
+      <header className="px-5 py-5 bg-white flex items-center gap-4 border-b border-black/5">
+        <button onClick={onBack} className="p-2.5 bg-gray-50 rounded-2xl border border-gray-100 active:scale-95 transition-all">
+          <ChevronLeft className="w-5 h-5 text-gray-500" />
+        </button>
+        <h2 className="text-xl font-black text-gray-900">Checkout</h2>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-32">
-        <div className="bg-white border border-black/5 rounded-3xl p-6 shadow-sm">
-          <h3 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-4">Payment Method</h3>
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 pb-40">
+
+        {/* Cart Summary */}
+        <div className="bg-white rounded-[2rem] p-6 border border-black/5 shadow-sm">
+          <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">Your Order</h3>
           <div className="space-y-3">
-            {methods.map(method => (
-              <button
-                key={method.id}
-                onClick={() => setSelectedMethod(method.id)}
-                className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${selectedMethod === method.id
-                    ? 'border-primary bg-primary/5'
-                    : 'border-transparent bg-gray-50'
-                  }`}
-              >
-                <div className={`p-2 rounded-xl ${method.color}`}>
-                  <method.icon className="w-5 h-5" />
+            {cart.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-gray-900">{item.name}</p>
+                    <p className="text-[10px] font-bold text-gray-400">×{item.quantity} · ₹{item.price} each</p>
+                  </div>
                 </div>
-                <span className={`font-black ${selectedMethod === method.id ? 'text-primary' : 'text-textMain'}`}>{method.name}</span>
-                {selectedMethod === method.id && <div className="ml-auto w-5 h-5 bg-primary rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
-              </button>
+                <p className="text-sm font-black text-gray-900">₹{item.price * item.quantity}</p>
+              </div>
             ))}
           </div>
+          <div className="mt-4 pt-4 border-t border-gray-50 flex justify-between">
+            <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Total</span>
+            <span className="text-xl font-black text-gray-900">₹{total}</span>
+          </div>
         </div>
+
+        {/* Payment Method */}
+        <div className="bg-white rounded-[2rem] p-6 border border-black/5 shadow-sm">
+          <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">Payment Method</h3>
+          <div className="grid grid-cols-2 gap-3">
+
+            <button
+              onClick={() => setSelectedMethod('UPI')}
+              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all active:scale-95 ${
+                selectedMethod === 'UPI'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-100 bg-gray-50'
+              }`}
+            >
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedMethod === 'UPI' ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                <Smartphone className={`w-6 h-6 ${selectedMethod === 'UPI' ? 'text-white' : 'text-gray-500'}`} />
+              </div>
+              <div className="text-center">
+                <p className={`text-sm font-black ${selectedMethod === 'UPI' ? 'text-blue-600' : 'text-gray-700'}`}>UPI Pay</p>
+                <p className="text-[9px] font-bold text-gray-400 mt-0.5">PhonePe · GPay</p>
+              </div>
+              {selectedMethod === 'UPI' && <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
+            </button>
+
+            <button
+              onClick={() => setSelectedMethod('CASH')}
+              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all active:scale-95 ${
+                selectedMethod === 'CASH'
+                  ? 'border-amber-500 bg-amber-50'
+                  : 'border-gray-100 bg-gray-50'
+              }`}
+            >
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedMethod === 'CASH' ? 'bg-amber-500' : 'bg-gray-200'}`}>
+                <Banknote className={`w-6 h-6 ${selectedMethod === 'CASH' ? 'text-white' : 'text-gray-500'}`} />
+              </div>
+              <div className="text-center">
+                <p className={`text-sm font-black ${selectedMethod === 'CASH' ? 'text-amber-600' : 'text-gray-700'}`}>Cash</p>
+                <p className="text-[9px] font-bold text-gray-400 mt-0.5">Pay at counter</p>
+              </div>
+              {selectedMethod === 'CASH' && <div className="w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
+            </button>
+
+          </div>
+        </div>
+
+        {orderingDisabled && (
+          <div className="bg-red-50 border border-red-100 rounded-2xl p-4 text-center">
+            <p className="text-xs font-black text-red-500 uppercase tracking-widest">Ordering is currently disabled</p>
+          </div>
+        )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-xl border-t border-black/5 z-20 max-w-md mx-auto">
-        <div className="flex justify-between items-center mb-4 px-2">
-          <span className="text-sm font-bold text-textSecondary uppercase tracking-widest">Total Payable</span>
-          <span className="text-2xl font-black text-textMain">₹{total}</span>
+      {/* Fixed footer */}
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-5 bg-white/95 backdrop-blur-xl border-t border-black/5 z-20">
+        <div className="flex justify-between items-center mb-4 px-1">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payable</span>
+          <span className="text-3xl font-black text-gray-900">₹{total}</span>
         </div>
         <button
-          disabled={state === 'PROCESSING'}
+          disabled={state === 'PROCESSING' || orderingDisabled}
           onClick={handlePayment}
-          className="w-full h-16 bg-textMain text-white rounded-2xl font-black flex items-center justify-between px-8 shadow-xl active:scale-95 transition-all disabled:opacity-50"
+          className="w-full h-16 bg-gray-900 text-white rounded-[1.5rem] font-black flex items-center justify-between px-8 shadow-xl active:scale-95 transition-all disabled:opacity-40"
         >
-          <span>{state === 'PROCESSING' ? 'Processing...' : (selectedMethod === 'CASH' ? 'Place Order' : 'Pay Now')}</span>
-          <ChevronRight className="w-5 h-5" />
+          <span className="text-sm uppercase tracking-widest">
+            {state === 'PROCESSING' ? 'Placing Order...' : selectedMethod === 'CASH' ? 'Place Order' : 'Pay with UPI'}
+          </span>
+          {state === 'PROCESSING'
+            ? <Loader2 className="w-5 h-5 animate-spin" />
+            : <ChevronRight className="w-5 h-5" />
+          }
         </button>
       </div>
     </div>

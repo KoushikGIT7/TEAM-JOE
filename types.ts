@@ -37,7 +37,7 @@ export interface CartItem extends MenuItem {
   quantity: number;
   servedQty?: number;
   remainingQty?: number;
-  status: 'PENDING' | 'AWAITING_READY' | 'PREPARING' | 'READY' | 'COLLECTING' | 'MISSED' | 'MISSED_PREVIOUS' | 'SERVED' | 'READY_SERVED' | 'COMPLETED' | 'ABANDONED' | 'SERVED_PARTIAL';
+  status: 'PENDING' | 'AWAITING_READY' | 'QUEUED' | 'PREPARING' | 'READY' | 'COLLECTING' | 'MISSED' | 'MISSED_PREVIOUS' | 'SERVED' | 'READY_SERVED' | 'COMPLETED' | 'ABANDONED' | 'SERVED_PARTIAL';
 }
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'SERVED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'MISSED' | 'ABANDONED';

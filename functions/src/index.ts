@@ -248,3 +248,108 @@ export const onItemWrite = functions
     functions.logger.info(`[NOTIFY] FIRST_ITEM_READY sent for order ${orderId}`);
     await sendNotification(orderData.userId, "FIRST_ITEM_READY", orderId);
   });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔥 CLOUD FUNCTION: processHardwareScan — Endpoint for IoT Hardware Scanners
+// ─────────────────────────────────────────────────────────────────────────────
+export const processHardwareScan = functions.https.onRequest(async (req, res) => {
+  // CORS enabled so web-based test harnesses and direct REST clients can ping it safely
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "POST");
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  try {
+    const { orderId, scannerType } = req.body;
+    
+    if (!orderId) {
+      res.status(400).json({ error: "Missing orderId" });
+      return;
+    }
+
+    // 1. Fetch Order
+    const orderRef = db.collection("orders").doc(orderId);
+    const orderSnap = await orderRef.get();
+    
+    if (!orderSnap.exists) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+    
+    const order = orderSnap.data()!;
+    
+    if (order.paymentStatus !== "SUCCESS" && order.paymentStatus !== "VERIFIED") {
+      throw new Error("PAYMENT_NOT_VERIFIED");
+    }
+
+    // 2. Fetch Items in Subcollection
+    const itemsSnap = await orderRef.collection("items").get();
+    if (itemsSnap.empty) {
+      throw new Error("NO_ITEMS_FOUND");
+    }
+
+    const items = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // 3. Filter Items based on Scanner Type Logic
+    // - STATIC scanners serve FAST_ITEMs that are PENDING.
+    // - DYNAMIC scanners serve PREPARATION_ITEMs that are READY.
+    let targetItems: any[] = [];
+    if (scannerType === "STATIC") {
+      targetItems = items.filter((i: any) => (i.orderType === "FAST_ITEM" || !i.orderType) && i.status === "PENDING");
+    } else if (scannerType === "DYNAMIC") {
+      targetItems = items.filter((i: any) => i.orderType === "PREPARATION_ITEM" && i.status === "READY");
+    } else {
+      // Default: Try to serve anything that is READY or a PENDING FAST_ITEM
+      targetItems = items.filter((i: any) => 
+        i.status === "READY" || ((i.orderType === "FAST_ITEM" || !i.orderType) && i.status === "PENDING")
+      );
+    }
+
+    if (targetItems.length === 0) {
+      // Meaning the student is in the wrong line, or food is still cooking, or already served.
+      throw new Error("NOTHING_TO_SERVE_OR_WRONG_LINE");
+    }
+
+    // 4. Execute Atomic Batch Update to mark items as SERVED
+    const batch = db.batch();
+    let totalItemsServed = 0;
+
+    targetItems.forEach((item: any) => {
+      const itemRef = orderRef.collection("items").doc(item.id);
+      batch.update(itemRef, { 
+        status: "SERVED", 
+        servedAt: Date.now() 
+      });
+      totalItemsServed++;
+    });
+
+    // Also update order status if all items are now served
+    const allItemsAreNowServed = items.every((i: any) => 
+      i.status === "SERVED" || targetItems.some(ti => ti.id === i.id)
+    );
+
+    if (allItemsAreNowServed) {
+      batch.update(orderRef, { orderStatus: "COMPLETED", serveFlowStatus: "SERVED" });
+    } else {
+      batch.update(orderRef, { serveFlowStatus: "PARTIALLY_SERVED" });
+    }
+
+    await batch.commit();
+
+    functions.logger.info(`[HARDWARE-SCAN] Success: orderId=${orderId}, itemsServed=${totalItemsServed}`, { targetItems: targetItems.map(i => i.id) });
+
+    // HTTP 200 causes the scanner to short-beep and flash GREEN.
+    res.status(200).json({ 
+      success: true, 
+      message: "SERVED", 
+      itemsServed: totalItemsServed,
+      allItemsCompleted: allItemsAreNowServed 
+    });
+    
+  } catch (error: any) {
+    functions.logger.error(`[HARDWARE-SCAN] Rejected: ${error.message}`);
+    // HTTP 403 causes the scanner to 3-beep and flash RED.
+    res.status(403).json({ error: error.message });
+  }
+});

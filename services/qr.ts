@@ -1,8 +1,8 @@
 
 import { Order } from '../types';
 
-// Production-grade secret key (should be moved to environment variable in production)
-const QR_SECRET_KEY = import.meta.env.VITE_QR_SECRET_KEY || 'JOE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION';
+// Production-grade secret key (Hardlocked across environments to prevent SECURITY_BREACH)
+const QR_SECRET_KEY = 'JOE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION_HARDLOCKED';
 
 // QR code expiry: effectively indefinite (10 years) until scanned
 export const QR_EXPIRY_MS = 10 * 365 * 24 * 60 * 60 * 1000;
@@ -239,8 +239,14 @@ export const generateQRPayload = async (order: Order): Promise<string> => {
  * Synchronous version
  */
 export const generateQRPayloadSync = (order: Order): string => {
-  const expiresAt = order.createdAt + QR_EXPIRY_MS;
-  const signature = generateSecureHashSync(order.id, order.userId, order.cafeteriaId, order.createdAt, expiresAt);
+  const expiresAt = (order.createdAt || Date.now()) + QR_EXPIRY_MS;
+  const createdAt = order.createdAt || Date.now();
+  
+  // Normalize exactly like firestore-db.ts verification
+  const userId = String(order.userId || "");
+  const cafeteriaId = String(order.cafeteriaId || "JOE_CAFETERIA_01");
+  
+  const signature = generateSecureHashSync(order.id, userId, cafeteriaId, createdAt, expiresAt);
   return `v1.${order.id}.${signature}.${expiresAt}`;
 };
 
