@@ -1194,8 +1194,10 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
                 const now = Date.now();
                 await Promise.all(itemsWithResolvedType.map((it: any) => {
                    const itRef = doc(db, "orders", id, "items", it.id);
-                   // FIX: Include 'Breakfast' and use the resolved orderType (more robust)
-                   const isFast = it.orderType === 'FAST_ITEM' || ['Breakfast', 'Lunch', 'Beverages', 'Snacks'].includes(it.category || '');
+                   
+                   // 🛡️ [ROOT-FIX]: ONLY Trust the resolved orderType. Dosas are PREPARATION_ITEMs.
+                   const isFast = it.orderType === 'FAST_ITEM';
+                   
                    return setDoc(itRef, { 
                      ...it, 
                      status: isFast ? 'READY' : 'PENDING', 

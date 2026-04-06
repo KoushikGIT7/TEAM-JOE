@@ -34,6 +34,7 @@ export interface MenuItem {
 }
 
 export interface CartItem extends MenuItem {
+  itemId: string; // 🖇️ [ID-MANIFEST] Original item code (BKT01, etc.)
   quantity: number;
   servedQty?: number;
   remainingQty?: number;

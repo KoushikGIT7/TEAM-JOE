@@ -52,7 +52,9 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
 }) => {
   const badge = getItemBadge(activeItem);
   const qty = activeItem.quantity ?? 1;
-  const isDosaType = DOSA_LOCK_IDS.has(activeItem.id);
+  
+  // 🔬 [ID-NORMALIZATION]: Check both subcollection ID and original item code
+  const isDosaType = DOSA_LOCK_IDS.has(activeItem.id) || DOSA_LOCK_IDS.has(activeItem.itemId || '');
   const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
   
   // 🛡️ [STRICT-KITCHEN-LOCK]: Dosas require READY status. Others release immediately if order is active.

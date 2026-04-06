@@ -88,6 +88,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             newCart[item.id] = { 
                 ...item, 
                 quantity: 1, 
+                itemId: item.id, // 🖇️ [ID-SYNC]
                 orderType: resolvedOrderType, 
                 status: (resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING') 
             };
@@ -204,34 +205,59 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         {loading ? (
           <div className="p-20 flex justify-center"><FoodLoader /></div>
         ) : (
-          <div className="px-4 grid grid-cols-2 gap-4">
+          <div className="px-4 grid grid-cols-2 gap-5 pb-10">
             {filteredMenu.map(item => {
               const inStock = !isOutOfStock(item.id);
               const qty = cart[item.id]?.quantity || 0;
               return (
-                <div key={item.id} className="bg-white rounded-[2rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
-                  <div className="h-36 relative">
+                <div key={item.id} className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-100 flex flex-col transition-all active:scale-[0.98] shadow-sm hover:shadow-xl hover:shadow-slate-200/50">
+                  {/* Image Section - Fixed Aspect Ratio to prevent overlap */}
+                  <div className="relative aspect-[4/3] w-full bg-slate-100 overflow-hidden">
                     <SmartImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                    {!inStock && <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center text-white text-[10px] font-black uppercase tracking-widest">Sold Out</div>}
-                    <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2 py-0.5 rounded-lg text-[8px] font-black uppercase text-slate-500 border border-slate-100">
-                        {item.category}
+                    {!inStock && (
+                      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center">
+                        <span className="px-4 py-1.5 bg-black/60 rounded-full text-[8px] font-black uppercase text-white tracking-[0.2em]">Sold Out</span>
+                      </div>
+                    )}
+                    <div className="absolute top-4 left-4">
+                      <div className={`px-3 py-1 rounded-full text-[7px] font-black uppercase tracking-widest backdrop-blur-md border ${
+                        item.orderType === 'FAST_ITEM' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-orange-500/10 text-orange-600 border-orange-500/20'
+                      }`}>
+                        {item.orderType === 'FAST_ITEM' ? '⚡ Instant' : '🔥 Kitchen'}
+                      </div>
                     </div>
                   </div>
-                  <div className="p-4 flex flex-col flex-1">
-                    <h3 className="text-xs font-black text-slate-800 line-clamp-2 min-h-[32px] leading-snug">{item.name}</h3>
-                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                      {item.orderType === 'FAST_ITEM' ? '⚡ Instant Pickup' : '🔥 Kitchen Cooked'}
-                    </p>
-                    <div className="mt-auto flex items-center justify-between pt-3">
-                       <span className="text-sm font-black text-slate-900 italic">₹{item.price}</span>
+
+                  {/* Content Section - Clear & Spacious */}
+                  <div className="p-5 flex flex-col flex-1">
+                    <h3 className="text-sm font-black text-slate-800 leading-tight mb-2 line-clamp-2 min-h-[38px]">{item.name}</h3>
+                    
+                    <div className="flex items-center gap-1.5 mb-5 opacity-60">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.category}</span>
+                    </div>
+
+                    <div className="mt-auto flex items-center justify-between">
+                       <div className="flex flex-col">
+                          <span className="text-xs font-bold text-slate-300 line-through leading-none mb-1 opacity-50">₹{(item.price * 1.2).toFixed(0)}</span>
+                          <span className="text-lg font-black text-slate-900 tracking-tighter italic leading-none">₹{item.price}</span>
+                       </div>
+                       
                        {qty > 0 ? (
-                         <div className="flex items-center gap-2.5 bg-slate-50 p-1 rounded-full border border-slate-100">
-                           <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-all border border-slate-200"><Minus className="w-3 text-slate-600" /></button>
-                           <span className="text-xs font-black min-w-[12px] text-center">{qty}</span>
-                           <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary text-white rounded-xl flex items-center justify-center shadow-md active:scale-90 transition-all shadow-primary/20"><Plus className="w-3" /></button>
+                         <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                           <button onClick={() => updateCart(item, -1)} className="w-8 h-8 bg-white rounded-xl shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 active:scale-90 transition-all"><Minus className="w-3.5" /></button>
+                           <span className="text-sm font-black min-w-[20px] text-center text-slate-800">{qty}</span>
+                           <button onClick={() => updateCart(item, 1)} className="w-8 h-8 bg-primary rounded-xl shadow-lg shadow-primary/20 flex items-center justify-center text-white active:scale-90 transition-all"><Plus className="w-3.5" /></button>
                          </div>
                        ) : (
-                         <button onClick={() => updateCart(item, 1)} disabled={!inStock} className={`px-5 py-2 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95 ${inStock ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>Add</button>
+                         <button 
+                           onClick={() => updateCart(item, 1)} 
+                           disabled={!inStock} 
+                           className={`h-11 px-6 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center shadow-lg ${
+                             inStock ? 'bg-primary text-white shadow-primary/20' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'
+                           }`}
+                         >
+                           Add
+                         </button>
                        )}
                     </div>
                   </div>
