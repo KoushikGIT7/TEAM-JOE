@@ -1,6 +1,7 @@
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc, serverTimestamp, setDoc, query, where, collection, getDocs } from 'firebase/firestore';
 import { PrepBatch, Order, CartItem, PrepBatchStatus } from '../types';
+import { STATION_ID_BY_ITEM_ID } from '../constants';
 
 /**
  * 1. createBatchFromOrder (Internal Helper conceptually mapping to your Example 1)
@@ -16,6 +17,7 @@ export const createBatchFromOrder = async (orderId: string, item: CartItem, slot
             id: batchId,
             itemId: item.id,
             itemName: item.name,
+            stationId: STATION_ID_BY_ITEM_ID[item.id] || 'kitchen',
             arrivalTimeSlot: slot,
             orderIds: [orderId],
             quantity: item.quantity,

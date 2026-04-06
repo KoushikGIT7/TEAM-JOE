@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ChevronLeft, Mail, Lock, Loader2, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 import Logo from '../../components/Logo';
-import { signIn } from '../../services/auth';
+import { signIn, signOut as authSignOut } from '../../services/auth';
 import { UserProfile } from '../../types';
 
 interface LoginViewProps {
@@ -16,9 +16,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   'auth/invalid-email': 'Invalid email address',
   'auth/too-many-requests': 'Too many attempts. Please try again later.',
   'auth/network-request-failed': 'Network error. Please check your connection.',
+  'auth/invalid-credential': 'Wrong email or password',
+  'ACCESS_DENIED': 'Staff access only',
+  'ACCOUNT_DEACTIVATED': 'Account deactivated',
   'PROFILE_MISSING': 'Account not activated',
   'PROFILE_INCOMPLETE': 'Account not activated',
-  'ACCOUNT_DEACTIVATED': 'Account deactivated',
   'ROLE_DENIED': 'Access restricted',
 };
 
@@ -62,6 +64,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onBack }) => {
       
       // Check active status
       if (!userProfile.active) {
+        await authSignOut();
         throw new Error('ACCOUNT_DEACTIVATED');
       }
       
