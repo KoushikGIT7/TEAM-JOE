@@ -205,60 +205,51 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         {loading ? (
           <div className="p-20 flex justify-center"><FoodLoader /></div>
         ) : (
-          <div className="px-4 grid grid-cols-2 gap-5 pb-10">
+          <div className="px-4 grid grid-cols-2 gap-4 pb-12">
             {filteredMenu.map(item => {
               const inStock = !isOutOfStock(item.id);
               const qty = cart[item.id]?.quantity || 0;
               return (
-                <div key={item.id} className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-100 flex flex-col transition-all active:scale-[0.98] shadow-sm hover:shadow-xl hover:shadow-slate-200/50">
-                  {/* Image Section - Fixed Aspect Ratio to prevent overlap */}
-                  <div className="relative aspect-[4/3] w-full bg-slate-100 overflow-hidden">
+                <div key={item.id} className="bg-white rounded-[2.25rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col h-full transition-all active:scale-[0.98]">
+                  {/* 🍱 Visual Lock Header (Prevents Image Ballooning) */}
+                  <div className="aspect-[16/10] max-h-[140px] relative bg-slate-50 border-b border-slate-50/50 overflow-hidden shrink-0">
                     <SmartImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                    {!inStock && (
-                      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center">
-                        <span className="px-4 py-1.5 bg-black/60 rounded-full text-[8px] font-black uppercase text-white tracking-[0.2em]">Sold Out</span>
-                      </div>
-                    )}
-                    <div className="absolute top-4 left-4">
-                      <div className={`px-3 py-1 rounded-full text-[7px] font-black uppercase tracking-widest backdrop-blur-md border ${
-                        item.orderType === 'FAST_ITEM' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-orange-500/10 text-orange-600 border-orange-500/20'
-                      }`}>
-                        {item.orderType === 'FAST_ITEM' ? '⚡ Instant' : '🔥 Kitchen'}
-                      </div>
+                    {!inStock && <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px] flex items-center justify-center text-white text-[8px] font-black uppercase tracking-widest pl-1">Sold Out</div>}
+                    <div className="absolute top-2.5 left-2.5 bg-white/95 backdrop-blur-md px-2 py-0.5 rounded-lg text-[6px] font-black uppercase text-slate-500 border border-slate-100 shadow-sm">
+                        {item.category}
                     </div>
                   </div>
 
-                  {/* Content Section - Clear & Spacious */}
-                  <div className="p-5 flex flex-col flex-1">
-                    <h3 className="text-sm font-black text-slate-800 leading-tight mb-2 line-clamp-2 min-h-[38px]">{item.name}</h3>
+                  {/* 🍱 Information Suite (Zero-Overlap Zone) */}
+                  <div className="p-4 flex flex-col flex-grow min-h-[72px]">
+                    <h3 className="text-[11px] font-black text-slate-900 leading-tight line-clamp-2 mb-2 min-h-[2.2em] tracking-tight">
+                      {item.name}
+                    </h3>
                     
-                    <div className="flex items-center gap-1.5 mb-5 opacity-60">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.category}</span>
-                    </div>
+                    <div className="mt-auto">
+                      <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1 opacity-80">
+                        {item.orderType === 'FAST_ITEM' ? <span className="text-emerald-500">⚡ QUICK</span> : <span className="text-orange-500">🥣 KITCHEN</span>}
+                      </p>
 
-                    <div className="mt-auto flex items-center justify-between">
-                       <div className="flex flex-col">
-                          <span className="text-xs font-bold text-slate-300 line-through leading-none mb-1 opacity-50">₹{(item.price * 1.2).toFixed(0)}</span>
-                          <span className="text-lg font-black text-slate-900 tracking-tighter italic leading-none">₹{item.price}</span>
-                       </div>
-                       
-                       {qty > 0 ? (
-                         <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-                           <button onClick={() => updateCart(item, -1)} className="w-8 h-8 bg-white rounded-xl shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 active:scale-90 transition-all"><Minus className="w-3.5" /></button>
-                           <span className="text-sm font-black min-w-[20px] text-center text-slate-800">{qty}</span>
-                           <button onClick={() => updateCart(item, 1)} className="w-8 h-8 bg-primary rounded-xl shadow-lg shadow-primary/20 flex items-center justify-center text-white active:scale-90 transition-all"><Plus className="w-3.5" /></button>
-                         </div>
-                       ) : (
-                         <button 
-                           onClick={() => updateCart(item, 1)} 
-                           disabled={!inStock} 
-                           className={`h-11 px-6 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center shadow-lg ${
-                             inStock ? 'bg-primary text-white shadow-primary/20' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'
-                           }`}
-                         >
-                           Add
-                         </button>
-                       )}
+                      <div className="flex items-center justify-between">
+                         <span className="text-sm font-black text-slate-900 italic tracking-tighter">₹{item.price}</span>
+                         
+                         {qty > 0 ? (
+                           <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                             <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-200 active:scale-90 transition-all"><Minus className="w-3 text-slate-400" /></button>
+                             <span className="text-[10px] font-black min-w-[14px] text-center">{qty}</span>
+                             <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shadow-md active:scale-90 transition-all text-white"><Plus className="w-3" /></button>
+                           </div>
+                         ) : (
+                           <button 
+                             onClick={() => updateCart(item, 1)} 
+                             disabled={!inStock} 
+                             className={`h-9 px-4 rounded-xl text-[8px] font-black uppercase tracking-[0.1em] transition-all active:scale-95 ${inStock ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                           >
+                             Add
+                           </button>
+                         )}
+                      </div>
                     </div>
                   </div>
                 </div>
