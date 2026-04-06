@@ -40,7 +40,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   useEffect(() => {
     if (profile?.uid) {
-      // 🔔 [IDENTITY-SYNC]: Hydrate OneSignal with the student's unique ID
       if ((window as any).joeSyncUser) {
         (window as any).joeSyncUser(profile.uid);
       }
@@ -88,7 +87,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             newCart[item.id] = { 
                 ...item, 
                 quantity: 1, 
-                itemId: item.id, // 🖇️ [ID-SYNC]
+                itemId: item.id,
                 orderType: resolvedOrderType, 
                 status: (resolvedOrderType === 'FAST_ITEM' ? 'READY' : 'PENDING') 
             };
@@ -123,7 +122,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={() => setIsDrawerOpen(false)} />
       )}
 
-      {/* Drawer - Strictly Mobile Constrained */}
       <aside className={`fixed inset-y-0 left-0 w-4/5 max-w-[320px] bg-white z-[110] transition-transform duration-500 p-8 shadow-2xl flex flex-col ${isDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex justify-between items-center mb-12">
           <Logo size="sm" />
@@ -179,7 +177,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto pt-4">
+      <div className="flex-1 overflow-y-auto pt-4 pb-4">
         {activeOrder && (
           <div className="px-4 mb-6">
             <div onClick={() => onViewQR && onViewQR(activeOrder.id)} className={`p-6 rounded-[2rem] border-2 shadow-sm transition-all active:scale-95 cursor-pointer ${uiState === 'MISSED' ? 'bg-rose-50 border-rose-200 animate-pulse' : activeOrderFlow === 'READY' ? 'bg-emerald-50 border-emerald-200' : 'bg-indigo-50 border-indigo-200'}`}>
@@ -205,49 +203,48 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         {loading ? (
           <div className="p-20 flex justify-center"><FoodLoader /></div>
         ) : (
-          <div className="px-4 grid grid-cols-2 gap-4 pb-12">
+          <div className="px-4 grid grid-cols-2 gap-5 pb-20">
             {filteredMenu.map(item => {
               const inStock = !isOutOfStock(item.id);
               const qty = cart[item.id]?.quantity || 0;
               return (
-                <div key={item.id} className="bg-white rounded-[2.25rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col h-full transition-all active:scale-[0.98]">
-                  {/* 🍱 Visual Lock Header (Prevents Image Ballooning) */}
-                  <div className="aspect-[16/10] max-h-[140px] relative bg-slate-50 border-b border-slate-50/50 overflow-hidden shrink-0">
+                <div key={item.id} className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col transition-all active:scale-[0.98] h-full">
+                  <div className="h-44 relative bg-slate-50 border-b border-slate-50/50 overflow-hidden shrink-0">
                     <SmartImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                    {!inStock && <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px] flex items-center justify-center text-white text-[8px] font-black uppercase tracking-widest pl-1">Sold Out</div>}
-                    <div className="absolute top-2.5 left-2.5 bg-white/95 backdrop-blur-md px-2 py-0.5 rounded-lg text-[6px] font-black uppercase text-slate-500 border border-slate-100 shadow-sm">
+                    {!inStock && <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center text-white text-[8px] font-black uppercase tracking-widest px-2 text-center leading-tight">Sold Out</div>}
+                    <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-xl text-[7px] font-black uppercase text-slate-500 border border-slate-100 shadow-sm">
                         {item.category}
                     </div>
                   </div>
 
-                  {/* 🍱 Information Suite (Zero-Overlap Zone) */}
-                  <div className="p-4 flex flex-col flex-grow min-h-[72px]">
-                    <h3 className="text-[11px] font-black text-slate-900 leading-tight line-clamp-2 mb-2 min-h-[2.2em] tracking-tight">
+                  <div className="p-5 flex flex-col flex-1 gap-3 min-h-[140px]">
+                    <h3 className="text-[12px] font-black text-slate-900 leading-tight line-clamp-2 min-h-[2.4em] tracking-tight">
                       {item.name}
                     </h3>
                     
-                    <div className="mt-auto">
-                      <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1 opacity-80">
-                        {item.orderType === 'FAST_ITEM' ? <span className="text-emerald-500">⚡ QUICK</span> : <span className="text-orange-500">🥣 KITCHEN</span>}
-                      </p>
+                    <div className="mt-auto pt-2">
+                      <div className="flex items-center gap-1.5 mb-4 opacity-70">
+                        {item.orderType === 'FAST_ITEM' ? (
+                          <span className="text-[7px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">⚡ Instant</span>
+                        ) : (
+                          <span className="text-[7px] font-black uppercase tracking-widest text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">🥣 Prep Station</span>
+                        )}
+                      </div>
 
                       <div className="flex items-center justify-between">
-                         <span className="text-sm font-black text-slate-900 italic tracking-tighter">₹{item.price}</span>
+                         <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-slate-300 line-through opacity-50 mb-0.5">₹{(item.price * 1.15).toFixed(0)}</span>
+                            <span className="text-base font-black text-slate-900 italic tracking-tighter">₹{item.price}</span>
+                         </div>
                          
                          {qty > 0 ? (
-                           <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-100">
-                             <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-200 active:scale-90 transition-all"><Minus className="w-3 text-slate-400" /></button>
-                             <span className="text-[10px] font-black min-w-[14px] text-center">{qty}</span>
-                             <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shadow-md active:scale-90 transition-all text-white"><Plus className="w-3" /></button>
+                           <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                             <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-200 active:scale-90 transition-all"><Minus className="w-4 text-slate-400" /></button>
+                             <span className="text-[11px] font-black min-w-[14px] text-center text-slate-800">{qty}</span>
+                             <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shadow-md active:scale-90 transition-all text-white"><Plus className="w-4" /></button>
                            </div>
                          ) : (
-                           <button 
-                             onClick={() => updateCart(item, 1)} 
-                             disabled={!inStock} 
-                             className={`h-9 px-4 rounded-xl text-[8px] font-black uppercase tracking-[0.1em] transition-all active:scale-95 ${inStock ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
-                           >
-                             Add
-                           </button>
+                           <button onClick={() => updateCart(item, 1)} disabled={!inStock} className={`h-11 px-5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${inStock ? 'bg-primary text-white shadow-primary/20' : 'bg-slate-50 text-slate-300 cursor-not-allowed border border-slate-100'}`}>Add</button>
                          )}
                       </div>
                     </div>

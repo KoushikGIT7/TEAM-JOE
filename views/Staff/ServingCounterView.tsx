@@ -20,10 +20,11 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
   const [studentName, setStudentName] = useState<string>('');
   const [servedItems, setServedItems] = useState<string[]>([]);
   
-  // 🥊 ASYNC LOCKS (Optimistic UI)
+  // 🥊 ASYNC LOCKS (Microsecond Precision)
   const isProcessingScannerRef = useRef(false);
+  const lastScannedTokenRef = useRef<{ token: string; time: number } | null>(null);
 
-  const resetToIdle = useCallback((delay = 1200) => {
+  const resetToIdle = useCallback((delay = 800) => {
     setTimeout(() => {
       setScanState('IDLE');
       setFeedback('');
@@ -35,70 +36,68 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
 
   // ⚡ SUPERSONIC ZERO-WAIT SERVE ENGINE
   const processQRScan = useCallback(async (data: string) => {
-    // 🛡️ [PARALLEL-INTAKE]: Allow new scans while UI transitions
+    const now = Date.now();
+    const token = data.trim();
+    
+    // 🛡️ [RAPID-DEBOUNCE]: Prevent duplicate scans in milliseconds
+    if (lastScannedTokenRef.current?.token === token && now - lastScannedTokenRef.current.time < 3000) return;
     if (isProcessingScannerRef.current) return;
+    
     isProcessingScannerRef.current = true;
+    lastScannedTokenRef.current = { token, time: now };
 
     try {
-      // 🚀 [ZERO-LATENCY-BEEP]: Confirm scan instantly in the UI
-      if ('vibrate' in navigator) navigator.vibrate(50);
+      // 🚀 [ZERO-LATENCY-CLICK]: Clear, single haptic feedback
+      if ('vibrate' in navigator) navigator.vibrate(30);
       
-      const { order, result, targetItemId } = await validateQRForServing(data.trim(), profile.uid);
+      const { order, result, targetItemId } = await validateQRForServing(token, profile.uid);
 
       if (result === 'CONSUMED') {
         setScanState('ERROR');
         setFeedback('ALREADY SERVED');
-        resetToIdle(1000); // ⚡ [Frictionless Error Reset]
+        resetToIdle(800); 
         return;
       }
 
       const allItems = order.items || [];
-      
-      // 🔬 [ITEM-LOCKED-LOGIC]: Only serve the specific item being scanned (Check both id and itemId for server-side compatibility)
       const targetItem = allItems.find(it => (it.id === targetItemId || it.itemId === targetItemId) || targetItemId === 'all');
       
       if (!targetItem && targetItemId !== 'all') {
          setScanState('ERROR');
-         setFeedback('WRONG ITEM SELECTION');
-         resetToIdle(1000);
+         setFeedback('WRONG ITEM');
+         resetToIdle(800);
          return;
       }
 
-      // Check if that specific item is ready
       const isReadySet = targetItemId === 'all' 
          ? allItems.filter(it => it.status === 'READY' || it.orderType === 'FAST_ITEM')
          : (targetItem?.status === 'READY' || targetItem?.status === 'PENDING' || targetItem?.orderType === 'FAST_ITEM' ? [targetItem] : []);
 
       if (isReadySet.length === 0) {
          setScanState('COOKING');
-         setFeedback('SELECT READY ITEM FIRST');
-         resetToIdle(1800); // Long enough to read
+         setFeedback('STILL PREPARING');
+         resetToIdle(1200); 
          return;
       }
 
-      // 🧹 [ATOMIC-SERVE]: Use single transaction for precision item serving
-      // Use both id and itemId for server-side compatibility
       const readyItemIds = isReadySet.map(i => i.id || i.itemId).filter(id => !!id) as string[];
-      if (readyItemIds.length === 0) throw new Error("ITEM_IDENTITY_LOST");
-
       await serveOrderItemsAtomic(order.id, readyItemIds, profile.uid);
 
-      // 🎤 [SONIC-VOICE-FEEDBACK]: confirmed item
+      // 🎤 [SONIC-VOICE]: authoritative feedback
       if ('speechSynthesis' in window) {
-        const msg = new SpeechSynthesisUtterance();
-        msg.text = 'Served';
-        msg.rate = 1.6; // 🔥 [Agile speech]
+        const msg = new SpeechSynthesisUtterance('Served');
+        msg.rate = 1.8; // High speed
         window.speechSynthesis.speak(msg);
       }
 
       setScanState('SUCCESS');
       setStudentName(order.userName || 'Student');
       setServedItems(isReadySet.map(i => i.name));
-      resetToIdle(800); // ⚡ [Rapid-Fire Handover]
+      resetToIdle(600); // ⚡ [Hyper-Fast Handover]
 
     } catch (err: any) {
       setScanState('ERROR');
-      setFeedback(err.message || 'UNABLE TO SERVE');
+      setFeedback(err.message || 'SCAN ERROR');
       resetToIdle(1000);
     }
   }, [profile.uid, resetToIdle]);
