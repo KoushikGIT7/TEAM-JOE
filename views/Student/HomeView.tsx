@@ -1,15 +1,13 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LogOut, ShoppingBag, Plus, Minus, Search, Menu, X as CloseIcon, Clock, ChevronRight, CheckCircle2, AlertCircle, Sparkles, Bell, BellRing, Check } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, CheckCircle2, AlertCircle, Sparkles, Bell } from 'lucide-react';
 import { getOrderUIState } from '../../utils/orderLifecycle';
 import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
-import { CATEGORIES, FAST_ITEM_CATEGORIES } from '../../constants';
-import { getMenuOnce, listenToUserOrders, saveCartDraft, getQueueEstimate } from '../../services/firestore-db';
+import { CATEGORIES } from '../../constants';
+import { getMenuOnce, listenToUserOrders, saveCartDraft } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
-import { useMotivationalHeadline } from '../../hooks/useMotivationalHeadline';
 import Logo from '../../components/Logo';
-import { syncOneSignal } from '../../services/onesignal-push';
 
 interface HomeViewProps {
   profile: UserProfile | null;
@@ -27,7 +25,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [loading, setLoading] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
-  const { stockByItemId, isOutOfStock, canAddToCart } = useInventory();
+  const { stockByItemId, isOutOfStock } = useInventory();
 
   useEffect(() => {
     getMenuOnce().then(items => { setMenu(items); setLoading(false); }).catch(() => setLoading(false));
@@ -55,7 +53,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const uiState = useMemo(() => activeOrder ? getOrderUIState(activeOrder) : null, [activeOrder]);
   const activeOrderFlow = useMemo(() => {
     if (!activeOrder) return 'NEW';
-    // If any item is physically marked READY or is a FAST_ITEM that is PAID, show as ready
     const isPaid = activeOrder.paymentStatus === 'SUCCESS' || activeOrder.paymentStatus === 'VERIFIED';
     const anyReady = activeOrder.items?.some(it => it.status === 'READY' || (isPaid && it.orderType === 'FAST_ITEM'));
     return anyReady ? 'READY' : (activeOrder.serveFlowStatus || 'NEW');
@@ -77,6 +74,21 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         if (delta > 0) newCart[item.id] = { ...item, quantity: 1, orderType: item.orderType || 'PREPARATION_ITEM', status: 'PENDING' };
       } else {
         let newQty = newCart[item.id].quantity + delta;
+        
+        // 🛑 [STRICT-LIMITS]: origin/main compliance for fast serving
+        const isDosa = item.name.toLowerCase().includes('dosa');
+        if (isDosa && newQty > 1) {
+            alert("Maximum 1 Dosa allowed per scan for fast serving.");
+            newQty = 1;
+        }
+        if ((item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) && newQty > 1) {
+            alert("Items in this category are limited to 1 per scan.");
+            newQty = 1;
+        }
+
+        const maxAllowed = stockByItemId[item.id]?.available ?? 999;
+        if (newQty > maxAllowed) newQty = maxAllowed;
+
         if (newQty <= 0) delete newCart[item.id];
         else newCart[item.id] = { ...newCart[item.id], quantity: newQty };
       }

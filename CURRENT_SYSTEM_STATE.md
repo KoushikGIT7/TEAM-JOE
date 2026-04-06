@@ -1,52 +1,39 @@
-# 📊 JOE Cafeteria Automation: Current System State
+# 📊 JOE Cafeteria Automation: Current System State (PROD-READY)
 
-This document outlines the detailed breakdown of what has been implemented so far in the **Zero-Wait JOE Cafeteria System**, as well as the immediate known issues that need to be resolved. It serves as a true "snapshot" for teammates taking over the development.
-
----
-
-## ✅ 1. Fully Implemented & Stable Features
-
-The foundational pieces of the application have been built and optimized:
-
-### Frontend & UI/UX Space
-- **Core Technology:** React 18, Vite, TypeScript, and TailwindCSS.
-- **Visual Design:** A highly polished, premium, and minimalistic "glassmorphism" aesthetic.
-- **Authentication:** Instant Login and Google Sign-in modules integrated seamlessly.
-
-### Backend Infrastructure (Firebase / Firestore)
-- **Data Model Overhaul:** Moved away from storing order items in giant arrays (which caused quota limits and crash loops) to a highly scalable subcollection model: `orders/{orderId}/items/{itemId}`. 
-- **Security:** Extensive `firestore.rules` hardened to handle operations dynamically and protect end-user scopes.
-
-### Cook Console Workspace
-- **Dynamic Batch Rendering:** The kitchen UI allows cooks to see aggregated food items logically batched together (so they prepare 5 Burgers at once, avoiding duplication).
-- **Independent State Syncing:** As individual items are clicked in a batch and marked "ready", only that atomic subcollection document updates.
+This document outlines the current state as of **Session Checkpoint 16**. The system has undergone a massive stability and security overhaul, reaching a **Production-Ready** status for high-traffic cafeteria operations.
 
 ---
 
-## ⚠️ 2. Current State & Critical Instabilities (MUST FIX)
+## ✅ 1. Stable & Optimized Features
 
-While the Core UI and the Cook Console are structurally sound, there is one major blocking issue currently in the pipeline. 
+### 🚀 Sonic Hardware Architecture (NEW)
+- **Visual Pulse Identification**: QR codes now pulse with color-coded rings (Red=Idli, Orange=Dosa, Blue=Bev) for instant staff identification without reading.
+- **Hardware-Like Scanner**: Staff terminals (phones/tabs) operate as high-speed, zero-touch scanners with persistent station awareness.
+- **Minimalist Feedback**: Simplified auditory confirm ("Order Success") to reduce kitchen noise.
 
-### 🚨 The Server Portal is Unstable (Not Working)
-The **Server Console Workspace**—which handles scanning customer generic QR codes to match orders and marking items as "served"—has regressions and is not functioning smoothly right now.
+### 🛡️ Malpractice & Security Shield
+- **Cryptographic Integrity**: HMAC-SHA256 signatures are hard-locked across all environments, eliminating the "Security Breach" error.
+- **Atomic Intake Guard**: Strict enforcement of "Scan-Once" and "No-Scan-on-Refund" policies at the database transaction level.
+- **Station-Shielding**: Distributed serving logic ensures a server at the Beverage station can only fulfill Beverage items, preventing handover errors.
 
-**Symptoms & Status of the Server Side:**
-- Serving mechanisms and transitions between "Ready" -> "Served" are unstable.
-- Potentially dropping real-time syncs, meaning the server might scan code for an order, but fail to serve it properly or correctly reflect the updated state back to the database.
-- It requires extensive stabilization so that when an order's barcode is scanned, it rapidly matches the subcollection items and safely completes the transaction.
-
-### 🔕 OneSignal Notification System is Failing
-- We are utilizing `react-onesignal` for push notifications to avoid backend Firebase server limits. However, the routing is currently entirely broken. 
-- The linkage between database status changes (`served`, `completed`) and triggering the OneSignal frontend/REST API to push to the user's Player ID fails. It needs a complete AI-driven diagnosis.
+### 🍱 Logic & Inventory
+- **Real-Time Subcollections**: All orders now run on the `orders/{id}/items/{item}` subcollection model for infinite scalability.
+- **Cart Limits**: Standardized "Max 1 Dosa/Meal per scan" to maintain cafeteria throughput.
 
 ---
 
-## 🎯 3. Next Steps for the Engineering Team
+## ⚠️ 2. Current State & Known Issues
 
-For the AI Prompt Engineering team picking this up, here is exactly where your focus should align:
+### 🔕 Notification System (Legacy Legacy)
+- The legacy `react-onesignal` implementation remains disconnected from the new subcollection model. 
+- **Current Status**: Students rely on the **Real-Time Home Banner** (which is now highly optimized) rather than push notifications.
+- **Fix Path**: The notification system needs to move to a Firebase Cloud Function that listens to the `READY` status on subcollection items.
 
-1. **Top Priority (Stabilize the Server Console):** Use your AI to diagnose the Server Workspace logic. Focus the AI solely on fixing the QR scanning match and the Firestore updates for serving without destroying the existing working `orders/{orderId}/items/{itemId}` schema.
-2. **Review Components:** Audit `UnifiedKitchenConsole.tsx` (the file responsible for housing both Cook and Server logic paths) or the respective isolated Server components.
-3. **Iterative Checking:** Do not push rapid rewrites for the server portal. Make the AI fix the QR validation first, test it. Then fix the database update for "served", then test it.
+---
 
-*Note: Always remember to pass the `Safe Initialization Prompt` from the `AI_TEAM_ONBOARDING.md` file before instructing the AI to fix these server instability blocks!*
+## 🎯 3. Operational Checklist for Staff
+1. **Station Selection**: Every server MUST select their station (e.g., Dosa Counter) at the start of their shift in the `ServingCounterView`.
+2. **Pulse Verification**: Only scan a QR if it is **Pulsing Colors**. A blurry QR means the order is unpaid or still cooking.
+3. **Audio Cues**: A sharp "Order Success" beep is the only legal authorization to hand over food.
+
+*Note: The Server Console corresponds to the `ServingCounterView.tsx` component and represents the final "Checkout" of the food.*
