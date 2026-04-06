@@ -57,10 +57,11 @@ interface RichQRCardProps {
   isServed: boolean;
   isMissed: boolean;
   activeColors: string[];
+  itemConfig: any;
 }
 
 const RichQRCard: React.FC<RichQRCardProps> = ({
-  qrString, activeItem, isVisible, isServed, isMissed, activeColors
+  qrString, activeItem, isVisible, isServed, isMissed, activeColors, itemConfig
 }) => {
   const badge = getItemBadge(activeItem);
   const qty = activeItem.quantity ?? 1;
@@ -82,7 +83,7 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
            />
         </div>
 
-        <div className="relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10 transition-transform duration-500 hover:scale-[1.02]">
+        <div className={`relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-2xl border-[6px] border-gray-50 flex items-center justify-center z-10 transition-all duration-700 ${qrUnlocked ? 'animate-float animate-glow' : ''}`} style={{ '--glow-color': itemConfig.glow } as any}>
           
           {/* ⚡ LASER SCAN LINE */}
           {qrUnlocked && (
@@ -289,6 +290,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
           isServed={isDone}
           isMissed={isMissed}
           activeColors={activeColors}
+          itemConfig={getItemConfig(activeItem.id)}
         />
       </div>
 
