@@ -68,10 +68,11 @@ const computeReport = (orders: Order[], rejected: Order[] = [], spanMs: number):
   const peakMap: Record<string, { orders: number; revenue: number }> = {};
 
   successOrders.forEach(o => {
-    totalRevenue += o.totalAmount || 0;
-    if (o.paymentType === 'CASH') cashTotal += o.totalAmount || 0;
-    else onlineTotal += o.totalAmount || 0;
-    paymentSplitMap[o.paymentType || 'UNKNOWN'] = (paymentSplitMap[o.paymentType || 'UNKNOWN'] || 0) + (o.totalAmount || 0);
+    const amount = Number(o.totalAmount || 0);
+    totalRevenue += amount;
+    if (o.paymentType === 'CASH') cashTotal += amount;
+    else onlineTotal += amount;
+    paymentSplitMap[o.paymentType || 'UNKNOWN'] = (paymentSplitMap[o.paymentType || 'UNKNOWN'] || 0) + amount;
 
     const label = bucketLabel(o.createdAt, spanMs);
     trendMap[label] = (trendMap[label] || 0) + (o.totalAmount || 0);
@@ -151,18 +152,25 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
   }));
 
   // Filtering for SUCCESS orders based on role
-  let successOrders = allOrdersInRange.filter(o => o.paymentStatus === 'SUCCESS');
-  if (role === 'cashier') {
-    successOrders = successOrders.filter(o => o.paymentType === 'CASH');
-  }
+  // 🛡️ [Root Deduplication]
+  const uniqueSuccessMap = new Map();
+  allOrdersInRange.forEach(o => {
+     if (o.paymentStatus === 'SUCCESS' && (role !== 'cashier' || o.paymentType === 'CASH')) {
+        uniqueSuccessMap.set(o.id, o);
+     }
+  });
+  const successOrders = Array.from(uniqueSuccessMap.values());
 
-  // Filtering for REJECTED orders (only needed for cashier reports)
-  let rejectedOrders: Order[] = [];
+  // Filtering for REJECTED orders
+  const uniqueRejectedMap = new Map();
   if (role === 'cashier') {
-    rejectedOrders = allOrdersInRange.filter(o => 
-      o.paymentStatus === 'REJECTED' && o.paymentType === 'CASH'
-    );
+     allOrdersInRange.forEach(o => {
+        if (o.paymentStatus === 'REJECTED' && o.paymentType === 'CASH') {
+           uniqueRejectedMap.set(o.id, o);
+        }
+     });
   }
+  const rejectedOrders = Array.from(uniqueRejectedMap.values());
 
   const spanMs = endMs - startMs;
   const data = computeReport(successOrders, rejectedOrders, spanMs);
