@@ -110,7 +110,13 @@ const SvgPieChart = ({ bevShare }: { bevShare: number }) => {
             <Text style={{ fontSize: 7, fontWeight: 'bold', marginBottom: 10 }}>UPSELL SHARE</Text>
             <Svg width={60} height={60}>
                 <Circle cx="30" cy="30" r="25" stroke={COLORS.SOFT_SLATE} strokeWidth="6" fill="none" />
-                <Circle cx="30" cy="30" r="25" stroke={COLORS.GOLD} strokeWidth="6" fill="none" strokeDasharray={`${(bevShare/100) * 157} 157`} strokeDashoffset="0" />
+                {/* 🚀 Safety Guard: Ensure dash length is > 0 to avoid @react-pdf/renderer dash error */}
+                <Circle 
+                    cx="30" cy="30" r="25" 
+                    stroke={COLORS.GOLD} strokeWidth="6" fill="none" 
+                    strokeDasharray={`${Math.max(0.1, (bevShare/100) * 157)} 157`} 
+                    strokeDashoffset="0" 
+                />
             </Svg>
             <Text style={{ fontSize: 10, fontWeight: 'bold', marginTop: 5 }}>{bevShare.toFixed(1)}%</Text>
         </View>
