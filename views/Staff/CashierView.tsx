@@ -107,6 +107,25 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       };
    }, []);
 
+   // 🍱 [INVENTORY-RADAR] Real-time Stock Burn visualization
+   const [inventoryData, setInventoryData] = useState<any[]>([]);
+   useEffect(() => {
+      const unsub = onSnapshot(collection(db, 'inventory_meta'), (snap) => {
+         const items = snap.docs.map(doc => {
+            const data = doc.data();
+            const available = Math.max(0, (data.totalStock || 0) - (data.consumed || 0));
+            return {
+               name: data.itemName || doc.id,
+               available,
+               consumed: data.consumed || 0,
+               total: data.totalStock || 0
+            };
+         });
+         setInventoryData(items);
+      });
+      return () => unsub();
+   }, []);
+
    // 🔴 REAL-TIME DIAGNOSTIC STRATAGEM: Direct onSnapshot listener for today's orders
    useEffect(() => {
       const todayStart = new Date();
@@ -342,6 +361,23 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   </ResponsiveContainer>
                </div>
             </div>
+            
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl">
+               <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-10">Inventory Radar (Available / Total)</h3>
+               <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                     <BarChart data={inventoryData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                        <XAxis type="number" tick={{ fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} hide />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} width={80} />
+                        <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 25px 50px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="available" fill="#3B82F6" radius={[0, 8, 8, 0]} barSize={20} />
+                        <Bar dataKey="consumed" fill="#f43f5e" radius={[0, 8, 8, 0]} barSize={20} opacity={0.2} />
+                     </BarChart>
+                  </ResponsiveContainer>
+               </div>
+            </div>
+
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl">
                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-10">Payment Distribution</h3>
                <div className="h-72">
