@@ -112,10 +112,9 @@ const SvgPieChart = ({ bevShare }: { bevShare: number }) => {
                 <Circle cx="30" cy="30" r="25" stroke={COLORS.SOFT_SLATE} strokeWidth="6" fill="none" />
                 {/* 🚀 Safety Guard: Ensure dash length is > 0 to avoid @react-pdf/renderer dash error */}
                 <Circle 
-                    cx="30" cy="30" r="25" 
-                    stroke={COLORS.GOLD} strokeWidth="6" fill="none" 
+                    cx={30} cy={30} r={25} 
+                    stroke={COLORS.GOLD} strokeWidth={6} fill="none" 
                     strokeDasharray={`${Math.max(0.1, (bevShare/100) * 157)} 157`} 
-                    strokeDashoffset="0" 
                 />
             </Svg>
             <Text style={{ fontSize: 10, fontWeight: 'bold', marginTop: 5 }}>{bevShare.toFixed(1)}%</Text>
@@ -163,14 +162,14 @@ const AuditReportDocument = ({ data }: { data: AuditData }) => {
         </View>
 
         <View style={styles.insightBlock}>
-          <Text style={styles.insightTitle}>OPERATIONAL RECOMMENDATIONS</Text>
+          <Text style={styles.insightTitle}>TRAFFIC SYNC & STAFFING OPTIMIZATION</Text>
           <View style={styles.insightItem}>
             <View style={styles.insightDot} />
-            <Text style={styles.insightText}>PEAK TRAFFIC: Detected at {data.insights?.peakHour || 'Rush'}. Throughput: {data.insights?.peakThroughput || 0}/hr.</Text>
+            <Text style={styles.insightText}>CRITICAL RUSH: Detected at {data.insights?.peakHour || 'Rush'}. Throughput: {data.insights?.peakThroughput || 0}/hr.</Text>
           </View>
           <View style={styles.insightItem}>
             <View style={styles.insightDot} />
-            <Text style={styles.insightText}>INVENTORY: Flagship &apos;{data.insights?.flagshipProduct || 'N/A'}&apos; leads production volume.</Text>
+            <Text style={styles.insightText}>RECOMMENDATION: Deploy additional handheld scan assistants 15 minutes prior to this window.</Text>
           </View>
           <View style={styles.insightItem}>
             <View style={styles.insightDot} />
@@ -180,7 +179,7 @@ const AuditReportDocument = ({ data }: { data: AuditData }) => {
 
         <View style={{ flexDirection: 'row', gap: 20 }}>
             <View style={{ flex: 1, backgroundColor: COLORS.CARD, padding: 15, borderRadius: 8 }}>
-                <Text style={styles.insightTitle}>GROWTH STRATEGY</Text>
+                <Text style={styles.insightTitle}>MENU & INVENTORY RECOMMENDATIONS</Text>
                 <Text style={{ fontSize: 9, color: COLORS.NAVY }}>• Leverage beverages ({data.insights?.beverageShare.toFixed(1)}% of mix).</Text>
                 <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 4 }}>• Target average ticket growth to ₹75 via meal combos.</Text>
             </View>
@@ -241,14 +240,29 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({
     if (!realReport || status === 'loading') return;
     setStatus('loading');
     try {
+      // 🔮 PRINCIPAL INTELLIGENCE: Aggregate & Deduplicate Transactions
       const stats = realReport.summary || {};
-      const orders = realReport.orders || [];
+      const rawOrders = realReport.orders || [];
       const itemSales = realReport.itemSales || [];
       const rushData = realReport.dailyTrend || [];
 
+      // Deduplicate by ID and Sort by Time (Descending)
+      const uniqueOrderMap = new Map();
+      rawOrders.forEach((o: any) => {
+         if (o.id && !uniqueOrderMap.has(o.id)) {
+            uniqueOrderMap.set(o.id, o);
+         }
+      });
+      
+      const sortedUniqueOrders = Array.from(uniqueOrderMap.values())
+         .sort((a: any, b: any) => (new Date(b.createdAt || 0).getTime()) - (new Date(a.createdAt || 0).getTime()));
+
+      // 🚦 RE-ALIGN ANALYTICS PULSE
       const maxRush = rushData.length > 0 
         ? rushData.reduce((prev: any, cur: any) => (prev.orders > cur.orders) ? prev : cur, { label: '--', orders: 0 }) 
         : { label: '--', orders: 0 };
+      
+      const orders = sortedUniqueOrders;
       
       const flagship = itemSales.length > 0 
         ? [...itemSales].sort((a: any, b: any) => b.quantity - a.quantity)[0] 

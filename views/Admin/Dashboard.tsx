@@ -976,61 +976,68 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
           <div className="py-10 text-center text-textSecondary font-bold">No records found for selected period</div>
         )}
 
-        {!reportLoading && hasReportData && (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
-              <h4 className="text-sm font-black text-textSecondary uppercase mb-3">Revenue Trend</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={reportData.revenueTrend}>
-                    <defs>
-                      <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0F9D58" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#0F9D58" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="revenue" stroke="#0F9D58" strokeWidth={3} fill="url(#revGrad)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+        {!reportLoading && hasReportData && !reportData && (
+             <div className="flex flex-col items-center justify-center p-20 bg-gray-50 rounded-[3rem] border border-dashed text-textSecondary animate-pulse w-full">
+                <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                <p className="font-black text-xs uppercase tracking-widest">Hydrating Executive Data...</p>
+             </div>
+        )}
 
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
-              <h4 className="text-sm font-black text-textSecondary uppercase mb-3">Item Sales Ranking</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={reportData.itemSales.slice(0,8)}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="quantity" fill="#F59E0B" radius={[6,6,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+        {!reportLoading && hasReportData && reportData && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                <h4 className="text-sm font-black text-textSecondary uppercase mb-3">Revenue Trend</h4>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={reportData.revenueTrend || []}>
+                      <defs>
+                        <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0F9D58" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#0F9D58" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Area type="monotone" dataKey="revenue" stroke="#0F9D58" strokeWidth={3} fill="url(#revGrad)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-            </div>
 
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
-              <h4 className="text-sm font-black text-textSecondary uppercase mb-3">Cash vs Online</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={reportData.paymentSplit} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={4}>
-                      {reportData.paymentSplit.map((_: any, idx: number) => (
-                        <Cell key={idx} fill={['#0F9D58','#6366F1','#F59E0B'][idx % 3]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                <h4 className="text-sm font-black text-textSecondary uppercase mb-3">Item Sales Ranking</h4>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={(reportData.itemSales || []).slice(0,8)}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Bar dataKey="quantity" fill="#F59E0B" radius={[6,6,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                <h4 className="text-sm font-black text-textSecondary uppercase mb-3">Payment Mix</h4>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={reportData.paymentSplit || []} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={4}>
+                        {(reportData.paymentSplit || []).map((_: any, idx: number) => (
+                          <Cell key={idx} fill={['#0F9D58','#6366F1','#F59E0B'][idx % 3]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
-          </div>
         )}
       </div>
     </div>

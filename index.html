@@ -18,7 +18,7 @@
     window.joeSubscribe = function() {
       console.log('🔔 [CLICK-DETECTION] Notification Bell tapped.');
       
-      const os = (window as any).OneSignal;
+      const os = window.OneSignal;
       if (!os) {
          console.warn('⚠️ [ONESIGNAL-MISSING] SDK script failed to load from CDN. Handshake impossible.');
          return;
