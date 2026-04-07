@@ -182,24 +182,30 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       return counts;
    }, [pendingOrders]);
 
+   const [reportStart, setReportStart] = useState<string>(() => new Date().toISOString().split('T')[0]);
+   const [reportEnd, setReportEnd] = useState<string>(() => new Date().toISOString().split('T')[0]);
+   const [reportLoading, setReportLoading] = useState(false);
+
    // PERFORMANCE FIX [Laziness Strategy]: Only sync report data when the user is actually 
    // looking at the Insight or Summary tabs. This stops massive background reads during peak hours.
    useEffect(() => {
       if (activeTab !== 'INSIGHT' && activeTab !== 'SUMMARY') return;
 
       const loadReportData = async () => {
+         setReportLoading(true);
          try {
-            const today = new Date();
-            const start = new Date(today.setHours(0, 0, 0, 0));
-            const end = new Date(today.setHours(23, 59, 59, 999));
-            const data = await fetchReport({ role: 'cashier', start, end });
+            const s = new Date(reportStart);
+            const e = new Date(reportEnd);
+            const data = await fetchReport({ role: 'cashier', start: s, end: e });
             setReportData(data);
          } catch (err) {
             console.error('Audit sync failed:', err);
+         } finally {
+            setReportLoading(false);
          }
       };
       loadReportData();
-   }, [allOrders, activeTab]);
+   }, [allOrders, activeTab, reportStart, reportEnd]);
 
    // --- ⚙️ HANDLERS ---
    const handleConfirm = (orderId: string) => {
@@ -720,9 +726,33 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                      <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Reconciliation & Audit Control</p>
                   </div>
                </div>
-               <button onClick={handleAuditExport} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all flex items-center gap-3">
-                  <Download className="w-4 h-4" /> GENERATE AUDIT
-               </button>
+               <div className="flex items-center gap-4">
+                  <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+                     {[
+                        { label: 'Today', days: 0 },
+                        { label: '7D', days: 7 },
+                        { label: '30D', days: 30 }
+                     ].map(q => (
+                        <button
+                           key={q.label}
+                           onClick={() => {
+                              const end = new Date();
+                              const start = new Date();
+                              start.setDate(end.getDate() - q.days);
+                              setReportStart(start.toISOString().split('T')[0]);
+                              setReportEnd(end.toISOString().split('T')[0]);
+                           }}
+                           className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                              new Date(reportStart).getDate() === (new Date(new Date().setDate(new Date().getDate() - q.days))).getDate() 
+                              ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                           }`}
+                        >
+                           {q.label}
+                        </button>
+                     ))}
+                  </div>
+                  <AuditDownloadButton realReport={reportData} period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`} />
+               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">

@@ -336,7 +336,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const renderOverview = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="flex justify-end">
-         <AuditDownloadButton realReport={reportData} />
+         <AuditDownloadButton 
+           realReport={reportData} 
+           period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`}
+         />
       </div>
       {/* Financial Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -865,6 +868,66 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const renderReports = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm p-6 sm:p-8">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10 p-10 bg-white rounded-[2.5rem] border border-black/5 shadow-sm">
+            <div>
+              <h3 className="text-2xl font-black text-textMain uppercase tracking-tighter">Business Intelligence</h3>
+              <p className="text-xs text-textSecondary font-bold mt-1">Audit executive performance across custom intervals</p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-4">
+               {/* 🚀 QUICK FILTERS (PRINCIPAL OVERHAUL) */}
+               <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-black/5 mr-2">
+                  {[
+                     { label: 'Today', days: 0 },
+                     { label: '7 Days', days: 7 },
+                     { label: '30 Days', days: 30 }
+                  ].map(q => (
+                     <button
+                        key={q.label}
+                        onClick={() => {
+                           const end = new Date();
+                           const start = new Date();
+                           start.setDate(end.getDate() - q.days);
+                           setReportStart(start.toISOString().split('T')[0]);
+                           setReportEnd(end.toISOString().split('T')[0]);
+                        }}
+                        className="px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:shadow-sm transition-all text-textSecondary hover:text-primary"
+                     >
+                        {q.label}
+                     </button>
+                  ))}
+               </div>
+
+              <div className="flex items-center gap-3 bg-gray-50 px-6 py-3 rounded-2xl border border-black/5">
+                <CalendarDays className="w-4 h-4 text-textSecondary" />
+                <input 
+                  type="date" 
+                  value={reportStart}
+                  onChange={e => setReportStart(e.target.value)}
+                  className="bg-transparent border-none text-xs font-black uppercase outline-none focus:ring-0" 
+                />
+                <span className="text-textSecondary opacity-30">/</span>
+                <input 
+                  type="date" 
+                  value={reportEnd}
+                  onChange={e => setReportEnd(e.target.value)}
+                  className="bg-transparent border-none text-xs font-black uppercase outline-none focus:ring-0" 
+                />
+              </div>
+              <button 
+                onClick={() => {
+                   // Refresh manual trigger
+                   const s = new Date(reportStart);
+                   const e = new Date(reportEnd);
+                   fetchReport({ role: 'admin', start: s, end: e }).then(setReportData);
+                }}
+                className="bg-primary text-white p-4 rounded-2xl shadow-lg shadow-primary/20 hover:scale-105 transition-all active:scale-95"
+              >
+                <RefreshCw className={`w-5 h-5 ${reportLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h3 className="text-2xl font-black text-textMain uppercase tracking-tighter">Reports</h3>
