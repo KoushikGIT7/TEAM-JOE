@@ -7,7 +7,7 @@ import { startBatch, finalizeBatch } from '../../services/firestore-db';
 import { safeListener } from '../../services/safeListener';
 import {
   collection, query, where, orderBy, onSnapshot,
-  limit
+  limit, doc, setDoc, increment, serverTimestamp
 } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 
@@ -141,6 +141,33 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
       return changed ? next : prev;
     });
   }, [batches]);
+
+  // 🍱 [REFILL-ENGINE] High-speed inventory increments
+  const [stock, setStock] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "inventory_meta"), (snap) => {
+      const map: any = {};
+      snap.docs.forEach(doc => {
+        const d = doc.data();
+        map[doc.id] = (d.totalStock || 0) - (d.consumed || 0);
+      });
+      setStock(map);
+    });
+    return () => unsub();
+  }, []);
+
+  const quickRefill = async (itemId: string, delta: number) => {
+    try {
+      if ('vibrate' in navigator) navigator.vibrate(50);
+      const metaRef = doc(db, "inventory_meta", itemId);
+      await setDoc(metaRef, { 
+        totalStock: increment(delta), 
+        updatedAt: serverTimestamp() 
+      }, { merge: true });
+    } catch (e) {
+      console.error("Refill failed:", e);
+    }
+  };
 
   // 🧠 [RHYTHM-MODE] High-speed focus refill 
   const [focus, setFocus] = useState<any>(null);
