@@ -3135,7 +3135,8 @@ export const finalizeBatch = async (batchId: string, items: any[], limitCount?: 
       tx.get(metricsRef)
     ]);
 
-    if (snap.data()?.status !== 'PREPARING') return;
+    const currentStatus = snap.data()?.status;
+    if (currentStatus !== 'PREPARING' && currentStatus !== 'ALMOST_READY') return;
 
     // Group items by order to read root order documents
     let targetItems = items ?? [];
@@ -3163,8 +3164,11 @@ export const finalizeBatch = async (batchId: string, items: any[], limitCount?: 
     }
 
     // ✍️ [PHASE 3: WRITES]
-    const isFullFinalize = !limitCount || targetItems.length >= (items?.length || 0);
-    const remainingItems = isFullFinalize ? [] : items.filter((it: any) => !targetItems.find((t: any) => t.itemId === it.itemId));
+    const dbItems = snap.data()?.items || [];
+    const isFullFinalize = !limitCount || targetItems.length >= dbItems.length;
+    const remainingItems = isFullFinalize ? [] : dbItems.filter((bi: any) => 
+        !targetItems.some((ti: any) => ti.itemId === bi.itemId && ti.orderId === bi.orderId)
+    );
 
     tx.update(batchRef, { 
        status: isFullFinalize ? 'READY' : 'PREPARING',

@@ -49,7 +49,7 @@ const bucketLabel = (dateMs: number, span: number) => {
 };
 
 const computeReport = (orders: Order[], rejected: Order[] = [], spanMs: number): ReportData => {
-  const successOrders = orders.filter(o => o.paymentStatus === 'SUCCESS');
+  const successOrders = orders.filter(o => o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED');
   const allOrders = [...successOrders, ...rejected];
 
   let totalRevenue = 0;
@@ -119,7 +119,7 @@ const computeReport = (orders: Order[], rejected: Order[] = [], spanMs: number):
     itemSales: Object.values(itemMap).sort((a, b) => b.quantity - a.quantity),
     revenueTrend: Object.entries(trendMap).map(([label, revenue]) => ({ label, revenue })),
     peakHours: Object.entries(peakMap).map(([hour, v]) => ({ hour, orders: v.orders, revenue: v.revenue })),
-    raw: allOrders
+    raw: Array.from(new Map(allOrders.map(o => [o.id, o])).values()) // 🛡️ GLOBAL DEDUPLICATION INSURANCE
   };
 };
 
@@ -168,25 +168,29 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
 
   const allOrdersInRange = Array.from(uniqueOrderMap.values());
 
-  // Filtering for SUCCESS orders based on role
+  // Filtering for SUCCESS/VERIFIED orders based on role
   // 🛡️ [Root Deduplication]
   const uniqueSuccessMap = new Map();
   allOrdersInRange.forEach(o => {
-     if (o.paymentStatus === 'SUCCESS' && (role !== 'cashier' || o.paymentType === 'CASH')) {
+     const status = String(o.paymentStatus || '').toUpperCase();
+     const isPaid = status === 'SUCCESS' || status === 'VERIFIED';
+     if (isPaid && (role !== 'cashier' || o.paymentType === 'CASH')) {
         uniqueSuccessMap.set(o.id, o);
      }
   });
   const successOrders = Array.from(uniqueSuccessMap.values());
 
-  // Filtering for REJECTED orders
+  // Filtering for REJECTED/VOIDED orders
   const uniqueRejectedMap = new Map();
-  if (role === 'cashier') {
-     allOrdersInRange.forEach(o => {
-        if (o.paymentStatus === 'REJECTED' && o.paymentType === 'CASH') {
-           uniqueRejectedMap.set(o.id, o);
-        }
-     });
-  }
+  allOrdersInRange.forEach(o => {
+     const pStatus = String(o.paymentStatus || '').toUpperCase();
+     const oStatus = String(o.orderStatus || '').toUpperCase();
+     const isVoid = pStatus === 'REJECTED' || pStatus === 'FAILED' || oStatus === 'CANCELLED' || oStatus === 'REJECTED';
+     
+     if (isVoid && (role !== 'cashier' || o.paymentType === 'CASH')) {
+        uniqueRejectedMap.set(o.id, o);
+     }
+  });
   const rejectedOrders = Array.from(uniqueRejectedMap.values());
 
   const spanMs = endMs - startMs;
@@ -327,7 +331,7 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     doc.setFontSize(12);
     doc.text('II. HIGH-YIELD MENU ANALYTICS', 20, tableY);
 
-    const itemBody = data.itemSales.slice(0, 6).map(it => [
+    const itemBody = data.itemSales.slice(0, 25).map(it => [
        it.name.toUpperCase(), it.quantity, `INR ${it.revenue.toLocaleString()}`, `${((it.revenue / (data.summary.totalRevenue || 1)) * 100).toFixed(1)}%`
     ]);
 
@@ -395,7 +399,7 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     doc.setFont('helvetica', 'bold');
     doc.text('🧾 TRANSACTIONAL AUDIT LEDGER (SAMPLE)', 20, 145);
 
-    const ledgerSample = data.raw.slice(0, 15).map(o => [
+    const ledgerSample = data.raw.slice(0, 50).map(o => [
        `#${o.id.slice(-6).toUpperCase()}`,
        new Date(o.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
        (o.userName || 'Guest').substring(0, 12),

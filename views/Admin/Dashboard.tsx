@@ -3,6 +3,7 @@ import {
   Users as UsersIcon, DollarSign, Menu as MenuIcon, Settings as SettingsIcon, LogOut, TrendingUp, ChefHat,
   Package, FileText, LayoutDashboard, Search, AlertCircle, 
   CheckCircle2, Activity, Trash2, Edit2, ShieldAlert,
+  Loader2,
   Bell, Globe, Gauge, ShieldCheck, Plus, X as CloseIcon, 
   Percent, Wallet, Megaphone, CalendarDays, Zap, Save, ChevronRight,
   ArrowUpCircle, AlertTriangle, History, ArrowDownCircle, Banknote, Upload, Image as ImageIcon,
@@ -125,18 +126,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
 
 
   const stats = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const s = new Date(reportStart); s.setHours(0,0,0,0);
+    const e = new Date(reportEnd); e.setHours(23,59,59,999);
     
-    const todayOrders = orders.filter(o => {
-      const orderDate = new Date(o.createdAt);
-      orderDate.setHours(0, 0, 0, 0);
-      return orderDate.getTime() === today.getTime();
+    const rangeOrders = orders.filter(o => {
+      const ms = o.createdAt;
+      return ms >= s.getTime() && ms <= e.getTime();
     });
 
-    const successOrders = orders.filter(o => o.paymentStatus === 'SUCCESS');
+    const isPaid = (p: string) => p === 'SUCCESS' || p === 'VERIFIED';
+    const successOrders = orders.filter(o => isPaid(o.paymentStatus));
+    const rangePaidOrders = rangeOrders.filter(o => isPaid(o.paymentStatus));
+    
     const totalRevenue = successOrders.reduce((acc, o) => acc + o.totalAmount, 0);
-    const todayRevenue = todayOrders.filter(o => o.paymentStatus === 'SUCCESS').reduce((acc, o) => acc + o.totalAmount, 0);
+    const periodRevenue = rangePaidOrders.reduce((acc, o) => acc + o.totalAmount, 0);
     
     const totalCost = successOrders.reduce((acc, o) => {
       const itemsCost = o.items.reduce((sum, item) => sum + (item.costPrice * item.quantity), 0);
@@ -144,20 +147,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
     }, 0);
     
     const peakHours = new Array(24).fill(0).map((_, i) => ({ hour: `${i}:00`, orders: 0, revenue: 0 }));
-    todayOrders.forEach(o => {
+    rangeOrders.forEach(o => {
       const hour = new Date(o.createdAt).getHours();
       peakHours[hour].orders++;
-      if (o.paymentStatus === 'SUCCESS') {
+      if (isPaid(o.paymentStatus)) {
         peakHours[hour].revenue += o.totalAmount;
       }
     });
 
     const categoryData: Record<string, number> = {};
     const itemPopularity: Record<string, number> = {};
-    successOrders.forEach(o => {
+    rangePaidOrders.forEach(o => {
       o.items.forEach(item => {
-        categoryData[item.category] = (categoryData[item.category] || 0) + (item.price * item.quantity);
-        itemPopularity[item.name] = (itemPopularity[item.name] || 0) + item.quantity;
+        categoryData[item.category || 'Uncategorized'] = (categoryData[item.category || 'Uncategorized'] || 0) + (item.price * item.quantity);
+        itemPopularity[item.name || 'Unknown'] = (itemPopularity[item.name || 'Unknown'] || 0) + item.quantity;
       });
     });
 
@@ -165,14 +168,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
     const topItems = Object.entries(itemPopularity)
       .map(([name, quantity]) => ({ name, quantity }))
       .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
+      .slice(0, 10);
 
-    // Payment split
-    const cashRevenue = successOrders.filter(o => o.paymentType === 'CASH').reduce((acc, o) => acc + o.totalAmount, 0);
-    const onlineRevenue = successOrders.filter(o => o.paymentType !== 'CASH').reduce((acc, o) => acc + o.totalAmount, 0);
+    // Period Payment split (for the range)
+    const rangeCashRevenue = rangePaidOrders.filter(o => o.paymentType === 'CASH').reduce((acc, o) => acc + o.totalAmount, 0);
+    const rangeOnlineRevenue = rangePaidOrders.filter(o => o.paymentType !== 'CASH').reduce((acc, o) => acc + o.totalAmount, 0);
 
-    // Avg order value
-    const avgOrderValue = successOrders.length > 0 ? totalRevenue / successOrders.length : 0;
+    // Avg order value for the range
+    const avgOrderValue = rangePaidOrders.length > 0 ? periodRevenue / rangePaidOrders.length : 0;
 
     // Weekly comparison (last 7 days)
     const weeklyData = [];
@@ -183,7 +186,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
       const dayOrders = orders.filter(o => {
         const orderDate = new Date(o.createdAt);
         orderDate.setHours(0, 0, 0, 0);
-        return orderDate.getTime() === date.getTime() && o.paymentStatus === 'SUCCESS';
+        return orderDate.getTime() === date.getTime() && isPaid(o.paymentStatus);
       });
       weeklyData.push({
         date: date.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -194,22 +197,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
 
     return {
       totalRevenue,
-      todayRevenue,
+      periodRevenue,
       totalPnL: totalRevenue - totalCost,
       totalOrders: orders.length,
-      todayOrders: todayOrders.length,
+      periodOrders: rangePaidOrders.length,
       peakHours: peakHours.filter(h => h.orders > 0 || (parseInt(h.hour) >= 7 && parseInt(h.hour) <= 22)),
       chartData: Object.entries(categoryData).map(([name, value]) => ({ name, value })),
       topItems,
       paymentSplit: [
-        { name: 'Cash', value: cashRevenue },
-        { name: 'Online', value: onlineRevenue }
+        { name: 'Cash', value: rangeCashRevenue },
+        { name: 'Online', value: rangeOnlineRevenue }
       ],
       avgOrderValue,
       weeklyData,
-      cashPercentage: totalRevenue > 0 ? (cashRevenue / totalRevenue) * 100 : 0
+      cashPercentage: periodRevenue > 0 ? (rangeCashRevenue / periodRevenue) * 100 : 0
     };
-  }, [orders]);
+  }, [orders, reportStart, reportEnd]);
 
   const handleSaveMenuItem = async () => {
     try {
@@ -335,7 +338,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
 
   const renderOverview = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-6 bg-white p-8 rounded-[2rem] border border-black/5 shadow-sm">
+         <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-black/5">
+            {[
+               { label: 'Today', days: 0 },
+               { label: '7D', days: 7 },
+               { label: '30D', days: 30 }
+            ].map(q => (
+               <button
+                  key={q.label}
+                  onClick={() => {
+                     const end = new Date();
+                     const start = new Date();
+                     start.setDate(end.getDate() - q.days);
+                     setReportStart(start.toISOString().split('T')[0]);
+                     setReportEnd(end.toISOString().split('T')[0]);
+                  }}
+                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                     (new Date(reportStart).getDate() === new Date(new Date().setDate(new Date().getDate() - q.days)).getDate())
+                     ? 'bg-white text-primary shadow-sm shadow-black/5' : 'text-textSecondary hover:text-primary'
+                  }`}
+               >
+                  {q.label}
+               </button>
+            ))}
+         </div>
+
          <AuditDownloadButton 
            realReport={reportData} 
            period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`}
@@ -344,7 +372,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
       {/* Financial Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Revenue Today', value: `₹${stats.todayRevenue.toLocaleString()}`, icon: DollarSign, color: 'bg-primary/10 text-primary', trend: `+${stats.todayOrders} orders` },
+          { label: 'Period Revenue', value: `₹${stats.periodRevenue.toLocaleString()}`, icon: DollarSign, color: 'bg-primary/10 text-primary', trend: `+${stats.periodOrders} orders` },
           { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-green-50 text-green-600', trend: 'All Time' },
           { label: 'Total Profit', value: `₹${stats.totalPnL.toLocaleString()}`, icon: TrendingUp, color: 'bg-accent/10 text-accent', trend: `${Math.round((stats.totalPnL / stats.totalRevenue) * 100)}% margin` },
           { label: 'Avg Order Value', value: `₹${Math.round(stats.avgOrderValue)}`, icon: Zap, color: 'bg-cash/10 text-cash', trend: `${stats.totalOrders} total` },

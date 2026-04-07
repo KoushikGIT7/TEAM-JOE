@@ -42,6 +42,10 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    const [search, setSearch] = useState('');
    const [loading, setLoading] = useState(true);
 
+   const [reportStart, setReportStart] = useState<string>(() => new Date().toISOString().split('T')[0]);
+   const [reportEnd, setReportEnd] = useState<string>(() => new Date().toISOString().split('T')[0]);
+   const [reportLoading, setReportLoading] = useState(false);
+
    // 🛡️ SAFETY: Force-clear loading after 3s max
    useEffect(() => {
       const safetyTimer = setTimeout(() => setLoading(false), 3000);
@@ -126,34 +130,40 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       return () => unsub();
    }, []);
 
-   // 🔴 REAL-TIME DIAGNOSTIC STRATAGEM: Direct onSnapshot listener for today's orders
+   // 🔴 REAL-TIME DIAGNOSTIC STRATAGEM: Direct onSnapshot listener
    useEffect(() => {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const startMs = todayStart.getTime();
+      const s = new Date(reportStart); 
+      s.setHours(0,0,0,0);
+      const e = new Date(reportEnd); 
+      e.setHours(23,59,59,999);
 
-      const todayQ = query(
+      const rangeQ = query(
          collection(db, 'orders'),
-         where('createdAt', '>=', startMs),
+         where('createdAt', '>=', s.getTime()),
+         where('createdAt', '<=', e.getTime()),
          orderBy('createdAt', 'asc')
       );
 
-      const unsub = onSnapshot(todayQ,
+      const unsub = onSnapshot(rangeQ,
          (snapshot) => {
-            const todayOrders = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as any[];
-            const paidOrders = todayOrders.filter(o => o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED');
+            const rangeOrders = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as any[];
+            const paidOrders = rangeOrders.filter(o => o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED');
             const cash = paidOrders.filter(o => o.paymentType === 'CASH').reduce((s, o) => s + (o.totalAmount || 0), 0);
             const online = paidOrders.filter(o => o.paymentType !== 'CASH').reduce((s, o) => s + (o.totalAmount || 0), 0);
             const avg = paidOrders.length > 0 ? paidOrders.reduce((s, o) => s + (o.totalAmount || 0), 0) / paidOrders.length : 0;
 
             const hourlyMap: Record<string, { orders: number; revenue: number }> = {};
+            // If it's more than 2 days, we show day-by-day trend instead of hourly?
+            // Actually, keep it hourly for now as the user primarily reconciliation daily/weekly.
             for (let i = 7; i <= 21; i++) hourlyMap[`${i}:00`] = { orders: 0, revenue: 0 };
+            
             paidOrders.forEach(o => {
-               const h = new Date(o.createdAt).getHours();
-               const key = `${h}:00`;
-               if (!hourlyMap[key]) hourlyMap[key] = { orders: 0, revenue: 0 };
-               hourlyMap[key].orders++;
-               hourlyMap[key].revenue += o.totalAmount || 0;
+               const hour = new Date(o.createdAt).getHours();
+               const key = `${hour}:00`;
+               if (hourlyMap[key]) {
+                  hourlyMap[key].orders++;
+                  hourlyMap[key].revenue += o.totalAmount || 0;
+               }
             });
 
             setLiveStats({
@@ -166,12 +176,12 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             setLiveStatsUpdatedAt(new Date());
          },
          (err) => {
-            console.error('[LIVE-STATS] Today orders listener error:', err);
+            console.error('[LIVE-STATS] Range orders listener error:', err);
          }
       );
 
       return () => unsub();
-   }, []);
+   }, [reportStart, reportEnd]);
 
    // Conflict Intelligence: Detect multiple orders for the same amount
    const conflictMap = useMemo(() => {
@@ -182,9 +192,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       return counts;
    }, [pendingOrders]);
 
-   const [reportStart, setReportStart] = useState<string>(() => new Date().toISOString().split('T')[0]);
-   const [reportEnd, setReportEnd] = useState<string>(() => new Date().toISOString().split('T')[0]);
-   const [reportLoading, setReportLoading] = useState(false);
+
 
    // PERFORMANCE FIX [Laziness Strategy]: Only sync report data when the user is actually 
    // looking at the Insight or Summary tabs. This stops massive background reads during peak hours.
@@ -320,19 +328,37 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    // --- 💻 DESKTOP COMPONENTS (ORIGINAL STYLE) ---
    const renderDesktopDashboard = () => (
       <div className="space-y-8 animate-in fade-in duration-500">
-         <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Live · {liveStatsUpdatedAt ? `Updated ${liveStatsUpdatedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Connecting...'}
-               </span>
+         <div className="flex flex-wrap items-center justify-between gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/50">
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+               {[
+                  { label: 'Today', days: 0 },
+                  { label: '7D', days: 7 },
+                  { label: '30D', days: 30 }
+               ].map(q => (
+                  <button
+                     key={q.label}
+                     onClick={() => {
+                        const end = new Date();
+                        const start = new Date();
+                        start.setDate(end.getDate() - q.days);
+                        setReportStart(start.toISOString().split('T')[0]);
+                        setReportEnd(end.toISOString().split('T')[0]);
+                     }}
+                     className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        new Date(reportStart).getDate() === (new Date(new Date().setDate(new Date().getDate() - q.days))).getDate() 
+                        ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-500'
+                     }`}
+                  >
+                     {q.label}
+                  </button>
+               ))}
             </div>
-            <AuditDownloadButton realReport={reportData} />
+            <AuditDownloadButton realReport={reportData} period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`} />
          </div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
                <DollarSign className="w-8 h-8 text-emerald-600 mb-4" />
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Today Cash</p>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Period Cash</p>
                <p className="text-4xl font-black text-slate-900 italic">₹{liveStats.cash.toLocaleString()}</p>
             </div>
             <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">

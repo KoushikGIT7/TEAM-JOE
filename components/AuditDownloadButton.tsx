@@ -40,7 +40,14 @@ export interface AuditData {
      wasteAlert: number;
   };
   itemSales: Array<{ name: string; quantity: number; revenue: number }>;
-  recentOrders: Array<{ id: string; time: string; customer: string; amount: number; status: string }>;
+  recentOrders: Array<{ 
+      id: string; 
+      time: string; 
+      customer: string; 
+      items: string; 
+      amount: number; 
+      status: string 
+  }>;
 }
 
 const COLORS = {
@@ -78,13 +85,11 @@ const styles = StyleSheet.create({
   // High-Performance Ledger Style
   table: { width: '100%', marginBottom: 30, borderRadius: 8, overflow: 'hidden' },
   tableHeader: { flexDirection: 'row', backgroundColor: COLORS.NAVY, paddingVertical: 12, paddingHorizontal: 15 },
-  th: { flex: 1, color: '#FFFFFF', fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 },
-  thRight: { flex: 1, color: '#FFFFFF', fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'right' },
+  th: { color: '#FFFFFF', fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 },
   tableRow: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' },
-  td: { flex: 1, color: COLORS.TEXT_MAIN, fontSize: 9, fontWeight: 'medium' },
-  tdBold: { flex: 1, color: COLORS.NAVY, fontSize: 9, fontWeight: 'bold' },
-  tdRight: { flex: 1, color: COLORS.NAVY, fontSize: 9, fontWeight: 'bold', textAlign: 'right' },
-  statusBadge: { fontSize: 8, fontWeight: 'bold', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 4, textTransform: 'uppercase' },
+  td: { color: COLORS.TEXT_MAIN, fontSize: 8.5, fontWeight: 'medium' },
+  tdBold: { color: COLORS.NAVY, fontSize: 8.5, fontWeight: 'bold' },
+  tdRight: { color: COLORS.NAVY, fontSize: 8.5, fontWeight: 'bold', textAlign: 'right' },
 
   footer: { position: 'absolute', bottom: 25, left: 35, right: 35, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 12 },
   footerText: { fontSize: 7, color: COLORS.TEXT_SUB }
@@ -98,7 +103,9 @@ const SvgPieChart = ({ bevShare }: { bevShare: number }) => (
             <Circle 
                 cx={30} cy={30} r={25} 
                 stroke={COLORS.GOLD} strokeWidth={6} fill="none" 
-                strokeDasharray={`${Math.max(0.1, (bevShare/100) * 157)} 157`} 
+                strokeDasharray={`${(bevShare / 100) * 157 || 0.1} 157`} 
+                strokeLinecap="round"
+                transform="rotate(-90 30 30)"
             />
         </Svg>
         <Text style={{ fontSize: 10, fontWeight: 'bold', marginTop: 5, color: COLORS.NAVY }}>{bevShare.toFixed(1)}%</Text>
@@ -106,19 +113,19 @@ const SvgPieChart = ({ bevShare }: { bevShare: number }) => (
 );
 
 const AuditReportDocument = ({ data }: { data: AuditData }) => {
-  // 🛡️ INDUSTRIAL DEDUPLICATION ENGINE
+  // 🛡️ INDUSTRIAL DEDUPLICATION ENGINE (FINAL PASS)
   const uniqueMap = new Map();
   (data.recentOrders || []).forEach(o => {
-     const cleanId = (o.id || 'N/A').toUpperCase();
-     if (!uniqueMap.has(cleanId) && cleanId !== 'UNDEFINED' && cleanId !== 'NULL') {
+     const cleanId = (o.id || '').toUpperCase();
+     if (cleanId && !uniqueMap.has(cleanId)) {
         uniqueMap.set(cleanId, o);
      }
   });
-  const auditEntries = Array.from(uniqueMap.values()).slice(0, 50);
+  const auditEntries = Array.from(uniqueMap.values()).slice(0, 45);
 
   return (
-    <Document title={`JOE Auditure Certification - ${data.period}`}>
-      {/* PAGE 1: STRATEGIC INTEL */}
+    <Document title={`JOE Auditure - ${data.period}`}>
+      {/* PAGE 1: EXECUTIVE RECONCILIATION */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           <View style={styles.brandBlock}>
@@ -142,16 +149,15 @@ const AuditReportDocument = ({ data }: { data: AuditData }) => {
         <View style={styles.insightBlock}>
           <Text style={styles.insightTitle}>OPERATIONAL CONTROL & STAFFING</Text>
           <View style={styles.insightItem}><View style={styles.insightDot} /><Text style={styles.insightText}>CRITICAL RUSH ALERT: Detected at {data.insights?.peakHour || 'Rush'}. Peak Throughput: {data.insights?.peakThroughput || 0} settlements/hr.</Text></View>
-          <View style={styles.insightItem}><View style={styles.insightDot} /><Text style={styles.insightText}>ACTIONABLE: Deploy additional handheld scan assistants 15 minutes prior to this surge interval.</Text></View>
-          <View style={styles.insightItem}><View style={styles.insightDot} /><Text style={styles.insightText}>WASTE MONITOR: Revenue lost to rejections/voids is INR {data.insights?.wasteAlert || 0}. Tighten UTR entry flow.</Text></View>
+          <View style={styles.insightItem}><View style={styles.insightDot} /><Text style={styles.insightText}>ACTIONABLE: Deploy handheld scan assistants 15 minutes prior to this surge interval.</Text></View>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 20 }}>
             <View style={{ flex: 1, backgroundColor: COLORS.CARD, padding: 20, borderRadius: 12, borderBottomWidth: 2, borderBottomColor: COLORS.GOLD }}>
                 <Text style={styles.insightTitle}>MENU & REVENUE INSIGHTS</Text>
-                <Text style={{ fontSize: 9, color: COLORS.NAVY, fontWeight: 'bold' }}>• High Demand: &apos;{data.insights?.flagshipProduct || 'N/A'}&apos; dominates Flagship volume.</Text>
-                <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 6 }}>• Bundle Up: Beverages represent {data.insights?.beverageShare.toFixed(1)}% of revenue mix. Strategy: Bundle with meals.</Text>
-                <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 6 }}>• Avg Ticket: INR {Math.round(data.summary?.avgTicket || 0)}. Opportunity for INR 75 &quot;Boss Combos&quot;.</Text>
+                <Text style={{ fontSize: 9, color: COLORS.NAVY }}>• High Demand: &apos;{data.insights?.flagshipProduct || 'N/A'}&apos; is your clear flagship product.</Text>
+                <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 6 }}>• Upsell Opportunity: Beverages represent {data.insights?.beverageShare.toFixed(1)}% of revenue mix.</Text>
+                <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 6 }}>• Pricing: Avg ticket is INR {Math.round(data.summary?.avgTicket || 0)}. Consider a &quot;Boss Combo&quot; at INR 75.</Text>
             </View>
             <SvgPieChart bevShare={data.insights?.beverageShare || 0} />
         </View>
@@ -162,29 +168,29 @@ const AuditReportDocument = ({ data }: { data: AuditData }) => {
         </View>
       </Page>
 
-      {/* PAGE 2: CLEAN AUDIT LEDGER */}
+      {/* PAGE 2: DIFFERENTIATED LEDGER */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}><Text style={styles.brandName}>TRANSACTIONAL AUDIT LEDGER</Text><Text style={styles.periodBadge}>{data.period}</Text></View>
         
         <View style={styles.table}>
             <View style={styles.tableHeader}>
-                <Text style={styles.th}>Order ID</Text>
-                <Text style={styles.th}>Time</Text>
-                <Text style={{ ...styles.th, flex: 1.5 }}>Customer Name</Text>
-                <Text style={styles.thRight}>Amount</Text>
-                <Text style={styles.thRight}>Status</Text>
+                <Text style={{ ...styles.th, width: '15%' }}>Order ID</Text>
+                <Text style={{ ...styles.th, width: '12%' }}>Time</Text>
+                <Text style={{ ...styles.th, width: '43%' }}>Order Details (Items)</Text>
+                <Text style={{ ...styles.th, width: '15%', textAlign: 'right' }}>Amount</Text>
+                <Text style={{ ...styles.th, width: '15%', textAlign: 'right' }}>Status</Text>
             </View>
             {auditEntries.map((order, i) => (
                 <View key={order.id} style={{ ...styles.tableRow, backgroundColor: i % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
-                    <Text style={styles.tdBold}>#{order.id.slice(-6).toUpperCase()}</Text>
-                    <Text style={styles.td}>{order.time || '--'}</Text>
-                    <Text style={{ ...styles.td, flex: 1.5, color: COLORS.TEXT_SUB }}>{order.customer || 'Guest User'}</Text>
-                    <Text style={styles.tdRight}>INR {(order.amount || 0).toLocaleString()}</Text>
-                    <Text style={{ ...styles.tdRight, color: order.status === 'SUCCESS' ? COLORS.SUCCESS : COLORS.ERROR }}>{order.status || 'VOIDED'}</Text>
+                    <Text style={{ ...styles.tdBold, width: '15%' }}>#{order.id.slice(-6).toUpperCase()}</Text>
+                    <Text style={{ ...styles.td, width: '12%' }}>{order.time || '--'}</Text>
+                    <Text style={{ ...styles.td, width: '43%', color: COLORS.TEXT_SUB }}>{order.items || 'General Settlement'}</Text>
+                    <Text style={{ ...styles.tdRight, width: '15%' }}>INR {order.amount || 0}</Text>
+                    <Text style={{ ...styles.tdRight, width: '15%', color: order.status === 'SUCCESS' ? COLORS.SUCCESS : COLORS.ERROR }}>{order.status}</Text>
                 </View>
             ))}
             {auditEntries.length === 0 && (
-                <View style={styles.tableRow}><Text style={{...styles.td, textAlign: 'center', flex: 1, paddingVertical: 40}}>NO TRANSACTION LOGS DETECTED FOR THIS INTERVAL.</Text></View>
+                <View style={styles.tableRow}><Text style={{...styles.td, textAlign: 'center', flex: 1, paddingVertical: 40}}>NO TRANSACTION LOGS RECORDED.</Text></View>
             )}
         </View>
 
@@ -209,16 +215,24 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({ realReport, period 
       const stats = realReport.summary || {};
       const rawOrders = realReport.orders || [];
       const itemSales = realReport.itemSales || [];
-      const rushData = realReport.dailyTrend || [];
+      const rushData = realReport.peakHours || []; // 🛡️ Fix property mapping (peakHours contains throughput)
+      const catSales = realReport.categorySplit || [];
 
-      // 🛡️ ROOT DEDUPLICATION
+      // 🛡️ RECONCILE DATA STRATEGICALLY
       const uMap = new Map();
-      rawOrders.forEach((o: any) => { if (o.id && !uMap.has(o.id)) uMap.set(o.id, o); });
+      rawOrders.forEach((o: any) => { if (o.id && !uMap.has(o.id.toUpperCase())) uMap.set(o.id.toUpperCase(), o); });
       const orders = Array.from(uMap.values()).sort((a: any, b: any) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
 
-      const maxRush = rushData.length > 0 ? rushData.reduce((prev: any, cur: any) => (prev.orders > cur.orders) ? prev : cur, { label: '--', orders: 0 }) : { label: '--', orders: 0 };
+      const maxRush = rushData.length > 0 ? [...rushData].sort((a: any, b: any) => b.orders - a.orders)[0] : { hour: '--:--', orders: 0 };
       const flagship = itemSales.length > 0 ? [...itemSales].sort((a: any, b: any) => b.quantity - a.quantity)[0] : { name: 'N/A' };
-      const bevSales = itemSales.filter((i: any) => ['coffee', 'tea', 'milk', 'water', 'juice', 'beverage'].some(tag => i.name.toLowerCase().includes(tag))).reduce((acc: number, cur: any) => acc + (cur.revenue || 0), 0);
+      
+      // 🥤 [Upsell Logic] Prioritize "Beverages" category, then fallback to keywords
+      const bevFromCat = catSales.find((c: any) => c.category === 'Beverages')?.revenue || 0;
+      const bevFromKeywords = itemSales.filter((i: any) => 
+        ['coffee', 'tea', 'milk', 'water', 'juice', 'beverage', 'shake', 'cold'].some(tag => i.name.toLowerCase().includes(tag))
+      ).reduce((acc: number, cur: any) => acc + (cur.revenue || 0), 0);
+      
+      const bevSales = Math.max(bevFromCat, bevFromKeywords);
       const bevShare = stats.totalRevenue > 0 ? (bevSales / stats.totalRevenue) * 100 : 0;
 
       const auditData: AuditData = {
@@ -231,20 +245,26 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({ realReport, period 
             voidRate: stats.voidRate || 0
         },
         insights: {
-            peakHour: maxRush.label || '13:00',
+            peakHour: maxRush.hour || '--:--',
             peakThroughput: maxRush.orders || 0,
             flagshipProduct: flagship.name,
             beverageShare: bevShare,
             wasteAlert: Math.round((stats.voidRate || 0) * (stats.totalRevenue || 0) / 100)
         },
         itemSales: itemSales,
-        recentOrders: orders.slice(0, 100).map((o: any) => ({
-            id: o.id,
-            time: new Date(o.createdAt || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }).toLowerCase(),
-            customer: o.userName || 'Guest User',
-            amount: Number(o.totalAmount || 0),
-            status: o.paymentStatus === 'SUCCESS' ? 'SUCCESS' : 'VOIDED'
-        }))
+        recentOrders: orders.slice(0, 500).filter(o => o && o.id).map((o: any) => {
+            const status = String(o.paymentStatus || '').toUpperCase();
+            const isPaid = status === 'SUCCESS' || status === 'VERIFIED';
+            
+            return {
+              id: o.id,
+              time: o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }).toLowerCase() : '--:--',
+              customer: o.userName || 'Guest User',
+              items: (o.items || []).map((i: any) => `${i.name || 'Item'}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ').slice(0, 60),
+              amount: Number(o.totalAmount || 0),
+              status: isPaid ? 'SUCCESS' : 'VOIDED'
+            };
+        })
       };
 
       const blob = await pdf(<AuditReportDocument data={auditData} />).toBlob();
@@ -270,7 +290,7 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({ realReport, period 
   
   if (status === 'loading') return (
     <button disabled className={`${baseStyles} bg-slate-900 text-slate-400 cursor-wait ${className}`}>
-      <Loader2 className="w-4 h-4 animate-spin" /> Syncing Audit...
+      <Loader2 className="w-4 h-4 animate-spin" /> Syncing Intelligence...
     </button>
   );
 

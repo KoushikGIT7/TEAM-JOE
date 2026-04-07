@@ -139,7 +139,7 @@ export const runBatchGenerator = async (nodeId: string, force: boolean = false) 
              tx.set(doc(db, 'prepBatches', bId), {
                 id: bId,
                 itemId: validatedItems[0].id,
-                itemName: validatedItems[0].name,
+                itemName: validatedItems[0].name || 'Unnamed Item',
                 stationId: sId,
                 items: manifest,
                 status: 'QUEUED',

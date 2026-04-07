@@ -181,7 +181,7 @@ const ServerConsoleWorkspace: React.FC<ServerConsoleWorkspaceProps> = ({
                                   {it.quantity}
                                </div>
                                <div>
-                                  <h4 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter">{it.name}</h4>
+                                  <h4 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter">{it.name || 'Unnamed Item'}</h4>
                                   <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">{isItemReady ? 'KITCHEN READY' : 'PREPARING...'}</p>
                                </div>
                             </div>

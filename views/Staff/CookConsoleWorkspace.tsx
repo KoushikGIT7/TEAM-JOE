@@ -271,7 +271,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                     <span className="text-white/20 text-[9px] font-mono">#{b.id.slice(-4).toUpperCase()}</span>
                   </div>
                   <h3 className="text-white font-black italic truncate text-sm">
-                    {b.totalUnits}x {b.itemName || 'Items'}
+                    {b.totalUnits}x {b.itemName || 'Unnamed Item'}
                   </h3>
                 </div>
               ))}
@@ -286,7 +286,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                 <div>
                    <span className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[10px] mb-1 block">{focus.stationId} STATION</span>
                    <h1 className="text-4xl lg:text-6xl font-black text-white uppercase italic tracking-tighter">
-                     {focus.totalUnits}x {focus.itemName}
+                     {focus.totalUnits}x {focus.itemName || 'Unnamed Item'}
                    </h1>
                 </div>
                 <div className="text-right">
@@ -304,7 +304,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                           {it.quantity || 1}
                         </div>
                         <div>
-                          <h4 className="text-white font-black italic">{it.userName || 'Student'}</h4>
+                          <h4 className="text-white font-black italic">{it.userName || 'Student'} — {it.name || 'Unnamed'}</h4>
                           <p className="text-[8px] font-black text-white/40 uppercase tracking-widest">Order ID: #{it.orderId.slice(-4).toUpperCase()}</p>
                         </div>
                       </div>

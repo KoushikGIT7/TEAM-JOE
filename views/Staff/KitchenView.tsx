@@ -144,7 +144,7 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
                         {group.items.map(item => (
                             <div key={item.id} className="bg-black/40 border border-white/5 rounded-2xl p-4 flex justify-between items-center">
-                                <span className="font-black text-lg tracking-tight">{item.itemName}</span>
+                                <span className="font-black text-lg tracking-tight">{item.itemName || 'Unnamed Item'}</span>
                                 <span className="text-3xl font-black text-primary">×{item.quantity}</span>
                             </div>
                         ))}
