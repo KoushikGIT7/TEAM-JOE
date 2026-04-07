@@ -146,10 +146,27 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
   );
 
   const snap = await getDocs(baseQuery);
-  const allOrdersInRange = snap.docs.map(doc => ({
-    ...(doc.data() as any),
-    id: doc.id
-  }));
+  // 🛡️ [Senior Gatekeeper] Multi-Pass Root Reconciler
+  const uniqueOrderMap = new Map<string, any>();
+  
+  snap.docs.forEach(doc => {
+     const rawData = doc.data();
+     if (!rawData || !doc.id) return;
+     
+     // Atomically ensure uniqueness and type-safety at the संग्रह (Collection) entry
+     uniqueOrderMap.set(doc.id, {
+        ...(rawData as any),
+        id: doc.id,
+        // 🛡️ Data Normalization Pivot
+        totalAmount: Number(rawData.totalAmount || 0),
+        createdAt: Number(rawData.createdAt || Date.now()),
+        userName: String(rawData.userName || 'Guest User'),
+        paymentStatus: String(rawData.paymentStatus || 'PENDING'),
+        paymentType: String(rawData.paymentType || 'ONLINE')
+     });
+  });
+
+  const allOrdersInRange = Array.from(uniqueOrderMap.values());
 
   // Filtering for SUCCESS orders based on role
   // 🛡️ [Root Deduplication]
