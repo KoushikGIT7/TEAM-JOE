@@ -336,7 +336,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const renderOverview = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="flex justify-end">
-         <AuditDownloadButton />
+         <AuditDownloadButton realReport={reportData} />
       </div>
       {/* Financial Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -549,7 +549,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                 // Safety checks for user properties
                 const userName = u.name || 'Unknown';
                 const userEmail = u.email || 'No email';
-                const userRole = u.role || 'SERVER';
+                const userRole = u.role || 'STUDENT';
                 const userActive = u.active ?? true;
                 
                 return (
@@ -577,8 +577,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                             alert('Failed to update user role. Please try again.');
                           }
                         }}
-                        className="text-xs font-black uppercase px-4 py-2 rounded-xl bg-white border border-black/5 focus:ring-primary outline-none"
+                        className={`text-xs font-black uppercase px-4 py-2 rounded-xl bg-white border border-black/5 focus:ring-primary outline-none ${
+                          userRole === 'STUDENT' ? 'text-blue-500' : 
+                          userRole === 'ADMIN' ? 'text-primary' : 
+                          userRole === 'GUEST' ? 'text-slate-400' : 'text-textMain'
+                        }`}
                       >
+                        <option value="STUDENT">Student</option>
+                        <option value="GUEST">Guest</option>
                         <option value="CASHIER">Cashier</option>
                         <option value="SERVER">Server</option>
                         <option value="ADMIN">Admin</option>

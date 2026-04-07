@@ -39,17 +39,19 @@ export const inferRoleFromEmail = (email: string): UserRole | null => {
   if (!email) return null;
   const emailLower = email.toLowerCase();
   
-  // STAFF Patterns: Allow any domain for these specific prefix-based staff accounts
-  // or specifically @joecafe.com and @joe.com
-  const isStaffDomain = emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
+  // 🛡️ [STAFF-ENFORCEMENT] Only authorized domains can have Staff roles
+  const isAuthorizedStaffDomain = emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
   
-  if (isStaffDomain) {
+  if (isAuthorizedStaffDomain) {
     if (emailLower.startsWith('admin@'))   return ROLES.ADMIN;
     if (emailLower.startsWith('cashier@')) return ROLES.CASHIER;
     if (emailLower.startsWith('server@'))  return ROLES.SERVER;
+    if (emailLower.startsWith('staff@'))   return ROLES.CASHIER;
+    return ROLES.CASHIER; // Default staff domain user to Cashier if prefix unknown
   }
   
-  return null;
+  // All other domains (gmail, college domains, etc.) are strictly STUDENTS
+  return ROLES.STUDENT;
 };
 
 /**

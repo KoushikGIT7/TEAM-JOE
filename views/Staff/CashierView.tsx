@@ -321,7 +321,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   Live · {liveStatsUpdatedAt ? `Updated ${liveStatsUpdatedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Connecting...'}
                </span>
             </div>
-            <AuditDownloadButton />
+            <AuditDownloadButton realReport={reportData} />
          </div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
