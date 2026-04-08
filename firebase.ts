@@ -33,7 +33,7 @@ let db: Firestore;
 try {
   db = initializeFirestore(app, {
     localCache: persistentLocalCache({}), // Single tab is more stable for kitchen consoles
-    experimentalAutoDetectLongPolling: true,
+    experimentalForceLongPolling: true,
   });
 } catch (e) {
   // If already initialized (common in HMR), return the existing instance

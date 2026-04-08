@@ -51,6 +51,17 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     };
   }, []);
 
+  // 🔗 [ADMIN-HEALING] Expose a cleanup function to the browser console as requested
+  useEffect(() => {
+    (window as any).clearGhostBatches = async () => {
+      console.log("🧹 [PURGE] Targetting all active kitchen batches...");
+      const promises = batches.map(b => deleteDoc(doc(db, 'prepBatches', b.id)));
+      await Promise.all(promises);
+      alert(`${batches.length} batches purged from kitchen.`);
+    };
+    return () => { delete (window as any).clearGhostBatches; };
+  }, [batches]);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // PRIMARY LISTENER — status IN [QUEUED, PREPARING] + orderBy createdAt
   // Uses safeListener: auto-detects missing index, retries on transient errors,
@@ -203,6 +214,20 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     }
   };
 
+  const handleHardPurge = async (docId: string) => {
+    if (!confirm("Are you sure you want to permanently delete this stuck batch?")) return;
+    setProcessingMap(p => ({ ...p, [docId]: true }));
+    try {
+      await deleteDoc(doc(db, 'prepBatches', docId));
+      setLastAction('Batch Purged 🧹');
+      setTimeout(() => setLastAction(null), 2000);
+    } catch (e) {
+      alert("Purge failed. Check permissions.");
+    } finally {
+      setProcessingMap(p => ({ ...p, [docId]: false }));
+    }
+  };
+
   const handleFinalize = async (batchId: string, items: any[], count?: number, currentStatus?: string) => {
     if (!navigator.onLine) return alert("Waiting for connection...");
     if (processingMap[batchId]) return;
@@ -298,6 +323,14 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                 <div className="text-right">
                    <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] mb-1">Batch Ref</p>
                    <span className="text-4xl lg:text-7xl font-black text-white tracking-widest leading-none font-mono italic">#{focus.id.slice(-4).toUpperCase()}</span>
+                   {(focus.itemName === 'Unnamed Item' || !focus.itemName) && (
+                       <button 
+                         onClick={() => handleHardPurge(focus.id)}
+                         className="mt-4 block w-full py-3 bg-red-500/10 text-red-500 border border-red-500/30 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-xl active:scale-95"
+                       >
+                         ⚠️ Purge Ghost Entry
+                       </button>
+                    )}
                 </div>
               </div>
 
