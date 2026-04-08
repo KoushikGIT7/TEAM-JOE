@@ -90,8 +90,6 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       setOrderId(newOrderId);
       localStorage.setItem('activeOrderId', newOrderId);
       localStorage.removeItem('joe_cart');
-      joeSounds.playOrderPlaced();
-
       if (selectedMethod === 'UPI') {
         // Try to open UPI app — fails silently on desktop, works on mobile
         try {
@@ -102,11 +100,14 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         } catch (_) { /* UPI not available on this device — that's fine */ }
         // Navigate to QR immediately regardless (auto-verified)
         localStorage.removeItem('activeOrderId');
+        joeSounds.stopAll();
         joeSounds.playPaymentConfirmed();
         onSuccess(newOrderId);
         return;
       }
 
+      joeSounds.stopAll();
+      joeSounds.playOrderPlaced();
       setState('WAITING');
     } catch (err: any) {
       setState('IDLE');

@@ -10,6 +10,8 @@
 class SoundService {
   private ctx: AudioContext | null = null;
 
+  private activeOscillators: OscillatorNode[] = [];
+
   // ─────────────────────────────────────────────────────────
   // INIT — Wake up the AudioContext (must be after user gesture)
   // ─────────────────────────────────────────────────────────
@@ -21,6 +23,15 @@ class SoundService {
     if (this.ctx?.state === 'suspended') {
       await this.ctx.resume();
     }
+  }
+
+  /** 🛡️ [SILENCE-PROTOCOL] Kill all active tones and speech */
+  public stopAll() {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    this.activeOscillators.forEach(osc => {
+      try { osc.stop(); osc.disconnect(); } catch (_) {}
+    });
+    this.activeOscillators = [];
   }
 
   // ─────────────────────────────────────────────────────────
@@ -44,8 +55,15 @@ class SoundService {
     gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
     osc.connect(gain);
     gain.connect(this.ctx.destination);
+    
+    this.activeOscillators.push(osc);
     osc.start(start);
     osc.stop(start + duration + 0.05);
+
+    // Clean up reference after it stops
+    setTimeout(() => {
+      this.activeOscillators = this.activeOscillators.filter(o => o !== osc);
+    }, (duration + 0.1) * 1000);
   }
 
   // ─────────────────────────────────────────────────────────

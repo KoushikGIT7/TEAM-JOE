@@ -98,16 +98,22 @@ import {
   updateServeFlowStatusCallable,
 } from "./callables";
 
+let cartDraftTimeout: any = null;
 export const saveCartDraft = async (userId: string, items: any[]): Promise<void> => {
-  try {
-    await setDoc(doc(db, "carts", userId), {
-      userId,
-      items,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-  } catch (error) {
-    console.error("Error saving cart draft:", error);
-  }
+  // 🏎️ [LATENCY-OPTIMIZATION] Debounce writing to firestore to avoid UI lag on fast clicking
+  if (cartDraftTimeout) clearTimeout(cartDraftTimeout);
+  
+  cartDraftTimeout = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, "carts", userId), {
+        userId,
+        items,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (error) {
+      console.error("Error saving cart draft:", error);
+    }
+  }, 1000);
 };
 
 
@@ -808,31 +814,44 @@ export function getStockStatus(meta: InventoryMetaItem): { status: StockStatus; 
 // 3. SETTINGS
 // ============================================================================
 
+// 📡 [SYSTEM-SETTINGS-CACHE]
+let _cachedSettings: SystemSettings | null = null;
+let _settingsLastFetched = 0;
+const SETTINGS_CACHE_TTL = 5 * 60 * 1000; // 5 minute intelligence lease
+
 export const getSettings = async (): Promise<SystemSettings> => {
+  const now = Date.now();
+  if (_cachedSettings && (now - _settingsLastFetched < SETTINGS_CACHE_TTL)) {
+    return _cachedSettings;
+  }
+
   try {
     const settingsDoc = await getDoc(doc(db, "settings", "global"));
+    _settingsLastFetched = now;
     if (settingsDoc.exists()) {
-      return settingsDoc.data() as SystemSettings;
+      _cachedSettings = settingsDoc.data() as SystemSettings;
+      return _cachedSettings;
     }
     // Return defaults if not found
-    return {
+    _cachedSettings = {
       isMaintenanceMode: false,
       acceptingOrders: true,
-      orderingEnabled: DEFAULT_ORDERING_ENABLED,
-      servingRatePerMin: DEFAULT_SERVING_RATE_PER_MIN,
+      orderingEnabled: true,
+      servingRatePerMin: 10,
       announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
       taxRate: 5,
       minOrderValue: 20,
       peakHourThreshold: 50,
       autoSettlementEnabled: true
     };
+    return _cachedSettings;
   } catch (error) {
     console.error("Error getting settings:", error);
-    return {
+    return _cachedSettings || {
       isMaintenanceMode: false,
       acceptingOrders: true,
-      orderingEnabled: DEFAULT_ORDERING_ENABLED,
-      servingRatePerMin: DEFAULT_SERVING_RATE_PER_MIN,
+      orderingEnabled: true,
+      servingRatePerMin: 10,
       announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
       taxRate: 5,
       minOrderValue: 20,
@@ -868,7 +887,10 @@ export const listenToSettings = (callback: (settings: SystemSettings) => void): 
     doc(db, "settings", "global"),
     (doc) => {
       if (doc.exists()) {
-        callback(doc.data() as SystemSettings);
+        const data = doc.data() as SystemSettings;
+        _cachedSettings = data;
+        _settingsLastFetched = Date.now();
+        callback(data);
       } else {
         callback({
           isMaintenanceMode: false,
@@ -1213,90 +1235,81 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
 
     console.log("🍱 [ROOT-FIX] Order committed with Atomic Inventory Guard:", orderId);
 
-    // 2. SECONDARY TRACKING (Pulse Counters & Batching)
-    if (isDynamic) {
-        try {
-            // Pulse Slot Stats
-            const incrementPayload: any = { 
-                totalVolume: increment(requestedQty), 
-                updatedAt: serverTimestamp() 
-            };
-            for (const [station, qty] of Object.entries(qtyByStation)) {
-                incrementPayload[station] = increment(qty);
-            }
-            await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
+    // 🏎️ [PERFORMANCE-PULSE] Offload non-critical post-processing to background
+    // This allows the user to navigate to the QR screen IMMEDIATELY
+    (async () => {
+      try {
+        if (isDynamic) {
+          // 1. Slot Stats Pulse
+          const incrementPayload: any = { 
+              totalVolume: increment(requestedQty), 
+              updatedAt: serverTimestamp() 
+          };
+          for (const [station, qty] of Object.entries(qtyByStation)) {
+              incrementPayload[station] = increment(qty);
+          }
+          await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
 
-            // 🍱 [LIGHTNING-INJECTION]: Create prepBatch directly from client for zero-latency kitchen visibility
-            if (finalizedOrder.paymentStatus === 'SUCCESS') {
-                const now = Date.now();
-                
-                // 1. Update individual item statuses
-                await Promise.all(itemsWithResolvedType.map((it: any) => {
-                   const itRef = doc(db, "orders", id, "items", it.id);
-                   const isFast = it.orderType === 'FAST_ITEM';
-                   
-                   return setDoc(itRef, { 
-                     ...it, 
-                     status: isFast ? 'READY' : 'PENDING', 
-                     paidAt: now, 
-                     readyAt: isFast ? serverTimestamp() : null,
-                     updatedAt: serverTimestamp() 
-                   }, { merge: true });
-                }));
+          // 2. Kitchen Batch Injection
+          if (finalizedOrder.paymentStatus === 'SUCCESS') {
+              const now = Date.now();
+              
+              // Update individual item statuses
+              await Promise.all(itemsWithResolvedType.map((it: any) => {
+                 const itRef = doc(db, "orders", id, "items", it.id);
+                 const isFast = it.orderType === 'FAST_ITEM';
+                 
+                 return setDoc(itRef, { 
+                   ...it, 
+                   status: isFast ? 'READY' : 'PENDING', 
+                   paidAt: now, 
+                   readyAt: isFast ? serverTimestamp() : null,
+                   updatedAt: serverTimestamp() 
+                 }, { merge: true });
+              }));
 
-                // 2. Inject into kitchen production (prepBatches) immediately
-                if (isDynamic) {
-                   for (const [station, qty] of Object.entries(qtyByStation)) {
-                      // Filter items for THIS specific station
-                      const stationItems = prepItems.filter(it => (STATION_ID_BY_ITEM_ID[it.id] || 'default') === station);
-                      if (stationItems.length === 0) continue;
+              // Create prepBatch
+              if (isDynamic) {
+                for (const [station, _qty] of Object.entries(qtyByStation)) {
+                    const stationItems = prepItems.filter(it => (STATION_ID_BY_ITEM_ID[it.id] || 'default') === station);
+                    if (stationItems.length === 0) continue;
 
-                      // Create a record that the cook listens to via onSnapshot
-                      const batchRef = doc(collection(db, "prepBatches"));
-                      const firstItem = stationItems[0];
-                      const totalQty = stationItems.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
+                    const batchRef = doc(collection(db, "prepBatches"));
+                    const firstItem = stationItems[0];
+                    const totalQty = stationItems.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
 
-                      await setDoc(batchRef, {
-                         id: batchRef.id,
-                         itemId: firstItem.id,
-                         itemName: firstItem.name || 'Unnamed Item',
-                         quantity: totalQty,
-                         stationId: station,
-                         items: stationItems.map(it => ({
-                            orderId: id,
-                            itemId: it.id,
-                            name: it.name,
-                            quantity: it.quantity,
-                            userName: finalizedOrder.userName
-                         })),
-                         status: 'QUEUED',
-                         createdAt: serverTimestamp(),
-                         updatedAt: serverTimestamp(),
-                         orderIds: [id],
-                         arrivalTimeSlot: targetSlot
-                      });
-                   }
+                    await setDoc(batchRef, {
+                       id: batchRef.id,
+                       itemId: firstItem.id,
+                       itemName: firstItem.name || 'Unnamed Item',
+                       quantity: totalQty,
+                       stationId: station,
+                       items: stationItems.map(it => ({
+                          orderId: id,
+                          itemId: it.id,
+                          name: it.name,
+                          quantity: it.quantity,
+                          userName: finalizedOrder.userName
+                       })),
+                       status: 'QUEUED',
+                       createdAt: serverTimestamp(),
+                       updatedAt: serverTimestamp(),
+                       orderIds: [id],
+                       arrivalTimeSlot: targetSlot
+                    });
                 }
-            } else {
-                console.log(`[BATCH-BYPASS] skipping batch for pending payment: ${id}`);
-            }
-
-        } catch (e) {
-            console.warn("⚠️ Slot stats or batching write blocked. Skipping...", e);
+              }
+          }
         }
-    }
 
-    // 3. IDEMPOTENCY
-    if (idempRef) {
-        try {
-            await setDoc(idempRef, { orderId: id, createdAt: serverTimestamp() });
-        } catch (e) {}
-    }
-
-    try {
-      const { invalidateReportsCache } = await import('./reporting');
-      invalidateReportsCache();
-    } catch (_e) {}
+        // 3. IDEMPOTENCY & CACHE
+        if (idempRef) await setDoc(idempRef, { orderId: id, createdAt: serverTimestamp() });
+        const { invalidateReportsCache } = await import('./reporting');
+        invalidateReportsCache();
+      } catch (e) {
+        console.warn("⚠️ Background post-processing deferred/failed:", e);
+      }
+    })();
 
     return id;
   } catch (error: any) {
