@@ -211,6 +211,31 @@ export const updateSlotStatus = async (slot: number, status: PrepBatchStatus, si
 };
 
 /**
+ * 7. healBatchData
+ * Repairs 'unnamed' items in the kitchen by recovering names from orders.
+ */
+export const healBatchData = async (): Promise<void> => {
+    const q = query(collection(db, "prepBatches"), where("itemName", "==", ""));
+    const snap = await getDocs(q);
+    
+    for (const d of snap.docs) {
+        const data = d.data();
+        if (data.orderIds && data.orderIds.length > 0) {
+            const firstOrderRef = doc(db, "orders", data.orderIds[0]);
+            const oSnap = await getDoc(firstOrderRef);
+            if (oSnap.exists()) {
+                const oData = oSnap.data();
+                const item = oData.items?.find((i: any) => i.id === data.itemId);
+                if (item?.name) {
+                    await updateDoc(d.ref, { itemName: item.name });
+                    console.log(`Healed item ${data.itemId} name to ${item.name}`);
+                }
+            }
+        }
+    }
+};
+
+/**
  * 6. requeueMissedOrder
  * When an order is missed, we reset it to PENDING and move it to the next slot
  * so it reappears in the Cook Console.

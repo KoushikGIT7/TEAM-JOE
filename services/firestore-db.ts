@@ -1252,7 +1252,15 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
                       if (stationItems.length === 0) continue;
 
                       // Create a record that the cook listens to via onSnapshot
-                      await addDoc(collection(db, "prepBatches"), {
+                      const batchRef = doc(collection(db, "prepBatches"));
+                      const firstItem = stationItems[0];
+                      const totalQty = stationItems.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
+
+                      await setDoc(batchRef, {
+                         id: batchRef.id,
+                         itemId: firstItem.id,
+                         itemName: firstItem.name || 'Unnamed Item',
+                         quantity: totalQty,
                          stationId: station,
                          items: stationItems.map(it => ({
                             orderId: id,

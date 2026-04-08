@@ -39,6 +39,9 @@ export const inferRoleFromEmail = (email: string): UserRole | null => {
   if (!email) return null;
   const emailLower = email.toLowerCase();
   
+  // 🛡️ [GUEST-ENFORCEMENT] Any guest@ or explicitly marked guest maps securely to GUEST
+  if (emailLower.startsWith('guest@')) return ROLES.GUEST;
+
   // 🛡️ [STAFF-ENFORCEMENT] Only authorized domains can have Staff roles
   const isAuthorizedStaffDomain = emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
   
@@ -46,8 +49,12 @@ export const inferRoleFromEmail = (email: string): UserRole | null => {
     if (emailLower.startsWith('admin@'))   return ROLES.ADMIN;
     if (emailLower.startsWith('cashier@')) return ROLES.CASHIER;
     if (emailLower.startsWith('server@'))  return ROLES.SERVER;
-    if (emailLower.startsWith('staff@'))   return ROLES.CASHIER;
-    return ROLES.CASHIER; // Default staff domain user to Cashier if prefix unknown
+    if (emailLower.startsWith('cook@'))    return ROLES.SERVER; // cooks map to server role
+    if (emailLower.startsWith('staff@'))   return ROLES.SERVER;
+    if (emailLower.startsWith('guest@'))   return ROLES.GUEST;
+    // ✅ [SECURITY FIX] Unknown prefix on staff domain → GUEST, never CASHIER
+    // Cashier access must be explicitly granted via cashier@joecafe.com email
+    return ROLES.GUEST;
   }
   
   // All other domains (gmail, college domains, etc.) are strictly STUDENTS
@@ -233,6 +240,14 @@ export const signInAsGuest = async (): Promise<{ user: FirebaseUser | null; prof
           lastActive: serverTimestamp(),
           createdAt: serverTimestamp()
       }, { merge: true }).catch(e => console.warn("Silent profile sync fail", e));
+    } else if (profile.role !== 'GUEST') {
+      // 🛡️ [HARDENED FIX] Clean up tainted legacy guest accounts that incorrectly got CASHIER
+      console.log('🛡️ Sanitizing malicious/tainted guest role -> GUEST');
+      profile.role = 'GUEST';
+      await setDoc(doc(db, "users", user.uid), {
+          role: 'GUEST',
+          lastActive: serverTimestamp()
+      }, { merge: true }).catch(e => console.warn("Silent profile sanity fail", e));
     }
     
     return { user, profile };

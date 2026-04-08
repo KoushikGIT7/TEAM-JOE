@@ -53,7 +53,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
 
     return (
       <div 
-        className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm transition-all active:scale-[0.98] cursor-pointer hover:shadow-md mb-6"
+        className="bg-white rounded-[2rem] p-5 border border-slate-100 shadow-sm transition-all active:scale-[0.98] cursor-pointer hover:shadow-md"
         onClick={() => canShowQR && onQROpen?.(order.id)}
       >
         <div className="flex justify-between items-start mb-5 pb-4 border-b border-slate-50">
@@ -135,25 +135,25 @@ const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) =>
             <p className="text-sm font-bold text-slate-400 max-w-[180px] mx-auto leading-relaxed">No orders found. Head to the menu to start your hunger journey.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
              {active.length > 0 && (
-               <div className="mb-8">
-                 <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4 ml-2">Active Tracker ({active.length})</h2>
-                 {active.map(o => <OrderCard key={o.id} order={o} />)}
+               <div className="mb-2">
+                 <h2 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-1">Active ({active.length})</h2>
+                 <div className="space-y-3">{active.map(o => <OrderCard key={o.id} order={o} />)}</div>
                </div>
              )}
              
              {scanned.length > 0 && (
-               <div className="mb-8">
-                 <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4 ml-2">Currently Scanning ({scanned.length})</h2>
-                 {scanned.map(o => <OrderCard key={o.id} order={o} />)}
+               <div className="mb-2">
+                 <h2 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-1">Scanning ({scanned.length})</h2>
+                 <div className="space-y-3">{scanned.map(o => <OrderCard key={o.id} order={o} />)}</div>
                </div>
              )}
 
              {completed.length > 0 && (
                <div>
-                 <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4 ml-2">History ({completed.length})</h2>
-                 {completed.map(o => <OrderCard key={o.id} order={o} />)}
+                 <h2 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-1">History ({completed.length})</h2>
+                 <div className="space-y-3">{completed.map(o => <OrderCard key={o.id} order={o} />)}</div>
                </div>
              )}
           </div>

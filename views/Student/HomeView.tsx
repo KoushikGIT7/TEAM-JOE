@@ -8,6 +8,13 @@ import { CATEGORIES, STATION_ID_BY_ITEM_ID, FAST_ITEM_CATEGORIES } from '../../c
 import { getMenuOnce, listenToUserOrders, saveCartDraft } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import Logo from '../../components/Logo';
+import { 
+  PrivacyPolicy, 
+  RefundPolicy, 
+  TermsAndConditions, 
+  ContactUs, 
+  ComplianceFooter 
+} from './ComplianceView';
 
 interface HomeViewProps {
   profile: UserProfile | null;
@@ -26,6 +33,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   const [isNotifGranted, setIsNotifGranted] = useState(Notification.permission === 'granted');
+  const [policyView, setPolicyView] = useState<'privacy' | 'refund' | 'terms' | 'contact' | null>(null);
   const { stockByItemId, isOutOfStock } = useInventory();
 
   useEffect(() => {
@@ -68,6 +76,14 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   const cartItemsCount = Object.values(cart).reduce((acc, item) => acc + (item.quantity || 0), 0);
   const cartTotal = Object.values(cart).reduce((acc, item) => acc + (item.price * item.quantity), 0);
+
+  if (policyView) {
+    const onBack = () => setPolicyView(null);
+    if (policyView === 'privacy') return <PrivacyPolicy onBack={onBack} />;
+    if (policyView === 'refund') return <RefundPolicy onBack={onBack} />;
+    if (policyView === 'terms') return <TermsAndConditions onBack={onBack} />;
+    if (policyView === 'contact') return <ContactUs onBack={onBack} />;
+  }
 
   const filteredMenu = useMemo(() => {
     return menu.filter(item => item.category === selectedCategory && item.name.toLowerCase().includes(search.toLowerCase()))
@@ -222,36 +238,60 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
                       {item.name}
                     </h3>
                     
-                    <div className="mt-auto pt-2">
-                      <div className="flex items-center gap-1.5 mb-4 opacity-70">
+                  <div className="mt-auto pt-3 flex flex-col gap-3">
+                    {/* Price row */}
+                    <div className="flex items-end justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-bold text-slate-300 line-through leading-none mb-0.5">₹{(item.price * 1.15).toFixed(0)}</span>
+                        <span className="text-base font-black text-slate-900 italic tracking-tighter leading-none">₹{item.price}</span>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-70">
                         {item.orderType === 'FAST_ITEM' ? (
-                          <span className="text-[7px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">⚡ Instant</span>
+                          <span className="text-[7px] font-black uppercase tracking-wide text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100 leading-none">⚡ Fast</span>
                         ) : (
-                          <span className="text-[7px] font-black uppercase tracking-widest text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">🥣 Prep Station</span>
+                          <span className="text-[7px] font-black uppercase tracking-wide text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100 leading-none">🥣 Prep</span>
                         )}
                       </div>
-
-                      <div className="flex items-center justify-between">
-                         <div className="flex flex-col">
-                            <span className="text-[10px] font-bold text-slate-300 line-through opacity-50 mb-0.5">₹{(item.price * 1.15).toFixed(0)}</span>
-                            <span className="text-base font-black text-slate-900 italic tracking-tighter">₹{item.price}</span>
-                         </div>
-                         
-                         {qty > 0 ? (
-                           <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-                             <button onClick={() => updateCart(item, -1)} className="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-200 active:scale-90 transition-all"><Minus className="w-4 text-slate-400" /></button>
-                             <span className="text-[11px] font-black min-w-[14px] text-center text-slate-800">{qty}</span>
-                             <button onClick={() => updateCart(item, 1)} className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shadow-md active:scale-90 transition-all text-white"><Plus className="w-4" /></button>
-                           </div>
-                         ) : (
-                           <button onClick={() => updateCart(item, 1)} disabled={!inStock} className={`h-11 px-5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${inStock ? 'bg-primary text-white shadow-primary/20' : 'bg-slate-50 text-slate-300 cursor-not-allowed border border-slate-100'}`}>Add</button>
-                         )}
-                      </div>
                     </div>
+
+                    {/* Cart control — full width so it never clips */}
+                    <div className="w-full">
+                      {qty > 0 ? (
+                        <div className="flex items-center justify-between bg-slate-50 p-1.5 rounded-2xl border border-slate-100 w-full">
+                          <button
+                            onClick={() => updateCart(item, -1)}
+                            className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-200 active:scale-90 transition-all shrink-0"
+                          >
+                            <Minus className="w-3.5 text-slate-400" />
+                          </button>
+                          <span className="text-sm font-black text-slate-800 flex-1 text-center">{qty}</span>
+                          <button
+                            onClick={() => updateCart(item, 1)}
+                            className="w-8 h-8 bg-primary rounded-xl flex items-center justify-center shadow-md active:scale-90 transition-all text-white shrink-0"
+                          >
+                            <Plus className="w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => updateCart(item, 1)}
+                          disabled={!inStock}
+                          className={`w-full h-11 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
+                            inStock ? 'bg-primary text-white shadow-primary/20' : 'bg-slate-50 text-slate-300 cursor-not-allowed border border-slate-100'
+                          }`}
+                        >
+                          Add
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   </div>
                 </div>
               );
             })}
+            <div className="col-span-2">
+                <ComplianceFooter onOpen={(v) => setPolicyView(v)} />
+            </div>
           </div>
         )}
       </div>

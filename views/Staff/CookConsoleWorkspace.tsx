@@ -203,20 +203,26 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     }
   };
 
-  const handleFinalize = async (batchId: string, items: any[], count?: number) => {
+  const handleFinalize = async (batchId: string, items: any[], count?: number, currentStatus?: string) => {
     if (!navigator.onLine) return alert("Waiting for connection...");
     if (processingMap[batchId]) return;
     
     if (window.navigator.vibrate) window.navigator.vibrate([40, 20, 60]);
-    if (!count) setOptimisticStatus(p => ({ ...p, [batchId]: 'READY' }));
-    
     setProcessingMap(p => ({ ...p, [batchId]: true }));
     try {
+      // 🔑 [AUTO-START] If batch is still QUEUED, start it first before dispensing
+      if (currentStatus === 'QUEUED') {
+        await startBatch(batchId, items, auth.currentUser?.uid);
+        setOptimisticStatus(p => ({ ...p, [batchId]: 'PREPARING' }));
+        // Small delay to let Firestore settle before the finalize transaction reads the new status
+        await new Promise(r => setTimeout(r, 400));
+      }
+      if (!count) setOptimisticStatus(p => ({ ...p, [batchId]: 'READY' }));
       await finalizeBatch(batchId, items, count);
       setLastAction(count ? `Released ${count} item(s) ⚡` : 'Batch Ready ✓');
       setTimeout(() => setLastAction(null), 2000);
     } catch {
-      if (!count) setOptimisticStatus(p => { const n = { ...p }; delete n[batchId]; return n; });
+      setOptimisticStatus(p => { const n = { ...p }; delete n[batchId]; return n; });
     } finally {
       setProcessingMap(p => ({ ...p, [batchId]: false }));
     }
@@ -320,39 +326,51 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                      </div>
                      <p className="text-white/10 font-black uppercase tracking-[0.2em] text-[9px]">Passive Mirror Terminal • ID: #{(focus?.stationId ?? 'GEN').toUpperCase()}</p>
                    </div>
-                ) : focus.status === 'QUEUED' ? (
-                  <button
-                    onClick={() => handleStart(focus.id, focus.items)}
-                    disabled={!!processingMap[focus.id] || isOffline}
-                    className="h-24 w-full bg-white text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {processingMap[focus.id] ? <Loader2 className="w-8 h-8 animate-spin" /> : <><ChefHat className="w-8 h-8" /><span>START PREPARING BATCH</span></>}
-                  </button>
                 ) : (
+                  // ✅ Works for BOTH QUEUED (auto-start) and PREPARING batches
                   <div className="space-y-6">
+                    {/* 🍳 START button shown only while QUEUED */}
+                    {focus.status === 'QUEUED' && (
+                      <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl">
+                        <ChefHat className="w-5 h-5 text-amber-400 shrink-0" />
+                        <p className="text-amber-300 text-[10px] font-black uppercase tracking-widest">
+                          Tap any number below — tawa will start automatically
+                        </p>
+                      </div>
+                    )}
                     <div className="grid grid-cols-5 gap-3">
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                        <button
-                          key={num}
-                          onClick={() => handleFinalize(focus.id, focus.items, num)}
-                          disabled={!!processingMap[focus.id] || num > (focus.totalUnits || focus.quantity)}
-                          className={`h-20 bg-white/[0.05] hover:bg-emerald-500 text-white hover:text-black border border-white/10 rounded-2xl font-black text-2xl transition-all flex items-center justify-center active:scale-95 disabled:opacity-20 ${num > (focus.totalUnits || focus.quantity) ? 'opacity-20 pointer-events-none' : ''}`}
-                        >
-                          {num}x
-                        </button>
-                      ))}
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
+                        const maxUnits = focus.totalUnits || focus.quantity || 0;
+                        const isDisabled = !!processingMap[focus.id] || num > maxUnits;
+                        return (
+                          <button
+                            key={num}
+                            onClick={() => handleFinalize(focus.id, focus.items, num, focus.status)}
+                            disabled={isDisabled}
+                            className={`h-20 border rounded-2xl font-black text-2xl transition-all flex items-center justify-center active:scale-95 ${
+                              isDisabled
+                                ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
+                                : 'bg-white/[0.05] hover:bg-emerald-500 text-white hover:text-black border-white/10'
+                            }`}
+                          >
+                            {num}x
+                          </button>
+                        );
+                      })}
                     </div>
-                    
+
                     <button
-                      onClick={() => handleFinalize(focus.id, focus.items)}
+                      onClick={() => handleFinalize(focus.id, focus.items, undefined, focus.status)}
                       disabled={!!processingMap[focus.id] || isOffline}
-                      className="h-24 w-full bg-emerald-500 text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20"
+                      className="h-24 w-full bg-emerald-500 text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20 disabled:opacity-50"
                     >
-                      {processingMap[focus.id] ? <Loader2 className="w-8 h-8 animate-spin" /> : <><CheckCircle2 className="w-8 h-8" /><span>FINALIZE FULL BATCH ({focus.totalUnits || focus.quantity})</span></>}
+                      {processingMap[focus.id]
+                        ? <Loader2 className="w-8 h-8 animate-spin" />
+                        : <><CheckCircle2 className="w-8 h-8" /><span>RELEASE ALL ({focus.totalUnits || focus.quantity || 0})</span></>}
                     </button>
 
-                    <p className="text-center text-[10px] font-black text-white/20 uppercase tracking-[0.4em] pt-4 italic">
-                      Tap a number to dispense partial items from tawa
+                    <p className="text-center text-[10px] font-black text-white/20 uppercase tracking-[0.4em] pt-2 italic">
+                      Tap a number to dispense partial · Or release all at once
                     </p>
                   </div>
                 )}

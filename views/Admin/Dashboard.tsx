@@ -337,9 +337,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   );
 
   const renderOverview = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <div className="flex flex-wrap items-center justify-between gap-6 bg-white p-8 rounded-[2rem] border border-black/5 shadow-sm">
-         <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-black/5">
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      {/* Date filter + export row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-6 rounded-[1.5rem] border border-black/5 shadow-sm">
+         <div className="flex bg-gray-50 p-1 rounded-xl border border-black/5 self-start">
             {[
                { label: 'Today', days: 0 },
                { label: '7D', days: 7 },
@@ -354,7 +355,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                      setReportStart(start.toISOString().split('T')[0]);
                      setReportEnd(end.toISOString().split('T')[0]);
                   }}
-                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                      (new Date(reportStart).getDate() === new Date(new Date().setDate(new Date().getDate() - q.days)).getDate())
                      ? 'bg-white text-primary shadow-sm shadow-black/5' : 'text-textSecondary hover:text-primary'
                   }`}
@@ -363,61 +364,61 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                </button>
             ))}
          </div>
-
          <AuditDownloadButton 
            realReport={reportData} 
            period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`}
          />
       </div>
-      {/* Financial Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+
+      {/* Financial Metrics — 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {[
           { label: 'Period Revenue', value: `₹${stats.periodRevenue.toLocaleString()}`, icon: DollarSign, color: 'bg-primary/10 text-primary', trend: `+${stats.periodOrders} orders` },
           { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-green-50 text-green-600', trend: 'All Time' },
-          { label: 'Total Profit', value: `₹${stats.totalPnL.toLocaleString()}`, icon: TrendingUp, color: 'bg-accent/10 text-accent', trend: `${Math.round((stats.totalPnL / stats.totalRevenue) * 100)}% margin` },
-          { label: 'Avg Order Value', value: `₹${Math.round(stats.avgOrderValue)}`, icon: Zap, color: 'bg-cash/10 text-cash', trend: `${stats.totalOrders} total` },
+          { label: 'Profit', value: `₹${stats.totalPnL.toLocaleString()}`, icon: TrendingUp, color: 'bg-accent/10 text-accent', trend: `${Math.round((stats.totalPnL / (stats.totalRevenue||1)) * 100)}% margin` },
+          { label: 'Avg Order', value: `₹${Math.round(stats.avgOrderValue)}`, icon: Zap, color: 'bg-cash/10 text-cash', trend: `${stats.totalOrders} total` },
         ].map((s, i) => (
-          <div key={i} className="bg-white p-6 rounded-[2rem] border border-black/5 shadow-sm hover:shadow-md transition-all group">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl ${s.color} group-hover:scale-110 transition-transform`}><s.icon className="w-5 h-5" /></div>
-              <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-gray-50 text-textSecondary">{s.trend}</span>
+          <div key={i} className="bg-white p-4 sm:p-6 rounded-[1.5rem] border border-black/5 shadow-sm">
+            <div className="flex justify-between items-start mb-3">
+              <div className={`p-2 sm:p-3 rounded-xl ${s.color}`}><s.icon className="w-4 h-4" /></div>
+              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-50 text-textSecondary hidden sm:inline">{s.trend}</span>
             </div>
-            <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest">{s.label}</p>
-            <h3 className="text-2xl font-black text-textMain mt-1 tracking-tight">{s.value}</h3>
+            <p className="text-[9px] font-black text-textSecondary uppercase tracking-widest leading-tight">{s.label}</p>
+            <h3 className="text-lg sm:text-2xl font-black text-textMain mt-1 tracking-tight">{s.value}</h3>
+            <span className="text-[9px] font-bold text-textSecondary sm:hidden">{s.trend}</span>
           </div>
         ))}
       </div>
 
-      {/* Food Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Food Metrics — 1 col mobile, 3 desktop */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
         {[
-          { label: 'Top Selling Item', value: stats.topItems[0]?.name || 'N/A', icon: Package, color: 'bg-yellow-50 text-yellow-600', trend: `${stats.topItems[0]?.quantity || 0} sold` },
-          { label: 'Cash Percentage', value: `${Math.round(stats.cashPercentage)}%`, icon: Banknote, color: 'bg-amber-50 text-amber-600', trend: `${stats.paymentSplit[0]?.value ? '₹' + Math.round(stats.paymentSplit[0].value).toLocaleString() : '0'}` },
-          { label: 'Peak Hour', value: stats.peakHours.length > 0 ? stats.peakHours.sort((a, b) => b.orders - a.orders)[0]?.hour || 'N/A' : 'N/A', icon: Activity, color: 'bg-purple-50 text-purple-600', trend: `${stats.peakHours.length > 0 ? stats.peakHours.sort((a, b) => b.orders - a.orders)[0]?.orders || 0 : 0} orders` },
+          { label: 'Top Item', value: stats.topItems[0]?.name || 'N/A', icon: Package, color: 'bg-yellow-50 text-yellow-600', trend: `${stats.topItems[0]?.quantity || 0} sold` },
+          { label: 'Cash %', value: `${Math.round(stats.cashPercentage)}%`, icon: Banknote, color: 'bg-amber-50 text-amber-600', trend: `${stats.paymentSplit[0]?.value ? '₹'+Math.round(stats.paymentSplit[0].value).toLocaleString() : '0'}` },
+          { label: 'Peak Hour', value: stats.peakHours.length > 0 ? stats.peakHours.sort((a,b)=>b.orders-a.orders)[0]?.hour||'N/A' : 'N/A', icon: Activity, color: 'bg-purple-50 text-purple-600', trend: `${stats.peakHours.sort((a,b)=>b.orders-a.orders)[0]?.orders||0} orders` },
         ].map((s, i) => (
-          <div key={i} className="bg-white p-6 rounded-[2rem] border border-black/5 shadow-sm hover:shadow-md transition-all">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl ${s.color}`}><s.icon className="w-5 h-5" /></div>
-              <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-gray-50 text-textSecondary">{s.trend}</span>
+          <div key={i} className="bg-white p-4 sm:p-6 rounded-[1.5rem] border border-black/5 shadow-sm flex items-center gap-4">
+            <div className={`p-3 rounded-xl ${s.color} shrink-0`}><s.icon className="w-5 h-5" /></div>
+            <div className="min-w-0">
+              <p className="text-[9px] font-black text-textSecondary uppercase tracking-widest">{s.label}</p>
+              <h3 className="text-lg font-black text-textMain tracking-tight truncate">{s.value}</h3>
+              <p className="text-[9px] text-textSecondary font-bold">{s.trend}</p>
             </div>
-            <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest">{s.label}</p>
-            <h3 className="text-xl font-black text-textMain mt-1 tracking-tight truncate">{s.value}</h3>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        {/* Revenue Trend - Weekly */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-black/5 shadow-sm">
-          <div className="flex justify-between items-center mb-10">
-            <div>
-              <h3 className="text-xl font-black text-textMain flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-primary" /> Revenue Trend
-              </h3>
-              <p className="text-xs text-textSecondary font-bold mt-1">Last 7 days comparison</p>
-            </div>
+      {/* Charts grid — single col on mobile, 2 col on xl */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {/* Revenue Trend */}
+        <div className="bg-white p-5 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm">
+          <div className="mb-6">
+            <h3 className="text-base sm:text-xl font-black text-textMain flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" /> Revenue Trend
+            </h3>
+            <p className="text-xs text-textSecondary font-bold mt-1">Last 7 days</p>
           </div>
-          <div className="h-80">
+          <div className="h-52 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stats.weeklyData}>
                 <defs>
@@ -427,35 +428,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
-                />
-                <Area type="monotone" dataKey="revenue" stroke="#0F9D58" strokeWidth={4} fill="url(#revenueGrad)" />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} width={40} />
+                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} itemStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                <Area type="monotone" dataKey="revenue" stroke="#0F9D58" strokeWidth={3} fill="url(#revenueGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Payment Split */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-black/5 shadow-sm">
-          <h3 className="text-xl font-black text-textMain mb-10 flex items-center gap-2">
-            <Banknote className="w-6 h-6 text-primary" /> Payment Split
+        <div className="bg-white p-5 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm">
+          <h3 className="text-base sm:text-xl font-black text-textMain mb-6 flex items-center gap-2">
+            <Banknote className="w-5 h-5 text-primary" /> Payment Split
           </h3>
-          <div className="h-64 flex flex-col items-center justify-center">
+          <div className="h-52 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie 
-                  data={stats.paymentSplit} 
-                  innerRadius={60} 
-                  outerRadius={85} 
-                  paddingAngle={8} 
-                  dataKey="value" 
-                  stroke="none"
-                  cornerRadius={4}
-                >
+                <Pie data={stats.paymentSplit} innerRadius={50} outerRadius={75} paddingAngle={8} dataKey="value" stroke="none" cornerRadius={4}>
                   {stats.paymentSplit.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
@@ -468,67 +458,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         </div>
 
         {/* Orders Per Hour */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-black/5 shadow-sm">
-          <div className="flex justify-between items-center mb-10">
-            <div>
-              <h3 className="text-xl font-black text-textMain flex items-center gap-2">
-                <Activity className="w-6 h-6 text-primary" /> Orders Per Hour
-              </h3>
-              <p className="text-xs text-textSecondary font-bold mt-1">Today's hourly breakdown</p>
+        <div className="bg-white p-5 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm">
+          <div className="mb-6">
+            <h3 className="text-base sm:text-xl font-black text-textMain flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" /> Orders Per Hour
+            </h3>
+            <p className="text-xs text-textSecondary font-bold mt-1">Today's breakdown</p>
+          </div>
+          <div className="h-52 sm:h-72 overflow-x-auto">
+            <div className="min-w-[320px] h-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.peakHours}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} width={30} />
+                  <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} itemStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                  <Bar dataKey="orders" fill="#F59E0B" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.peakHours}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
-                <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
-                />
-                <Bar dataKey="orders" fill="#F59E0B" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
         </div>
 
-        {/* Item Popularity */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-black/5 shadow-sm">
-          <h3 className="text-xl font-black text-textMain mb-10 flex items-center gap-2">
-            <Package className="w-6 h-6 text-primary" /> Top Selling Items
+        {/* Top Selling Items */}
+        <div className="bg-white p-5 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm">
+          <h3 className="text-base sm:text-xl font-black text-textMain mb-6 flex items-center gap-2">
+            <Package className="w-5 h-5 text-primary" /> Top Selling Items
           </h3>
-          <div className="h-80">
+          <div className="h-52 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.topItems} layout="vertical">
+              <BarChart data={stats.topItems.slice(0,6)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F3F4F6" />
-                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} width={120} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
-                />
-                <Bar dataKey="quantity" fill="#6366F1" radius={[0, 8, 8, 0]} />
+                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} width={80} />
+                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} itemStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey="quantity" fill="#6366F1" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Category Revenue */}
-        <div className="xl:col-span-2 bg-white p-8 rounded-[2.5rem] border border-black/5 shadow-sm">
-          <h3 className="text-xl font-black text-textMain mb-10">Category Revenue Mix</h3>
-          <div className="h-64 flex flex-col items-center justify-center">
+        {/* Category Revenue — full width */}
+        <div className="xl:col-span-2 bg-white p-5 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm">
+          <h3 className="text-base sm:text-xl font-black text-textMain mb-6">Category Revenue Mix</h3>
+          <div className="h-52 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie 
-                  data={stats.chartData} 
-                  innerRadius={60} 
-                  outerRadius={85} 
-                  paddingAngle={8} 
-                  dataKey="value" 
-                  stroke="none"
-                  cornerRadius={4}
-                >
+                <Pie data={stats.chartData} innerRadius={50} outerRadius={75} paddingAngle={8} dataKey="value" stroke="none" cornerRadius={4}>
                   {stats.chartData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
@@ -544,143 +520,146 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   );
 
   const renderTeam = () => (
-    <div className="bg-white rounded-[2.5rem] border border-black/5 shadow-sm overflow-hidden animate-in fade-in duration-500">
-      <div className="p-10 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm overflow-hidden animate-in fade-in duration-500">
+      <div className="p-5 sm:p-8 border-b flex flex-col gap-4">
         <div>
-          <h3 className="text-2xl font-black text-textMain tracking-tighter uppercase">Team Management</h3>
-          <p className="text-sm text-textSecondary font-bold mt-1">Configure staff roles and node access</p>
+          <h3 className="text-xl font-black text-textMain tracking-tighter uppercase">Team Management</h3>
+          <p className="text-xs text-textSecondary font-bold mt-1">Configure staff roles and access</p>
         </div>
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-textSecondary" />
-          <input placeholder="Search Staff ID..." className="w-full bg-gray-50 border-none rounded-2xl pl-12 pr-4 py-4 text-sm font-bold focus:ring-2 focus:ring-primary/20" />
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textSecondary" />
+          <input placeholder="Search staff..." className="w-full bg-gray-50 border-none rounded-2xl pl-10 pr-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none" />
         </div>
       </div>
-      <div className="overflow-x-auto">
-        {users.length === 0 ? (
-          <div className="p-20 text-center">
-            <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto border border-black/5 mb-6">
-              <UsersIcon className="w-8 h-8 text-textSecondary/20" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-black text-textMain uppercase text-xs tracking-widest">No Team Members</p>
-              <p className="text-[10px] text-textSecondary font-bold">No users found in the system.</p>
-            </div>
+
+      {users.length === 0 ? (
+        <div className="p-16 text-center">
+          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto border border-black/5 mb-4">
+            <UsersIcon className="w-7 h-7 text-textSecondary/20" />
           </div>
-        ) : (
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 text-[10px] font-black text-textSecondary uppercase tracking-widest">
-              <tr>
-                <th className="px-10 py-6">Staff Profile</th>
-                <th className="px-10 py-6">Role / Level</th>
-                <th className="px-10 py-6">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {users.map(u => {
-                // Safety checks for user properties
-                const userName = u.name || 'Unknown';
-                const userEmail = u.email || 'No email';
-                const userRole = u.role || 'STUDENT';
-                const userActive = u.active ?? true;
-                
-                return (
-                  <tr key={u.uid} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-10 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-primary/5 text-primary flex items-center justify-center font-black text-lg">
-                          {userName[0]?.toUpperCase() || 'S'}
+          <p className="font-black text-textMain uppercase text-xs tracking-widest">No Team Members</p>
+        </div>
+      ) : (
+        <div>
+          {/* Desktop table — hidden on mobile */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 text-[10px] font-black text-textSecondary uppercase tracking-widest">
+                <tr>
+                  <th className="px-8 py-5">Staff Profile</th>
+                  <th className="px-8 py-5">Role</th>
+                  <th className="px-8 py-5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {users.map(u => {
+                  const userName = u.name || 'Unknown';
+                  const userEmail = u.email || 'No email';
+                  const userRole = u.role || 'STUDENT';
+                  const userActive = u.active ?? true;
+                  return (
+                    <tr key={u.uid} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-primary/5 text-primary flex items-center justify-center font-black">{userName[0]?.toUpperCase()}</div>
+                          <div>
+                            <p className="font-bold text-textMain text-sm">{userName}</p>
+                            <p className="text-[10px] text-textSecondary lowercase">{userEmail}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-textMain">{userName}</p>
-                          <p className="text-[10px] text-textSecondary lowercase tracking-tight">{userEmail}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-10 py-6">
-                      <select 
-                        value={userRole} 
-                        onChange={(e) => {
-                          try {
-                            updateUserRole(u.uid, e.target.value as any);
-                            offlineDetector.recordPing();
-                          } catch (error) {
-                            console.error('Error updating user role:', error);
-                            alert('Failed to update user role. Please try again.');
-                          }
-                        }}
-                        className={`text-xs font-black uppercase px-4 py-2 rounded-xl bg-white border border-black/5 focus:ring-primary outline-none ${
-                          userRole === 'STUDENT' ? 'text-blue-500' : 
-                          userRole === 'ADMIN' ? 'text-primary' : 
-                          userRole === 'GUEST' ? 'text-slate-400' : 'text-textMain'
-                        }`}
-                      >
-                        <option value="STUDENT">Student</option>
-                        <option value="GUEST">Guest</option>
-                        <option value="CASHIER">Cashier</option>
-                        <option value="SERVER">Server</option>
-                        <option value="ADMIN">Admin</option>
-                      </select>
-                    </td>
-                    <td className="px-10 py-6">
-                      <button 
-                        onClick={() => {
-                          try {
-                            toggleUserStatus(u.uid, !userActive);
-                            offlineDetector.recordPing();
-                          } catch (error) {
-                            console.error('Error toggling user status:', error);
-                            alert('Failed to update user status. Please try again.');
-                          }
-                        }}
-                        className={`flex items-center gap-2 text-[10px] font-black uppercase px-4 py-2 rounded-full border transition-all ${
-                          userActive ? 'bg-success/5 border-success/20 text-success' : 'bg-error/5 border-error/20 text-error'
-                        }`}
-                      >
-                        <div className={`w-1.5 h-1.5 rounded-full ${userActive ? 'bg-success animate-pulse' : 'bg-error'}`} />
-                        {userActive ? 'Active' : 'Revoked'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <select value={userRole} onChange={e => { try { updateUserRole(u.uid, e.target.value as any); offlineDetector.recordPing(); } catch { alert('Failed to update role.'); }}}
+                          className={`text-xs font-black uppercase px-3 py-2 rounded-xl bg-white border border-black/5 focus:ring-primary outline-none ${userRole==='STUDENT'?'text-blue-500':userRole==='ADMIN'?'text-primary':userRole==='GUEST'?'text-slate-400':'text-textMain'}`}>
+                          <option value="STUDENT">Student</option>
+                          <option value="GUEST">Guest</option>
+                          <option value="CASHIER">Cashier</option>
+                          <option value="SERVER">Server</option>
+                          <option value="ADMIN">Admin</option>
+                        </select>
+                      </td>
+                      <td className="px-8 py-5">
+                        <button onClick={() => { try { toggleUserStatus(u.uid, !(u.active??true)); offlineDetector.recordPing(); } catch { alert('Failed to update status.'); }}}
+                          className={`flex items-center gap-2 text-[10px] font-black uppercase px-3 py-1.5 rounded-full border transition-all ${(u.active??true)?'bg-success/5 border-success/20 text-success':'bg-error/5 border-error/20 text-error'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${(u.active??true)?'bg-success animate-pulse':'bg-error'}`}/>
+                          {(u.active??true)?'Active':'Revoked'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card list — shown only on mobile */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {users.map(u => {
+              const userName = u.name || 'Unknown';
+              const userEmail = u.email || 'No email';
+              const userRole = u.role || 'STUDENT';
+              const userActive = u.active ?? true;
+              return (
+                <div key={u.uid} className="p-4 flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/5 text-primary flex items-center justify-center font-black text-lg shrink-0">
+                      {userName[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-textMain text-sm truncate">{userName}</p>
+                      <p className="text-[10px] text-textSecondary truncate">{userEmail}</p>
+                    </div>
+                    <button
+                      onClick={() => { try { toggleUserStatus(u.uid, !userActive); offlineDetector.recordPing(); } catch { alert('Failed.'); }}}
+                      className={`ml-auto shrink-0 flex items-center gap-1.5 text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${
+                        userActive ? 'bg-success/5 border-success/20 text-success' : 'bg-error/5 border-error/20 text-error'
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${userActive ? 'bg-success animate-pulse' : 'bg-error'}`} />
+                      {userActive ? 'Active' : 'Revoked'}
+                    </button>
+                  </div>
+                  <select
+                    value={userRole}
+                    onChange={e => { try { updateUserRole(u.uid, e.target.value as any); offlineDetector.recordPing(); } catch { alert('Failed.'); }}}
+                    className="w-full text-xs font-black uppercase px-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="STUDENT">Student</option>
+                    <option value="GUEST">Guest</option>
+                    <option value="CASHIER">Cashier</option>
+                    <option value="SERVER">Server</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 
   const renderMenu = () => (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center bg-white p-8 rounded-[2rem] border border-black/5 shadow-sm">
+    <div className="space-y-5 animate-in fade-in duration-500">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-8 rounded-[1.5rem] border border-black/5 shadow-sm">
         <div>
-          <h3 className="text-2xl font-black text-textMain uppercase tracking-tighter">Kitchen Catalog</h3>
+          <h3 className="text-xl font-black text-textMain uppercase tracking-tighter">Kitchen Catalog</h3>
           <p className="text-xs text-textSecondary font-bold">Manage meal parameters and pricing</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-3 w-full sm:w-auto">
           <button 
             onClick={async () => {
-              if (confirm("This will synchronize all items with the official menu in constants.tsx and update all images/prices. Continue?")) {
-                try {
-                  await initializeMenu();
-                  alert("Menu synchronized successfully!");
-                } catch (err) {
-                  alert("Sync failed: " + (err as any).message);
-                }
+              if (confirm("Sync all items with constants.tsx? Continue?")) {
+                try { await initializeMenu(); alert("Menu synchronized!"); } catch (err) { alert("Sync failed: " + (err as any).message); }
               }
             }}
-            className="flex items-center gap-2 bg-gray-100 text-textMain px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-primary/10 transition-all border border-black/5"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gray-100 text-textMain px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-primary/10 transition-all border border-black/5"
           >
             <RefreshCw className="w-4 h-4" /> Re-seed
           </button>
           <button 
-            onClick={() => {
-              setEditingItem(null);
-              setMenuForm({ name: '', price: 0, costPrice: 0, category: 'Breakfast', imageUrl: '', active: true });
-              setImagePreview(null);
-              setShowMenuModal(true);
-            }}
-            className="flex items-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all"
+            onClick={() => { setEditingItem(null); setMenuForm({ name: '', price: 0, costPrice: 0, category: 'Breakfast', imageUrl: '', active: true }); setImagePreview(null); setShowMenuModal(true); }}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all"
           >
             <Plus className="w-4 h-4" /> Add Item
           </button>
@@ -757,24 +736,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   );
 
   const renderInventory = () => (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white p-8 rounded-[2rem] border border-black/5 shadow-sm">
+    <div className="space-y-5 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-4 bg-white p-5 sm:p-8 rounded-[1.5rem] border border-black/5 shadow-sm">
         <div>
-          <h3 className="text-2xl font-black text-textMain uppercase tracking-tighter">Inventory Ledger</h3>
-          <p className="text-xs text-textSecondary font-bold">Monitor real-time stock levels and consumption</p>
+          <h3 className="text-xl font-black text-textMain uppercase tracking-tighter">Inventory Ledger</h3>
+          <p className="text-xs text-textSecondary font-bold">Monitor real-time stock levels</p>
         </div>
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-textSecondary" />
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textSecondary" />
           <input 
             placeholder="Search assets..." 
             value={inventorySearch}
             onChange={e => setInventorySearch(e.target.value)}
-            className="w-full bg-gray-50 border-none rounded-2xl pl-12 pr-4 py-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none" 
+            className="w-full bg-gray-50 border-none rounded-2xl pl-10 pr-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none" 
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {[
           { label: 'Out of Stock', value: mergedInventory.filter(i => (i.openingStock - i.consumed) <= 0).length, icon: AlertCircle, color: 'text-error bg-error/10' },
           { label: 'Low Stock', value: mergedInventory.filter(i => { const r = i.openingStock - i.consumed; return r > 0 && r < 20; }).length, icon: AlertTriangle, color: 'text-cash bg-cash/10' },
@@ -1072,19 +1051,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   );
 
   const renderSettings = () => (
-    <div className="max-w-5xl mx-auto space-y-10 animate-in zoom-in-95 duration-500">
-      <div className="bg-white p-12 rounded-[3.5rem] border border-black/5 shadow-sm space-y-12">
+    <div className="max-w-3xl mx-auto space-y-6 animate-in zoom-in-95 duration-500">
+      <div className="bg-white p-5 sm:p-10 rounded-[2rem] border border-black/5 shadow-sm space-y-8">
         <div className="flex justify-between items-center">
           <div>
-            <h3 className="text-3xl font-black text-textMain tracking-tighter uppercase">System Parameters</h3>
-            <p className="text-sm text-textSecondary font-bold">Orchestrate the global state of the JOE ecosystem</p>
+            <h3 className="text-xl sm:text-3xl font-black text-textMain tracking-tighter uppercase">System Parameters</h3>
+            <p className="text-xs text-textSecondary font-bold mt-1">Orchestrate the global state of the JOE ecosystem</p>
           </div>
-          <div className="p-5 bg-primary/10 rounded-[2rem] border border-primary/10 shadow-lg shadow-primary/5">
-            <Globe className="w-10 h-10 text-primary" />
+          <div className="p-3 sm:p-5 bg-primary/10 rounded-[1.5rem] border border-primary/10">
+            <Globe className="w-6 h-6 sm:w-10 sm:h-10 text-primary" />
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
             { id: 'isMaintenanceMode', label: 'Lockdown', desc: 'Read-only access', icon: ShieldAlert, color: 'text-error' },
             { id: 'acceptingOrders', label: 'Order Flow', desc: 'Accepting carts', icon: Zap, color: 'text-primary' },
@@ -1234,45 +1213,80 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         />
       )}
 
+      {/* Desktop Sidebar — hidden on mobile */}
       <aside className={`
-        fixed inset-y-0 left-0 w-80 bg-white border-r z-[110] transition-transform duration-500 lg:sticky lg:h-screen lg:translate-x-0
+        fixed inset-y-0 left-0 w-72 bg-white border-r z-[110] transition-transform duration-500 lg:sticky lg:h-screen lg:translate-x-0
         ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
       `}>
         <SidebarContent />
       </aside>
 
       <main className="flex-1 overflow-x-hidden min-h-screen flex flex-col">
-        <header className="bg-white/80 backdrop-blur-2xl border-b sticky top-0 z-40 px-6 sm:px-10 py-6 flex justify-between items-center">
-          <div className="flex items-center gap-4">
+        {/* Top Header */}
+        <header className="bg-white/80 backdrop-blur-2xl border-b sticky top-0 z-40 px-4 sm:px-8 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-3 bg-gray-100 rounded-2xl text-textMain hover:bg-primary/10 transition-colors"
+              className="hidden lg:flex p-2.5 bg-gray-100 rounded-xl text-textMain hover:bg-primary/10 transition-colors"
             >
-              <MenuIcon className="w-6 h-6" />
+              <MenuIcon className="w-5 h-5" />
             </button>
-            <h1 className="text-xl sm:text-2xl font-black text-textMain tracking-tighter uppercase truncate">{activeTab}</h1>
-          </div>
-          <div className="flex items-center gap-4 sm:gap-8">
-            <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-success/5 text-success rounded-full text-[10px] font-black uppercase tracking-widest border border-success/10">
-              <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-              Node Active
+            <div className="lg:hidden">
+              <Logo size="sm" />
             </div>
-            <button className="p-3 bg-gray-50 text-textSecondary rounded-2xl hover:bg-primary/10 hover:text-primary transition-all relative">
-              <Bell className="w-6 h-6" />
-              <div className="absolute top-3 right-3 w-2 h-2 bg-error rounded-full ring-2 ring-white" />
+            <h1 className="text-lg sm:text-2xl font-black text-textMain tracking-tighter uppercase truncate">{activeTab}</h1>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-6">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-success/5 text-success rounded-full text-[10px] font-black uppercase tracking-widest border border-success/10">
+              <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+              Live
+            </div>
+            <button className="p-2.5 bg-gray-50 text-textSecondary rounded-xl hover:bg-primary/10 hover:text-primary transition-all relative">
+              <Bell className="w-5 h-5" />
+              <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-error rounded-full ring-2 ring-white" />
             </button>
           </div>
         </header>
 
-        <div className="p-6 sm:p-10 max-w-7xl mx-auto w-full pb-32">
-          {activeTab === 'Overview' && renderOverview()}
-          {activeTab === 'Settings' && renderSettings()}
-          {activeTab === 'Team' && renderTeam()}
-          {activeTab === 'Menu' && renderMenu()}
-          {activeTab === 'Inventory' && renderInventory()}
-          {activeTab === 'Reports' && renderReports()}
+        {/* Main Content */}
+        <div className="p-4 sm:p-8 max-w-7xl mx-auto w-full pb-28 lg:pb-12">
+          {activeTab === 'Overview'   && renderOverview()}
+          {activeTab === 'Settings'   && renderSettings()}
+          {activeTab === 'Team'       && renderTeam()}
+          {activeTab === 'Menu'       && renderMenu()}
+          {activeTab === 'Inventory'  && renderInventory()}
+          {activeTab === 'Reports'    && renderReports()}
         </div>
       </main>
+
+      {/* Mobile Bottom Tab Bar — only visible on mobile */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[120] bg-white/95 backdrop-blur-xl border-t border-black/5 flex items-center justify-around px-2 py-2 safe-area-pb">
+        {navItems.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-2xl transition-all ${
+              activeTab === item.id
+                ? 'text-primary bg-primary/8'
+                : 'text-slate-400'
+            }`}
+          >
+            <item.icon className={`w-5 h-5 transition-all ${activeTab === item.id ? 'scale-110' : ''}`} />
+            <span className={`text-[8px] font-black uppercase tracking-widest transition-all ${
+              activeTab === item.id ? 'text-primary' : 'text-slate-400'
+            }`}>{item.id}</span>
+          </button>
+        ))}
+        {onOpenKitchen && (
+          <button
+            onClick={onOpenKitchen}
+            className="flex flex-col items-center gap-1 px-3 py-2 rounded-2xl text-amber-500"
+          >
+            <ChefHat className="w-5 h-5" />
+            <span className="text-[8px] font-black uppercase tracking-widest">Kitchen</span>
+          </button>
+        )}
+      </nav>
 
       {/* Menu Modal */}
       {showMenuModal && (

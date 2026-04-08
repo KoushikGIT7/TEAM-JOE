@@ -69,10 +69,19 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
 
   const handleUpdateSlot = async (slot: number, status: PrepBatchStatus) => {
       setUpdatingSlot(slot);
+      
+      // 🛡️ [SAFETY] Prevent UI lockup with a 5s race/timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Update Timeout")), 5000)
+      );
+
       try {
-          await updateSlotStatus(slot, status);
+          await Promise.race([
+            updateSlotStatus(slot, status),
+            timeoutPromise
+          ]);
       } catch (e) {
-          console.error(e);
+          console.warn("Failed to update slot:", e);
       } finally {
           setUpdatingSlot(null);
       }

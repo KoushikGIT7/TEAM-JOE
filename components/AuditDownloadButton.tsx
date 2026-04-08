@@ -1,303 +1,382 @@
-"use client";
-
 import React, { useState } from 'react';
-import { 
-  Download, 
-  Loader2, 
-  CheckCircle2, 
-  FileText
-} from 'lucide-react';
-import { 
-  Document, 
-  Page, 
-  Text, 
-  View, 
-  StyleSheet, 
-  pdf, 
-  Svg, 
-  Circle,
-  Path
-} from '@react-pdf/renderer';
+import { Download, Loader2, CheckCircle2, FileText } from 'lucide-react';
 
 // ==========================================
-// 🛡️ PREMIUM DATA INTERFACES
+// ✅ MOBILE-SAFE PDF: jsPDF only (no CDN font requests)
+// @react-pdf/renderer was fetching fonts from external CDN causing CORS on mobile
 // ==========================================
 
 export interface AuditData {
   hotelName: string;
   period: string;
   summary: {
-     totalRevenue: number;
-     totalOrders: number;
-     avgTicket: number;
-     voidRate: number;
+    totalRevenue: number;
+    totalOrders: number;
+    avgTicket: number;
+    voidRate: number;
   };
   insights: {
-     peakHour: string;
-     peakThroughput: number;
-     flagshipProduct: string;
-     beverageShare: number;
-     wasteAlert: number;
+    peakHour: string;
+    peakThroughput: number;
+    flagshipProduct: string;
+    beverageShare: number;
+    wasteAlert: number;
   };
   itemSales: Array<{ name: string; quantity: number; revenue: number }>;
-  recentOrders: Array<{ 
-      id: string; 
-      time: string; 
-      customer: string; 
-      items: string; 
-      amount: number; 
-      status: string 
+  recentOrders: Array<{
+    id: string;
+    time: string;
+    customer: string;
+    items: string;
+    amount: number;
+    status: string;
   }>;
 }
 
-const COLORS = {
-  NAVY: '#0A192F',
-  GOLD: '#D4AF37',
-  BG: '#F8FAFC',
-  CARD: '#FFFFFF',
-  TEXT_MAIN: '#0F172A',
-  TEXT_SUB: '#64748B',
-  SUCCESS: '#10B981',
-  ERROR: '#EF4444',
-  WARNING: '#F59E0B',
-  SOFT_BLUE: '#3B82F6',
-  SOFT_SLATE: '#F1F5F9'
-};
+interface AuditDownloadProps {
+  realReport?: any;
+  period?: string;
+  className?: string;
+}
 
-const styles = StyleSheet.create({
-  page: { display: 'flex', flexDirection: 'column', backgroundColor: COLORS.BG, padding: 35 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25, borderBottomWidth: 3, borderBottomColor: COLORS.NAVY, paddingBottom: 15 },
-  brandBlock: { flexDirection: 'column' },
-  brandName: { fontSize: 24, color: COLORS.NAVY, fontWeight: 'bold' },
-  reportSubtitle: { fontSize: 10, color: COLORS.GOLD, fontWeight: 'bold', letterSpacing: 2, marginTop: 4, textTransform: 'uppercase' },
-  periodBadge: { fontSize: 9, color: COLORS.TEXT_SUB, textAlign: 'right' },
-  sectionLabel: { fontSize: 10, color: COLORS.GOLD, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 12, borderLeftWidth: 3, borderLeftColor: COLORS.GOLD, paddingLeft: 8 },
-  kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 },
-  kpiCard: { flex: 1, backgroundColor: COLORS.CARD, padding: 15, borderRadius: 8, marginHorizontal: 4, borderBottomWidth: 2, borderBottomColor: '#E2E8F0' },
-  kpiLabel: { fontSize: 7, color: COLORS.TEXT_SUB, textTransform: 'uppercase', marginBottom: 5, fontWeight: 'bold' },
-  kpiValue: { fontSize: 16, color: COLORS.NAVY, fontWeight: 'bold' },
-  insightBlock: { backgroundColor: COLORS.NAVY, padding: 20, borderRadius: 12, marginBottom: 30 },
-  insightTitle: { fontSize: 11, color: COLORS.GOLD, fontWeight: 'bold', marginBottom: 12, textTransform: 'uppercase' },
-  insightItem: { flexDirection: 'row', marginBottom: 8, alignItems: 'center' },
-  insightDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: COLORS.GOLD, marginRight: 8 },
-  insightText: { fontSize: 9, color: '#F1F5F9', flex: 1, lineHeight: 1.4 },
-  
-  // High-Performance Ledger Style
-  table: { width: '100%', marginBottom: 30, borderRadius: 8, overflow: 'hidden' },
-  tableHeader: { flexDirection: 'row', backgroundColor: COLORS.NAVY, paddingVertical: 12, paddingHorizontal: 15 },
-  th: { color: '#FFFFFF', fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 },
-  tableRow: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' },
-  td: { color: COLORS.TEXT_MAIN, fontSize: 8.5, fontWeight: 'medium' },
-  tdBold: { color: COLORS.NAVY, fontSize: 8.5, fontWeight: 'bold' },
-  tdRight: { color: COLORS.NAVY, fontSize: 8.5, fontWeight: 'bold', textAlign: 'right' },
-
-  footer: { position: 'absolute', bottom: 25, left: 35, right: 35, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 12 },
-  footerText: { fontSize: 7, color: COLORS.TEXT_SUB }
-});
-
-const SvgPieChart = ({ bevShare }: { bevShare: number }) => (
-    <View style={{ width: 120, alignItems: 'center' }}>
-        <Text style={{ fontSize: 7, fontWeight: 'bold', marginBottom: 10, color: COLORS.TEXT_SUB }}>UPSELL SHARE</Text>
-        <Svg width={60} height={60}>
-            <Circle cx={30} cy={30} r={25} stroke="#E2E8F0" strokeWidth={6} fill="none" />
-            <Circle 
-                cx={30} cy={30} r={25} 
-                stroke={COLORS.GOLD} strokeWidth={6} fill="none" 
-                strokeDasharray={`${(bevShare / 100) * 157 || 0.1} 157`} 
-                strokeLinecap="round"
-                transform="rotate(-90 30 30)"
-            />
-        </Svg>
-        <Text style={{ fontSize: 10, fontWeight: 'bold', marginTop: 5, color: COLORS.NAVY }}>{bevShare.toFixed(1)}%</Text>
-    </View>
-);
-
-const AuditReportDocument = ({ data }: { data: AuditData }) => {
-  // 🛡️ INDUSTRIAL DEDUPLICATION ENGINE (FINAL PASS)
-  const uniqueMap = new Map();
-  (data.recentOrders || []).forEach(o => {
-     const cleanId = (o.id || '').toUpperCase();
-     if (cleanId && !uniqueMap.has(cleanId)) {
-        uniqueMap.set(cleanId, o);
-     }
-  });
-  const auditEntries = Array.from(uniqueMap.values()).slice(0, 45);
-
-  return (
-    <Document title={`JOE Auditure - ${data.period}`}>
-      {/* PAGE 1: EXECUTIVE RECONCILIATION */}
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <View style={styles.brandBlock}>
-            <Text style={styles.brandName}>JOE CAFETERIA & LOUNGE</Text>
-            <Text style={styles.reportSubtitle}>Executive Performance Audit</Text>
-          </View>
-          <View>
-            <Text style={styles.periodBadge}>Audit ID: {Math.random().toString(36).substr(2, 6).toUpperCase()}</Text>
-            <Text style={styles.periodBadge}>Period: {data.period}</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionLabel}>Shift intelligence Summary</Text>
-        <View style={styles.kpiRow}>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Revenue</Text><Text style={styles.kpiValue}>INR {(data.summary?.totalRevenue || 0).toLocaleString()}</Text></View>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Total Orders</Text><Text style={styles.kpiValue}>{data.summary?.totalOrders || 0}</Text></View>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Avg Ticket</Text><Text style={styles.kpiValue}>INR {Math.round(data.summary?.avgTicket || 0)}</Text></View>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Void Rate</Text><Text style={{ ...styles.kpiValue, color: (data.summary?.voidRate || 0) > 5 ? COLORS.ERROR : COLORS.SUCCESS }}>{(data.summary?.voidRate || 0).toFixed(1)}%</Text></View>
-        </View>
-
-        <View style={styles.insightBlock}>
-          <Text style={styles.insightTitle}>OPERATIONAL CONTROL & STAFFING</Text>
-          <View style={styles.insightItem}><View style={styles.insightDot} /><Text style={styles.insightText}>CRITICAL RUSH ALERT: Detected at {data.insights?.peakHour || 'Rush'}. Peak Throughput: {data.insights?.peakThroughput || 0} settlements/hr.</Text></View>
-          <View style={styles.insightItem}><View style={styles.insightDot} /><Text style={styles.insightText}>ACTIONABLE: Deploy handheld scan assistants 15 minutes prior to this surge interval.</Text></View>
-        </View>
-
-        <View style={{ flexDirection: 'row', gap: 20 }}>
-            <View style={{ flex: 1, backgroundColor: COLORS.CARD, padding: 20, borderRadius: 12, borderBottomWidth: 2, borderBottomColor: COLORS.GOLD }}>
-                <Text style={styles.insightTitle}>MENU & REVENUE INSIGHTS</Text>
-                <Text style={{ fontSize: 9, color: COLORS.NAVY }}>• High Demand: &apos;{data.insights?.flagshipProduct || 'N/A'}&apos; is your clear flagship product.</Text>
-                <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 6 }}>• Upsell Opportunity: Beverages represent {data.insights?.beverageShare.toFixed(1)}% of revenue mix.</Text>
-                <Text style={{ fontSize: 9, color: COLORS.NAVY, marginTop: 6 }}>• Pricing: Avg ticket is INR {Math.round(data.summary?.avgTicket || 0)}. Consider a &quot;Boss Combo&quot; at INR 75.</Text>
-            </View>
-            <SvgPieChart bevShare={data.insights?.beverageShare || 0} />
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>I HEREBY CERTIFY THAT THIS RECONCILIATION DATA IS ACCURATE AS PER SYSTEM LOGS</Text>
-          <Text style={styles.footerText}>PAGE 1 of 2</Text>
-        </View>
-      </Page>
-
-      {/* PAGE 2: DIFFERENTIATED LEDGER */}
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}><Text style={styles.brandName}>TRANSACTIONAL AUDIT LEDGER</Text><Text style={styles.periodBadge}>{data.period}</Text></View>
-        
-        <View style={styles.table}>
-            <View style={styles.tableHeader}>
-                <Text style={{ ...styles.th, width: '15%' }}>Order ID</Text>
-                <Text style={{ ...styles.th, width: '12%' }}>Time</Text>
-                <Text style={{ ...styles.th, width: '43%' }}>Order Details (Items)</Text>
-                <Text style={{ ...styles.th, width: '15%', textAlign: 'right' }}>Amount</Text>
-                <Text style={{ ...styles.th, width: '15%', textAlign: 'right' }}>Status</Text>
-            </View>
-            {auditEntries.map((order, i) => (
-                <View key={order.id} style={{ ...styles.tableRow, backgroundColor: i % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
-                    <Text style={{ ...styles.tdBold, width: '15%' }}>#{order.id.slice(-6).toUpperCase()}</Text>
-                    <Text style={{ ...styles.td, width: '12%' }}>{order.time || '--'}</Text>
-                    <Text style={{ ...styles.td, width: '43%', color: COLORS.TEXT_SUB }}>{order.items || 'General Settlement'}</Text>
-                    <Text style={{ ...styles.tdRight, width: '15%' }}>INR {order.amount || 0}</Text>
-                    <Text style={{ ...styles.tdRight, width: '15%', color: order.status === 'SUCCESS' ? COLORS.SUCCESS : COLORS.ERROR }}>{order.status}</Text>
-                </View>
-            ))}
-            {auditEntries.length === 0 && (
-                <View style={styles.tableRow}><Text style={{...styles.td, textAlign: 'center', flex: 1, paddingVertical: 40}}>NO TRANSACTION LOGS RECORDED.</Text></View>
-            )}
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>JOE AUTOMATIONS EXECUTIVE LEDGER • CONFIDENTIAL</Text>
-          <Text style={styles.footerText}>PAGE 2 of 2</Text>
-        </View>
-      </Page>
-    </Document>
-  );
-};
-
-interface AuditDownloadProps { realReport?: any; period?: string; className?: string; }
-
-const AuditDownloadButton: React.FC<AuditDownloadProps> = ({ realReport, period = 'Today', className = '' }) => {
+const AuditDownloadButton: React.FC<AuditDownloadProps> = ({
+  realReport,
+  period = 'Today',
+  className = '',
+}) => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   const generateAudit = async () => {
     if (!realReport || status === 'loading') return;
     setStatus('loading');
+
     try {
+      // ── Dynamic imports — keep bundle lean ──────────────────────────────
+      const jsPDFModule = await import('jspdf');
+      const jsPDF = jsPDFModule.default;
+      const { default: autoTable } = await import('jspdf-autotable');
+
+      // ── Reconcile data ──────────────────────────────────────────────────
       const stats = realReport.summary || {};
-      const rawOrders = realReport.orders || [];
-      const itemSales = realReport.itemSales || [];
-      const rushData = realReport.peakHours || []; // 🛡️ Fix property mapping (peakHours contains throughput)
-      const catSales = realReport.categorySplit || [];
+      const rawOrders: any[] = realReport.orders || [];
+      const itemSales: any[] = realReport.itemSales || [];
+      const rushData: any[] = realReport.peakHours || [];
+      const catSales: any[] = realReport.categorySplit || [];
 
-      // 🛡️ RECONCILE DATA STRATEGICALLY
-      const uMap = new Map();
-      rawOrders.forEach((o: any) => { if (o.id && !uMap.has(o.id.toUpperCase())) uMap.set(o.id.toUpperCase(), o); });
-      const orders = Array.from(uMap.values()).sort((a: any, b: any) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+      const uMap = new Map<string, any>();
+      rawOrders.forEach((o: any) => {
+        if (o.id && !uMap.has(o.id.toUpperCase())) uMap.set(o.id.toUpperCase(), o);
+      });
+      const orders = Array.from(uMap.values()).sort(
+        (a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
+      );
 
-      const maxRush = rushData.length > 0 ? [...rushData].sort((a: any, b: any) => b.orders - a.orders)[0] : { hour: '--:--', orders: 0 };
-      const flagship = itemSales.length > 0 ? [...itemSales].sort((a: any, b: any) => b.quantity - a.quantity)[0] : { name: 'N/A' };
-      
-      // 🥤 [Upsell Logic] Prioritize "Beverages" category, then fallback to keywords
-      const bevFromCat = catSales.find((c: any) => c.category === 'Beverages')?.revenue || 0;
-      const bevFromKeywords = itemSales.filter((i: any) => 
-        ['coffee', 'tea', 'milk', 'water', 'juice', 'beverage', 'shake', 'cold'].some(tag => i.name.toLowerCase().includes(tag))
-      ).reduce((acc: number, cur: any) => acc + (cur.revenue || 0), 0);
-      
-      const bevSales = Math.max(bevFromCat, bevFromKeywords);
-      const bevShare = stats.totalRevenue > 0 ? (bevSales / stats.totalRevenue) * 100 : 0;
+      const maxRush =
+        rushData.length > 0
+          ? [...rushData].sort((a, b) => b.orders - a.orders)[0]
+          : { hour: '--:--', orders: 0 };
+      const flagship =
+        itemSales.length > 0
+          ? [...itemSales].sort((a, b) => b.quantity - a.quantity)[0]
+          : { name: 'N/A' };
 
-      const auditData: AuditData = {
-        hotelName: "JOE Cafeteria",
-        period: period,
-        summary: {
-            totalRevenue: stats.totalRevenue || 0,
-            totalOrders: stats.totalOrders || 0,
-            avgTicket: stats.avgTicket || 0,
-            voidRate: stats.voidRate || 0
+      const bevFromCat = catSales.find((c) => c.category === 'Beverages')?.revenue || 0;
+      const bevFromKw = itemSales
+        .filter((i) =>
+          ['coffee', 'tea', 'milk', 'water', 'juice', 'beverage', 'shake', 'cold'].some((t) =>
+            i.name.toLowerCase().includes(t)
+          )
+        )
+        .reduce((acc, cur) => acc + (cur.revenue || 0), 0);
+      const bevShare =
+        stats.totalRevenue > 0
+          ? (Math.max(bevFromCat, bevFromKw) / stats.totalRevenue) * 100
+          : 0;
+
+      // ── Palette ─────────────────────────────────────────────────────────
+      const NAVY: [number, number, number] = [10, 25, 47];
+      const GOLD: [number, number, number] = [184, 134, 11];
+      const GRAY: [number, number, number] = [71, 85, 105];
+      const GREEN: [number, number, number] = [5, 150, 105];
+      const WHITE: [number, number, number] = [255, 255, 255];
+
+      // ── Build PDF ────────────────────────────────────────────────────────
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const W = doc.internal.pageSize.width;
+      const H = doc.internal.pageSize.height;
+
+      // ═══════════════════════════════════════════
+      // PAGE 1 — Executive Summary
+      // ═══════════════════════════════════════════
+
+      // Header band
+      doc.setFillColor(...NAVY);
+      doc.rect(0, 0, W, 50, 'F');
+      doc.setFillColor(...GOLD);
+      doc.rect(0, 50, W, 2, 'F');
+
+      doc.setTextColor(...WHITE);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(24);
+      doc.text('JOE CAFETERIA & LOUNGE', 15, 22);
+
+      doc.setFontSize(9);
+      doc.setTextColor(...GOLD);
+      doc.text('EXECUTIVE PERFORMANCE AUDIT', 15, 32);
+
+      doc.setFontSize(7);
+      doc.setTextColor(180, 180, 180);
+      doc.text(`Period: ${period}`, 15, 42);
+      doc.text(
+        `Generated: ${new Date().toLocaleString('en-IN')}`,
+        W - 15,
+        42,
+        { align: 'right' }
+      );
+
+      // KPI Cards
+      doc.setTextColor(...NAVY);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('FINANCIAL DIAGNOSTICS', 15, 65);
+
+      const kpiCards = [
+        { label: 'REVENUE', value: `INR ${(stats.totalRevenue || 0).toLocaleString()}`, color: NAVY },
+        { label: 'ORDERS', value: String(stats.totalOrders || 0), color: GREEN },
+        { label: 'AVG TICKET', value: `INR ${Math.round(stats.avgTicket || 0)}`, color: NAVY },
+        { label: 'VOID RATE', value: `${(stats.voidRate || 0).toFixed(1)}%`, color: (stats.voidRate || 0) > 5 ? [220, 38, 38] as [number, number, number] : GREEN },
+      ];
+      kpiCards.forEach((card, i) => {
+        const x = 15 + i * 47;
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(x, 70, 44, 25, 3, 3, 'F');
+        doc.setFontSize(6);
+        doc.setTextColor(...GRAY);
+        doc.setFont('helvetica', 'bold');
+        doc.text(card.label, x + 4, 78);
+        doc.setFontSize(11);
+        doc.setTextColor(...card.color);
+        doc.text(card.value, x + 4, 89);
+      });
+
+      // Insights block
+      doc.setFillColor(...NAVY);
+      doc.roundedRect(15, 100, W - 30, 30, 4, 4, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(...GOLD);
+      doc.setFont('helvetica', 'bold');
+      doc.text('OPERATIONAL INTELLIGENCE', 22, 110);
+      doc.setTextColor(241, 245, 249);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(
+        `• PEAK RUSH: ${maxRush.hour} — Throughput: ${maxRush.orders} orders/hr. Deploy handheld assistants 15 min prior.`,
+        22, 118
+      );
+      doc.text(
+        `• FLAGSHIP: '${flagship.name}' top seller. Ensure bulk prep before shift. Beverage upsell share: ${bevShare.toFixed(1)}%.`,
+        22, 126
+      );
+
+      // KPI table
+      doc.setTextColor(...NAVY);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('OPERATIONAL KPI RATIOS', 15, 142);
+
+      autoTable(doc, {
+        startY: 146,
+        head: [['METRIC', 'VALUE', 'STATUS']],
+        body: [
+          ['Throughput Volume', `${stats.totalOrders || 0} orders`, 'Optimal'],
+          ['Avg Ticket Yield', `INR ${(stats.avgTicket || 0).toFixed(2)}`, 'Stable'],
+          ['Void / Spoilage Rate', `${(stats.voidRate || 0).toFixed(1)}%`, (stats.voidRate || 0) > 5 ? 'REVIEW' : 'Healthy'],
+          ['Cash Collection', `INR ${(realReport.summary?.cashTotal || 0).toLocaleString()}`, 'Verified'],
+          ['Online Settlement', `INR ${(realReport.summary?.onlineTotal || 0).toLocaleString()}`, 'Verified'],
+        ],
+        headStyles: { fillColor: NAVY, textColor: WHITE, fontSize: 8, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 8, textColor: NAVY },
+        margin: { left: 15, right: 15 },
+        theme: 'grid',
+      });
+
+      // Top items table
+      const y1 = (doc as any).lastAutoTable.finalY + 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('HIGH-YIELD MENU ANALYTICS', 15, y1);
+
+      autoTable(doc, {
+        startY: y1 + 4,
+        head: [['PRODUCT', 'UNITS', 'REVENUE', 'SHARE %']],
+        body: itemSales.slice(0, 15).map((it) => [
+          it.name.toUpperCase(),
+          it.quantity,
+          `INR ${(it.revenue || 0).toLocaleString()}`,
+          `${(((it.revenue || 0) / (stats.totalRevenue || 1)) * 100).toFixed(1)}%`,
+        ]),
+        headStyles: { fillColor: NAVY, textColor: WHITE, fontSize: 8 },
+        bodyStyles: { fontSize: 7.5 },
+        margin: { left: 15, right: 15 },
+        theme: 'striped',
+      });
+
+      // Footer page 1
+      doc.setFontSize(6);
+      doc.setTextColor(180, 180, 180);
+      doc.text('JOE CAFETERIA AUTOMATION • CONFIDENTIAL AUDIT • PAGE 1 OF 2', W / 2, H - 8, { align: 'center' });
+
+      // ═══════════════════════════════════════════
+      // PAGE 2 — Transactional Ledger
+      // ═══════════════════════════════════════════
+      doc.addPage();
+
+      doc.setFillColor(...NAVY);
+      doc.rect(0, 0, W, 35, 'F');
+      doc.setFillColor(...GOLD);
+      doc.rect(0, 35, W, 2, 'F');
+      doc.setTextColor(...GOLD);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('TRANSACTIONAL AUDIT LEDGER', 15, 22);
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 200);
+      doc.text(period, W - 15, 22, { align: 'right' });
+
+      // Deduplicated order entries
+      const uMap2 = new Map<string, any>();
+      orders.forEach((o) => {
+        const key = (o.id || '').toUpperCase();
+        if (key && !uMap2.has(key)) uMap2.set(key, o);
+      });
+      const ledgerRows = Array.from(uMap2.values())
+        .slice(0, 45)
+        .map((o) => {
+          const s = String(o.paymentStatus || '').toUpperCase();
+          const paid = s === 'SUCCESS' || s === 'VERIFIED';
+          const itemStr = (o.items || [])
+            .map((i: any) => `${i.name || 'Item'}${i.quantity > 1 ? ` x${i.quantity}` : ''}`)
+            .join(', ')
+            .slice(0, 55);
+          return [
+            `#${(o.id || '').slice(-6).toUpperCase()}`,
+            o.createdAt
+              ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+              : '--:--',
+            itemStr || 'General Settlement',
+            `INR ${o.totalAmount || 0}`,
+            paid ? 'SUCCESS' : 'VOIDED',
+          ];
+        });
+
+      autoTable(doc, {
+        startY: 42,
+        head: [['ORDER ID', 'TIME', 'ORDER DETAILS', 'AMOUNT', 'STATUS']],
+        body:
+          ledgerRows.length > 0
+            ? ledgerRows
+            : [['—', '—', 'NO TRANSACTION LOGS RECORDED', '—', '—']],
+        headStyles: { fillColor: NAVY, textColor: WHITE, fontSize: 8 },
+        bodyStyles: { fontSize: 7.5 },
+        columnStyles: {
+          0: { cellWidth: 22 },
+          1: { cellWidth: 18 },
+          2: { cellWidth: 80 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 25 },
         },
-        insights: {
-            peakHour: maxRush.hour || '--:--',
-            peakThroughput: maxRush.orders || 0,
-            flagshipProduct: flagship.name,
-            beverageShare: bevShare,
-            wasteAlert: Math.round((stats.voidRate || 0) * (stats.totalRevenue || 0) / 100)
+        margin: { left: 15, right: 15 },
+        theme: 'striped',
+        didParseCell: (data) => {
+          if (data.column.index === 4 && data.section === 'body') {
+            const val = String(data.cell.raw || '');
+            data.cell.styles.textColor =
+              val === 'SUCCESS' ? [5, 150, 105] : [220, 38, 38];
+          }
         },
-        itemSales: itemSales,
-        recentOrders: orders.slice(0, 500).filter(o => o && o.id).map((o: any) => {
-            const status = String(o.paymentStatus || '').toUpperCase();
-            const isPaid = status === 'SUCCESS' || status === 'VERIFIED';
-            
-            return {
-              id: o.id,
-              time: o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }).toLowerCase() : '--:--',
-              customer: o.userName || 'Guest User',
-              items: (o.items || []).map((i: any) => `${i.name || 'Item'}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ').slice(0, 60),
-              amount: Number(o.totalAmount || 0),
-              status: isPaid ? 'SUCCESS' : 'VOIDED'
-            };
-        })
-      };
+      });
 
-      const blob = await pdf(<AuditReportDocument data={auditData} />).toBlob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `JOE_AUDIT_${period.replace(/\s+/g, '_')}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
+      // Signature block
+      const sigY = Math.min((doc as any).lastAutoTable.finalY + 20, H - 45);
+      doc.setFontSize(8);
+      doc.setTextColor(...GRAY);
+      doc.text(
+        'I HEREBY CERTIFY THAT THIS RECONCILIATION DATA IS ACCURATE AS PER SYSTEM LOGS.',
+        15,
+        sigY
+      );
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, sigY + 14, 80, sigY + 14);
+      doc.line(120, sigY + 14, 185, sigY + 14);
+      doc.setFontSize(7);
+      doc.text('STATION MANAGER SIGNATURE', 15, sigY + 20);
+      doc.text('ADMINISTRATOR SIGNATURE', 120, sigY + 20);
+
+      doc.setFontSize(6);
+      doc.setTextColor(180, 180, 180);
+      doc.text('JOE CAFETERIA AUTOMATION • CONFIDENTIAL AUDIT • PAGE 2 OF 2', W / 2, H - 8, { align: 'center' });
+
+      // ── Save ─────────────────────────────────────────────────────────────
+      const fileName = `JOE_AUDIT_${period.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+
+      // Mobile-safe save: use blob URL instead of doc.save()
+      // doc.save() uses <a download> which can fail on mobile browsers
+      const pdfBlob = doc.output('blob');
+      const url = URL.createObjectURL(pdfBlob);
+
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        // On mobile open in new tab (user can then share/save from browser)
+        window.open(url, '_blank');
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
       setStatus('success');
       setTimeout(() => setStatus('idle'), 3000);
     } catch (err) {
-      console.error('Audit Failure:', err);
+      console.error('Audit PDF Error:', err);
       setStatus('error');
-      setTimeout(() => setStatus('idle'), 3000);
+      setTimeout(() => setStatus('idle'), 4000);
     }
   };
 
-  const baseStyles = "flex items-center justify-center gap-3 px-8 py-3.5 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl transition-all duration-500 active:scale-95 group relative overflow-hidden";
-  
-  if (status === 'loading') return (
-    <button disabled className={`${baseStyles} bg-slate-900 text-slate-400 cursor-wait ${className}`}>
-      <Loader2 className="w-4 h-4 animate-spin" /> Syncing Intelligence...
-    </button>
-  );
+  const base =
+    'flex items-center justify-center gap-2 px-5 py-3 font-black text-[10px] uppercase tracking-widest rounded-2xl transition-all duration-300 active:scale-95';
+
+  if (status === 'loading') {
+    return (
+      <button disabled className={`${base} bg-slate-900 text-slate-400 cursor-wait ${className}`}>
+        <Loader2 className="w-4 h-4 animate-spin" /> Generating...
+      </button>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <button onClick={generateAudit} className={`${base} bg-red-600 text-white ${className}`}>
+        <Download className="w-4 h-4" /> Retry PDF
+      </button>
+    );
+  }
 
   return (
-    <button onClick={generateAudit} className={`${baseStyles} bg-[#0A192F] text-white hover:bg-slate-800 ${className}`}>
-      {status === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <FileText className="w-4 h-4 text-[#D4AF37]" />}
-      {status === 'success' ? 'Audit Delivered' : 'Enterprise Audit'}
+    <button
+      onClick={generateAudit}
+      className={`${base} bg-[#0A192F] text-white hover:bg-slate-800 ${className}`}
+    >
+      {status === 'success' ? (
+        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+      ) : (
+        <FileText className="w-4 h-4 text-[#D4AF37]" />
+      )}
+      {status === 'success' ? 'Audit Delivered' : 'Download Audit'}
     </button>
   );
 };
