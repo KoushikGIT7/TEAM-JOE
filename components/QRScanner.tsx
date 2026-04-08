@@ -25,9 +25,10 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
     
     // ⚡ [RAPID-FIRE-LOGIC]: Extreme efficiency for high-traffic scenarios
     // 1. If it's a NEW token, scan it INSTANTLY (latency = 0)
-    // 2. If it's the SAME token, wait 1.2s before re-triggering (allows double-orders but prevents loops)
+    // ⚡ [HYPER-FAST-LOGIC]: 
+    // If it's the SAME token, wait 800ms (reduced from 1.2s)
     if (lastScanRef.current && lastScanRef.current.payload === token) {
-        if (now - lastScanRef.current.time < 1200) return;
+        if (now - lastScanRef.current.time < 800) return;
     }
 
     lastScanRef.current = { payload: token, time: now };
@@ -62,7 +63,14 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
             onScan={handleScan}
             formats={['qr_code']}
             allowMultiple={true}
-            scanDelay={100} // 🔥 [SONIC-SPEED]: Near-instant polling
+            scanDelay={50} // 🚀 [HYPER-DRIVE]: 20 scans per second
+            constraints={{
+              aspectRatio: 1,
+              facingMode: 'environment',
+              frameRate: { ideal: 60 },
+              width: { min: 640, ideal: 1280 },
+              height: { min: 480, ideal: 720 }
+            }}
             components={{
               onOff: true,
               torch: true,

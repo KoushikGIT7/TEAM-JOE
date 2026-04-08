@@ -22,9 +22,10 @@ interface HomeViewProps {
   onViewOrders?: () => void;
   onViewQR?: (orderId: string) => void;
   onLogout: () => void;
+  onOpenCompliance: (view: 'privacy' | 'refund' | 'terms' | 'contact') => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, onViewQR, onLogout }) => {
+const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, onViewQR, onLogout, onOpenCompliance }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('Breakfast');
   const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [search, setSearch] = useState('');
@@ -33,7 +34,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   const [isNotifGranted, setIsNotifGranted] = useState(Notification.permission === 'granted');
-  const [policyView, setPolicyView] = useState<'privacy' | 'refund' | 'terms' | 'contact' | null>(null);
   const { stockByItemId, isOutOfStock } = useInventory();
 
   useEffect(() => {
@@ -77,13 +77,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const cartItemsCount = Object.values(cart).reduce((acc, item) => acc + (item.quantity || 0), 0);
   const cartTotal = Object.values(cart).reduce((acc, item) => acc + (item.price * item.quantity), 0);
 
-  if (policyView) {
-    const onBack = () => setPolicyView(null);
-    if (policyView === 'privacy') return <PrivacyPolicy onBack={onBack} />;
-    if (policyView === 'refund') return <RefundPolicy onBack={onBack} />;
-    if (policyView === 'terms') return <TermsAndConditions onBack={onBack} />;
-    if (policyView === 'contact') return <ContactUs onBack={onBack} />;
-  }
 
   const filteredMenu = useMemo(() => {
     return menu.filter(item => item.category === selectedCategory && item.name.toLowerCase().includes(search.toLowerCase()))
@@ -290,7 +283,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
               );
             })}
             <div className="col-span-2">
-                <ComplianceFooter onOpen={(v) => setPolicyView(v)} />
+                <ComplianceFooter onOpen={onOpenCompliance} />
             </div>
           </div>
         )}

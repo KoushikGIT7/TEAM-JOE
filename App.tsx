@@ -27,6 +27,7 @@ const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
 const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
 const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
 const QRView      = React.lazy(() => import('./views/Student/QRView'));
+import { PrivacyPolicy, RefundPolicy, TermsAndConditions, ContactUs } from './views/Student/ComplianceView';
 
 type ViewState =
   | 'WELCOME'
@@ -90,6 +91,7 @@ const App: React.FC = () => {
   const [guestLoading, setGuestLoading] = useState(false);
   const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR'>('HOME');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [showCompliance, setShowCompliance] = useState<'privacy' | 'refund' | 'terms' | 'contact' | null>(null);
 
   useEffect(() => {
     if (!authLoading) {
@@ -191,6 +193,7 @@ const App: React.FC = () => {
             onGoogleLogin={handleGoogleLogin}
             onGuestLogin={handleGuestLogin}
             onStaffLogin={navigateToStaffLogin}
+            onOpenCompliance={setShowCompliance}
             googleLoading={googleSignInLoading}
             guestLoading={guestLoading}
           />
@@ -241,6 +244,7 @@ const App: React.FC = () => {
                         onLogout={handleLogout}
                         onProceed={() => setStudentSubView('PAYMENT')}
                         onViewOrders={() => setStudentSubView('ORDERS')}
+                        onOpenCompliance={setShowCompliance}
                         onViewQR={(id) => {
                           setActiveOrderId(id);
                           setStudentSubView('QR');
@@ -323,6 +327,12 @@ const App: React.FC = () => {
       )}
       <GlobalErrorBoundary>
         {renderView()}
+        
+        {/* Compliance Overlays */}
+        {showCompliance === 'privacy' && <PrivacyPolicy onBack={() => setShowCompliance(null)} />}
+        {showCompliance === 'refund' && <RefundPolicy onBack={() => setShowCompliance(null)} />}
+        {showCompliance === 'terms' && <TermsAndConditions onBack={() => setShowCompliance(null)} />}
+        {showCompliance === 'contact' && <ContactUs onBack={() => setShowCompliance(null)} />}
       </GlobalErrorBoundary>
     </div>
   );

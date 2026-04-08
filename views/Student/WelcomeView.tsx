@@ -1,11 +1,13 @@
 import React from 'react';
 import { ShieldCheck, Loader2, UserCircle } from 'lucide-react';
 import Logo from '../../components/Logo';
+import { ComplianceFooter } from './ComplianceView';
 
 interface WelcomeViewProps {
   onGoogleLogin: () => void;
   onStaffLogin: () => void;
   onGuestLogin: () => void;
+  onOpenCompliance: (view: 'privacy' | 'refund' | 'terms' | 'contact') => void;
   disabled?: boolean;
   googleLoading?: boolean;
   guestLoading?: boolean;
@@ -15,6 +17,7 @@ const WelcomeView: React.FC<WelcomeViewProps> = ({
   onGoogleLogin, 
   onStaffLogin, 
   onGuestLogin, 
+  onOpenCompliance,
   disabled = false, 
   googleLoading = false,
   guestLoading = false
@@ -96,11 +99,7 @@ const WelcomeView: React.FC<WelcomeViewProps> = ({
       </div>
 
       {/* Footer Info */}
-      <div className="w-full py-4 text-center">
-        <p className="text-[10px] text-textSecondary uppercase tracking-widest opacity-40 font-black">
-          Powered by JOE Cafeteria • SECURE AUTH
-        </p>
-      </div>
+      <ComplianceFooter onOpen={onOpenCompliance} />
     </div>
   );
 };

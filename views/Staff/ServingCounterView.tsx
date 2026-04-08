@@ -39,18 +39,18 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
     const now = Date.now();
     const token = data.trim();
     
-    // 🛡️ [RAPID-DEBOUNCE]: Prevent duplicate scans in milliseconds
-    if (lastScannedTokenRef.current?.token === token && now - lastScannedTokenRef.current.time < 3000) return;
+    // 🛡️ [RAPID-DEBOUNCE]: Fast-track next scanner (800ms ttl)
+    if (lastScannedTokenRef.current?.token === token && now - lastScannedTokenRef.current.time < 800) return;
     if (isProcessingScannerRef.current) return;
     
     isProcessingScannerRef.current = true;
     lastScannedTokenRef.current = { token, time: now };
 
     try {
-      // 🚀 [ZERO-LATENCY-CLICK]: Clear, single haptic feedback
-      if ('vibrate' in navigator) navigator.vibrate(30);
+      // 🚀 [HYPER-CORE]: Unlock the scanner 1ms after DB results to permit "Rapid-Fire" multi-student intake
+      // Success modal stays up for visibility, but doesn't block the NEXT scan.
       
-      const { order, result, targetItemId } = await validateQRForServing(token, profile.uid);
+      const { order, result, targetItemId } = await validateQRForServing(token, profile.uid, true); // true = autoServeReady
 
       if (result === 'CONSUMED') {
         setScanState('ERROR');
@@ -59,45 +59,22 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
         return;
       }
 
-      const allItems = order.items || [];
-      const targetItem = allItems.find(it => (it.id === targetItemId || it.itemId === targetItemId) || targetItemId === 'all');
-      
-      if (!targetItem && targetItemId !== 'all') {
-         setScanState('ERROR');
-         setFeedback('WRONG ITEM');
-         resetToIdle(800);
-         return;
-      }
-
-      const isReadySet = targetItemId === 'all' 
-         ? allItems.filter(it => it.status === 'READY' || it.orderType === 'FAST_ITEM')
-         : (targetItem?.status === 'READY' || targetItem?.status === 'PENDING' || targetItem?.orderType === 'FAST_ITEM' ? [targetItem] : []);
-
-      if (isReadySet.length === 0) {
-         setScanState('COOKING');
-         setFeedback('STILL PREPARING');
-         resetToIdle(1200); 
-         return;
-      }
-
-      const readyItemIds = isReadySet.map(i => i.id || i.itemId).filter(id => !!id) as string[];
-      await serveOrderItemsAtomic(order.id, readyItemIds, profile.uid);
-
-      // 🎤 [SONIC-VOICE]: authoritative feedback
-      if ('speechSynthesis' in window) {
-        const msg = new SpeechSynthesisUtterance('Served');
-        msg.rate = 1.8; // High speed
-        window.speechSynthesis.speak(msg);
-      }
-
+      // If it returned success, it means the serve items were already committed atomically if present.
       setScanState('SUCCESS');
       setStudentName(order.userName || 'Student');
-      setServedItems(isReadySet.map(i => i.name));
-      resetToIdle(600); // ⚡ [Hyper-Fast Handover]
+      setServedItems(order.items?.filter((i: any) => i.status === 'SERVED' && (Date.now() - (i.servedAt || 0) < 5000)).map((i: any) => i.name) || []);
+      
+      if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
+      
+      // ⚡ RELEASE LOCK EARLY: Next student can be scanned immediately
+      isProcessingScannerRef.current = false;
+      
+      resetToIdle(2000); 
 
     } catch (err: any) {
       setScanState('ERROR');
       setFeedback(err.message || 'SCAN ERROR');
+      isProcessingScannerRef.current = false;
       resetToIdle(1000);
     }
   }, [profile.uid, resetToIdle]);

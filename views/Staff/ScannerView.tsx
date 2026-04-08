@@ -43,14 +43,15 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setTimeout(() => {
        setTerminalState('IDLE');
        setLastResult(null);
-    }, state === 'SUCCESS' ? 1200 : 2500);
+    }, state === 'SUCCESS' ? 3000 : 4000); // 🕒 Increased to 3s/4s for readability
   };
 
   const handleScan = async (data: string) => {
     if (!data?.trim() || terminalState !== 'IDLE') return;
 
-    // 🏎️ [PREDICTIVE-UI] Instant validation flash
-    triggerStrobe('SUCCESS', 'VERIFYING...', 'Checking Token Integrity');
+    // 🏎️ [PREDICTIVE-UI] Instant validation flash - NO VIBRATION here
+    setLastResult({ title: 'VERIFYING...', sub: 'Checking Token Integrity' });
+    setTerminalState('SUCCESS');
 
     try {
       const { result } = await processAtomicIntake(data.trim(), profile.uid);

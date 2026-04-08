@@ -49,11 +49,11 @@ export const inferRoleFromEmail = (email: string): UserRole | null => {
     if (emailLower.startsWith('admin@'))   return ROLES.ADMIN;
     if (emailLower.startsWith('cashier@')) return ROLES.CASHIER;
     if (emailLower.startsWith('server@'))  return ROLES.SERVER;
-    if (emailLower.startsWith('cook@'))    return ROLES.SERVER; // cooks map to server role
+    if (emailLower.startsWith('cook@'))    return ROLES.COOK; // ✅ CORRECTED: Map cook@ to COOK role
     if (emailLower.startsWith('staff@'))   return ROLES.SERVER;
     if (emailLower.startsWith('guest@'))   return ROLES.GUEST;
-    // ✅ [SECURITY FIX] Unknown prefix on staff domain → GUEST, never CASHIER
-    // Cashier access must be explicitly granted via cashier@joecafe.com email
+    
+    // Default for staff domain if no special prefix is GUEST (to be manually promoted)
     return ROLES.GUEST;
   }
   
@@ -79,16 +79,10 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
       
       if (validRoles.includes(inputRole as UserRole)) {
         userRole = inputRole as UserRole;
-        
-        // Data integrity fix: Ensure role matches email pattern if applicable
-        const inferredRole = inferRoleFromEmail(email);
-        if (inferredRole && inferredRole !== userRole) {
-          console.error('🚨 Role mismatch: Email implies', inferredRole, 'but Firestore says', userRole);
-          userRole = inferredRole;
-          await setDoc(doc(db, "users", uid), { role: inferredRole, lastActive: serverTimestamp() }, { merge: true });
-        }
+        // 🔒 [STABILITY] Removed auto-correction here. 
+        // We trust the role stored in Firestore as the source of truth for existing accounts.
       } else {
-        // Not a valid staff role
+        // Not a valid role
         return null;
       }
 
@@ -317,18 +311,10 @@ export const onAuthStateChange = (
           const email = data.email || firebaseUser.email || '';
           const currentRole = (data.role || '').toUpperCase() as UserRole;
           
-          // Role Integrity Auto-Correction
-          const inferredRole = inferRoleFromEmail(email);
-          if (inferredRole && inferredRole !== currentRole) {
-            console.log(`🛡️ Industry-grade Auto-Correction: ${email} -> ${inferredRole}`);
-            await setDoc(doc(db, "users", firebaseUser.uid), { 
-              role: inferredRole, 
-              lastActive: serverTimestamp() 
-            }, { merge: true });
-            // The snapshot listener will fire again with new data, so we don't return early
-            return;
-          }
-
+          // 🔒 [STABILITY] Removed aggressive auto-correction.
+          // This fixes the issue where manually set roles were being overwritten 
+          // because the email didn't match a hardcoded prefix.
+          
           if (!data.active) {
             console.warn("🛑 Account deactivated:", email);
             await firebaseSignOut(auth);

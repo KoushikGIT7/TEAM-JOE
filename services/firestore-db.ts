@@ -1158,28 +1158,35 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
         
         // Slot Stats logic for Dosa Counter only
         const now = new Date();
-        const targetMins = (now.getHours() * 60) + now.getMinutes() + 4; // Start at +4 mins
-        let testMins = Math.ceil(targetMins / 5) * 5; 
-        let foundSlot = false;
+        // 🚀 [HYPER-PROBE]: Parallelize slot data fetching
+        // Instead of 20 sequential calls, we fetch a batch of future slots simultaneously.
+        const startingMins = (now.getHours() * 60) + now.getMinutes() + 4;
+        const probeCount = 12; // Check next 1 hour (12 slots of 5 mins)
+        const slotsToTest = Array.from({ length: probeCount }, (_, i) => {
+            const mins = startingMins + (i * 5);
+            const h = Math.floor(mins / 60) % 24;
+            return {
+                id: (h * 100 + (mins % 60)).toString(),
+                val: h * 100 + (mins % 60)
+            };
+        });
+
+        const slotSnaps = await Promise.all(slotsToTest.map(s => getDoc(doc(db, "slot_stats", s.id))));
         
-        for (let i = 0; i < 20; i++) {
-           const h = Math.floor(testMins / 60) % 24;
-           const slotTest = h * 100 + (testMins % 60);
+        let foundSlot = false;
+        for (let i = 0; i < slotSnaps.length; i++) {
+           const snap = slotSnaps[i];
+           const statData = snap.exists() ? snap.data() : {};
+           const currentVol = (statData['dosa'] || 0) + (statData['totalVolume'] || 0) / 10; // Normalized load
            
-           try {
-              const snap = await getDoc(doc(db, "slot_stats", slotTest.toString()));
-              const statData = snap.exists() ? snap.data() : {};
-              const currentVol = statData['dosa'] || 0;
-              
-              if (currentVol < 10) { 
-                 targetSlot = slotTest;
-                 foundSlot = true;
-                 break;
-              }
-           } catch { break; } 
-           testMins += 5;
+           if (currentVol < 15) { // Slightly relaxed capacity for faster throughput
+              targetSlot = slotsToTest[i].val;
+              foundSlot = true;
+              break;
+           }
         }
-        if (!foundSlot) targetSlot = (Math.floor(testMins / 60) % 24) * 100 + (testMins % 60);
+        
+        if (!foundSlot) targetSlot = slotsToTest[0].val;
 
         // Security: Block morning Dosa if past capacity
         const currentTimeInt = now.getHours() * 100 + now.getMinutes();
@@ -2208,7 +2215,7 @@ const QR_VALIDATION_CACHE: Record<string, { time: number, result: any }> = {};
 // ────────────────────────────────────────────────────────────────────────────
 // [ATOMIC QR INTAKE]
 // ────────────────────────────────────────────────────────────────────────────
-export const processAtomicIntake = async (qrPayload: string, staffId: string) => {
+export const processAtomicIntake = async (qrPayload: string, staffId: string, autoServeReady: boolean = false) => {
     const now = Date.now();
     
     // 🛡️ [CACHE-LOCK] Reject rapid redundant scans (400ms TTL)
@@ -2307,14 +2314,25 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                 orderDoc.items = orderDoc.items.map((it: any) => ({ ...it, status: 'PENDING' }));
             }
 
-            // Fix 7.4: NEVER auto-serve in the scanner.
-            // Items must stay on the manifest for the server to manually handover.
+            // AUTO-SERVE LOGIC: 
+            // If autoServeReady is true, we mark FAST_ITEMS and READY items as SERVED instantly.
             const updatedItems = orderDoc.items.map((it: any) => {
                 const isStatic = isStaticItem(it);
+                const isAlreadyReady = it.status === 'READY';
+                const isFast = isStatic && (it.status === 'PENDING' || !it.status);
                 
-                // If it's a fast item (Tea, Coffee), move it to READY for the server
-                if (isStatic && (it.status === 'PENDING' || !it.status)) {
-                    it.status = 'READY';
+                if (autoServeReady && (isAlreadyReady || isFast)) {
+                    // ATOMIC SERVE
+                    return {
+                        ...it,
+                        status: 'SERVED',
+                        remainingQty: 0,
+                        servedQty: it.quantity,
+                        servedAt: now,
+                        servedBy: staffId
+                    };
+                } else if (isFast) {
+                    it.status = 'READY'; // Just mark as READY if not auto-serving
                 }
 
                 // Strip base64
@@ -2325,7 +2343,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                 return cleanItem;
             });
 
-            const stillHasDynamic = updatedItems.some((it: any) => it.status !== 'SERVED');
+            const stillHasDynamic = updatedItems.some((it: any) => it.status !== 'SERVED' && it.status !== 'ABANDONED');
             const finalOrderState: OrderStatus = stillHasDynamic ? 'IN_PROGRESS' : 'COMPLETED';
 
             const updateData: any = {
@@ -2334,12 +2352,14 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                 qrState: stillHasDynamic ? 'SCANNED' : 'SERVED',
                 scannedAt: now,
                 updatedAt: serverTimestamp(),
-                items: updatedItems
+                items: updatedItems,
+                lastServedBy: staffId,
+                lastServedAt: now
             };
 
             tx.update(orderRef, updateData);
 
-            // Sync items subcollection — write FULL metadata so server manifest shows name + image
+            // Sync items subcollection
             updatedItems.forEach((it: any) => {
                 const subRef = doc(db, 'orders', orderDoc.id, 'items', it.id);
                 tx.set(subRef, { 
@@ -2348,9 +2368,16 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string) =>
                     quantity: it.quantity || 1,
                     category: it.category || '',
                     orderType: it.orderType || 'PREPARATION_ITEM',
-                    imageUrl: it.imageUrl || null,
-                    updatedAt: serverTimestamp() 
+                    updatedAt: serverTimestamp(),
+                    ...(it.status === 'SERVED' ? { servedAt: serverTimestamp(), servedBy: staffId } : {})
                 }, { merge: true });
+
+                // If served, update inventory shards
+                if (it.status === 'SERVED') {
+                    const shardId = `shard_${Math.floor(Math.random() * 5)}`;
+                    const shardRef = doc(db, "inventory_shards", it.id, "shards", shardId);
+                    tx.set(shardRef, { count: increment(it.quantity || 1), lastUpdated: serverTimestamp() }, { merge: true });
+                }
             });
 
             const result = (updateData.qrStatus === 'DESTROYED') ? ('CONSUMED' as const) : ('MANIFESTED' as const);
