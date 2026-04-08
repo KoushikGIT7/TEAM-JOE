@@ -51,17 +51,6 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
     };
   }, []);
 
-  // 🔗 [ADMIN-HEALING] Expose a cleanup function to the browser console as requested
-  useEffect(() => {
-    (window as any).clearGhostBatches = async () => {
-      console.log("🧹 [PURGE] Targetting all active kitchen batches...");
-      const promises = batches.map(b => deleteDoc(doc(db, 'prepBatches', b.id)));
-      await Promise.all(promises);
-      alert(`${batches.length} batches purged from kitchen.`);
-    };
-    return () => { delete (window as any).clearGhostBatches; };
-  }, [batches]);
-
   // ─────────────────────────────────────────────────────────────────────────────
   // PRIMARY LISTENER — status IN [QUEUED, PREPARING] + orderBy createdAt
   // Uses safeListener: auto-detects missing index, retries on transient errors,

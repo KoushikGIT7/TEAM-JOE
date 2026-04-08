@@ -117,6 +117,25 @@ export const saveCartDraft = async (userId: string, items: any[]): Promise<void>
 };
 
 
+// 🧹 [ADMIN-OVERRIDE] Global Kitchen Cleanup Task
+if (typeof window !== 'undefined') {
+  (window as any).clearGhostBatches = async () => {
+    console.log("🧹 [PURGE] Scanning for active kitchen batches to nuke...");
+    try {
+      const q = query(collection(db, "prepBatches"), where("status", "in", ["QUEUED", "PREPARING"]));
+      const snap = await getDocs(q);
+      const count = snap.size;
+      const promises = snap.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(promises);
+      console.log(`✅ Success: ${count} ghost batches cleared.`);
+      alert(`Cleanup Complete: ${count} items removed from kitchen.`);
+    } catch (e) {
+      console.error("Purge failed:", e);
+      alert("Error during cleanup. See console.");
+    }
+  };
+}
+
 // ============================================================================
 // TYPE CONVERSIONS
 // ============================================================================
