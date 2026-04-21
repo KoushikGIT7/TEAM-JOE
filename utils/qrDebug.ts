@@ -33,6 +33,7 @@ async function createTestOrder(): Promise<{ order: Order; qrCode: string }> {
     items: [
       {
         id: 'item_1',
+        itemId: 'item_1',
         name: 'Test Item',
         price: 100,
         costPrice: 50,

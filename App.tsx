@@ -42,8 +42,10 @@ const App: React.FC = () => {
   const { user: authUser, profile: authProfile, loading: authLoading } = useAuth();
   
   const [guestProfile, setGuestProfile] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem('joe_guest_profile');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('joe_guest_profile');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
   });
   
   const profile = authProfile || guestProfile;
@@ -121,8 +123,10 @@ const App: React.FC = () => {
     }
   };
 
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
   useEffect(() => {
-    if (authLoading || showSplash || isInitializingGuest) return;
+    if (authLoading || showSplash || isInitializingGuest || isAuthenticating) return;
 
     if (!profile) {
       if (view !== 'WELCOME' && view !== 'STAFF_LOGIN') {
@@ -134,9 +138,17 @@ const App: React.FC = () => {
     if (view === 'WELCOME' || view === 'STAFF_LOGIN') {
         setView(getViewForRole(profile.role));
     }
-  }, [authLoading, showSplash, profile, view, isInitializingGuest]);
+  }, [authLoading, showSplash, profile, view, isInitializingGuest, isAuthenticating]);
 
   const navigateToStaffLogin = () => setView('STAFF_LOGIN');
+
+  const onStaffLoginSuccess = (p: UserProfile) => {
+    setGuestProfile(null);
+    localStorage.removeItem('joe_guest_profile');
+    setView(getViewForRole(p.role));
+    // Let App stabilize
+    setTimeout(() => setIsAuthenticating(false), 500);
+  };
 
   const handleGoogleLogin = async () => {
     if (googleSignInLoading) return;
@@ -202,7 +214,10 @@ const App: React.FC = () => {
         return (
           <LoginView
             onBack={() => setView('WELCOME')}
-            onSuccess={(p) => setView(getViewForRole(p.role))}
+            onSuccess={(p) => {
+              setIsAuthenticating(true);
+              onStaffLoginSuccess(p);
+            }}
           />
         );
       case 'CASHIER':
@@ -295,7 +310,7 @@ const App: React.FC = () => {
           </div>
         );
       default:
-        return <WelcomeView onGoogleLogin={handleGoogleLogin} onGuestLogin={handleGuestLogin} onStaffLogin={navigateToStaffLogin} googleLoading={googleSignInLoading} guestLoading={guestLoading} />;
+        return <WelcomeView onGoogleLogin={handleGoogleLogin} onGuestLogin={handleGuestLogin} onStaffLogin={navigateToStaffLogin} onOpenCompliance={setShowCompliance} googleLoading={googleSignInLoading} guestLoading={guestLoading} />;
     }
   };
 

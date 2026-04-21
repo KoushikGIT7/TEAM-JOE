@@ -807,7 +807,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-black/5 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop table — hidden on mobile */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-gray-50 text-[10px] font-black text-textSecondary uppercase tracking-widest">
               <tr>
@@ -868,14 +869,63 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
             </tbody>
           </table>
         </div>
+
+        {/* Mobile card list — shown only on mobile */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {filteredInventory.map(item => {
+            const remaining = item.openingStock - item.consumed;
+            const percent = Math.min(100, Math.max(0, (remaining / item.openingStock) * 100));
+            return (
+              <div key={item.itemId} className="p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black shrink-0 ${remaining < 20 ? 'bg-error/10 text-error' : 'bg-gray-100 text-textSecondary'}`}>
+                    {item.itemName[0]}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-textMain text-sm truncate">{item.itemName}</p>
+                    <p className="text-[10px] text-textSecondary font-black uppercase tracking-widest leading-none mt-1">{item.category}</p>
+                  </div>
+                  <div className="ml-auto text-right">
+                     <span className={`text-xs font-black px-3 py-1.5 rounded-xl inline-block ${remaining < 20 ? 'bg-error/10 text-error' : 'bg-success/10 text-success'}`}>
+                       {remaining} Left
+                     </span>
+                  </div>
+                </div>
+                
+                <div className="space-y-1.5 px-1">
+                   <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-textSecondary">
+                      <span>Stock Health</span>
+                      <span>{Math.round(percent)}%</span>
+                   </div>
+                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-500 ${remaining < 20 ? 'bg-error' : remaining < 50 ? 'bg-cash' : 'bg-primary'}`}
+                        style={{ width: `${percent}%` }}
+                      />
+                   </div>
+                </div>
+
+                <button 
+                  onClick={() => {
+                    setSelectedInventoryItem(item);
+                    setShowRestockModal(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest px-6 py-3.5 bg-primary text-white rounded-xl shadow-lg shadow-primary/10 transition-all active:scale-95"
+                >
+                  <ArrowUpCircle className="w-4 h-4" /> Restock Ledger
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 
   const renderReports = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm p-6 sm:p-8">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10 p-10 bg-white rounded-[2.5rem] border border-black/5 shadow-sm">
+      <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm p-4 sm:p-8">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10 p-5 sm:p-10 bg-white rounded-[2.5rem] border border-black/5 shadow-sm">
             <div>
               <h3 className="text-2xl font-black text-textMain uppercase tracking-tighter">Business Intelligence</h3>
               <p className="text-xs text-textSecondary font-bold mt-1">Audit executive performance across custom intervals</p>

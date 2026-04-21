@@ -94,7 +94,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
   }, []);
 
   return (
-    <div className="flex h-screen w-screen bg-slate-50 flex-col overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-slate-50 flex-col overflow-hidden font-sans">
       
       {/* 📸 CAMERA INTAKE */}
       {isCameraOpen && (

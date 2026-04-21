@@ -64,11 +64,19 @@ export class HardwareScanner {
     // Primary: keydown on hidden input
     input.addEventListener('keydown', this.handleKey);
 
-    // Re-focus INSTANTLY (no delay) on blur
+    // Re-focus after tiny delay if focus didn't land on another interactive element
     input.addEventListener('blur', () => {
-      if (this.config.autoFocus && this.inputElement) {
-        this.inputElement.focus();
-      }
+      setTimeout(() => {
+        const active = document.activeElement;
+        const isInteractive = active instanceof HTMLInputElement || 
+                             active instanceof HTMLTextAreaElement || 
+                             active instanceof HTMLSelectElement ||
+                             (active as HTMLElement)?.getAttribute('contenteditable') === 'true';
+
+        if (this.config.autoFocus && this.inputElement && !isInteractive) {
+          this.inputElement.focus();
+        }
+      }, 50);
     });
 
     // Fallback: window-level listener catches keys when another element has focus

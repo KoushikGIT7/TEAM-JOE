@@ -3,8 +3,8 @@
  * Handles user authentication, role management, and auth state persistence
  */
 
-import { 
-  signInWithEmailAndPassword, 
+import {
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -38,25 +38,25 @@ import { ROLES } from "../types";
 export const inferRoleFromEmail = (email: string): UserRole | null => {
   if (!email) return null;
   const emailLower = email.toLowerCase();
-  
+
   // 🛡️ [GUEST-ENFORCEMENT] Any guest@ or explicitly marked guest maps securely to GUEST
   if (emailLower.startsWith('guest@')) return ROLES.GUEST;
 
   // 🛡️ [STAFF-ENFORCEMENT] Only authorized domains can have Staff roles
   const isAuthorizedStaffDomain = emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
-  
+
   if (isAuthorizedStaffDomain) {
-    if (emailLower.startsWith('admin@'))   return ROLES.ADMIN;
+    if (emailLower.startsWith('admin@')) return ROLES.ADMIN;
     if (emailLower.startsWith('cashier@')) return ROLES.CASHIER;
-    if (emailLower.startsWith('server@'))  return ROLES.SERVER;
-    if (emailLower.startsWith('cook@'))    return ROLES.COOK; // ✅ CORRECTED: Map cook@ to COOK role
-    if (emailLower.startsWith('staff@'))   return ROLES.SERVER;
-    if (emailLower.startsWith('guest@'))   return ROLES.GUEST;
-    
+    if (emailLower.startsWith('server@')) return ROLES.SERVER;
+    if (emailLower.startsWith('cook@')) return ROLES.COOK; // ✅ CORRECTED: Map cook@ to COOK role
+    if (emailLower.startsWith('staff@')) return ROLES.SERVER;
+    if (emailLower.startsWith('guest@')) return ROLES.GUEST;
+
     // Default for staff domain if no special prefix is GUEST (to be manually promoted)
     return ROLES.GUEST;
   }
-  
+
   // All other domains (gmail, college domains, etc.) are strictly STUDENTS
   return ROLES.STUDENT;
 };
@@ -70,13 +70,13 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
     if (userDoc.exists()) {
       const data = userDoc.data();
       const email = data.email || '';
-      
+
       const validRoles: UserRole[] = ['ADMIN', 'CASHIER', 'SERVER', 'STUDENT', 'GUEST'];
       let userRole: UserRole | null = null;
-      
+
       // Standardize input role to uppercase for check
       const inputRole = (data.role || '').toUpperCase();
-      
+
       if (validRoles.includes(inputRole as UserRole)) {
         userRole = inputRole as UserRole;
         // 🔒 [STABILITY] Removed auto-correction here. 
@@ -111,42 +111,42 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
   try {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-    
+
     // 🛡️ [INSTANT-HANDSHAKE] Try Popup flow first for best UX
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
-    
+
     // Check for existing profile (will be auto-provisioned by listener if missing)
     let profile = await getUserProfile(user.uid);
-    
+
     // If profile is missing (brand new user), we define it here for the immediate return
     if (!profile) {
-        const email = user.email || '';
-        const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT; // Default to Student for all new Google logins
-        
-        profile = {
-          uid: user.uid,
-          name: user.displayName || email.split('@')[0] || 'User',
-          email: email,
-          role: inferredRole,
-          active: true,
-          createdAt: Date.now(),
-        };
+      const email = user.email || '';
+      const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT; // Default to Student for all new Google logins
 
-        // Fire & Forget: Let the background process handle the DB write
-        setDoc(doc(db, "users", user.uid), {
-           ...profile,
-           lastActive: serverTimestamp(),
-           createdAt: serverTimestamp()
-        }, { merge: true }).catch(e => console.warn("Background provision fail", e));
+      profile = {
+        uid: user.uid,
+        name: user.displayName || email.split('@')[0] || 'User',
+        email: email,
+        role: inferredRole,
+        active: true,
+        createdAt: Date.now(),
+      };
+
+      // Fire & Forget: Let the background process handle the DB write
+      setDoc(doc(db, "users", user.uid), {
+        ...profile,
+        lastActive: serverTimestamp(),
+        createdAt: serverTimestamp()
+      }, { merge: true }).catch(e => console.warn("Background provision fail", e));
     }
-    
+
     return { user, profile };
   } catch (error: any) {
     if (error.code === 'auth/popup-blocked') {
-        // Fallback to Redirect if popup is blocked by browser
-        await signInWithRedirect(auth, new GoogleAuthProvider());
-        return new Promise(() => {}); 
+      // Fallback to Redirect if popup is blocked by browser
+      await signInWithRedirect(auth, new GoogleAuthProvider());
+      return new Promise(() => { });
     }
     console.error("❌ Universal Google Login failed:", error);
     throw error;
@@ -160,9 +160,9 @@ export const signIn = async (email: string, password: string): Promise<{ user: F
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
-    
+
     let userProfile = await getUserProfile(user.uid);
-    
+
     // AUTO-PROVISIONING: If profile missing but we can infer a role (Staff), create it on the fly.
     if (!userProfile) {
       const inferredRole = inferRoleFromEmail(email);
@@ -188,16 +188,16 @@ export const signIn = async (email: string, password: string): Promise<{ user: F
         throw new Error('ACCESS_DENIED');
       }
     }
-    
+
     if (!userProfile.active) {
       await firebaseSignOut(auth);
       throw new Error('ACCOUNT_DEACTIVATED');
     }
-    
+
     await setDoc(doc(db, "users", user.uid), {
       lastActive: serverTimestamp()
     }, { merge: true });
-    
+
     return { user, profile: userProfile };
   } catch (error: any) {
     console.error("❌ Sign in error:", error);
@@ -214,55 +214,53 @@ export const signInAsGuest = async (): Promise<{ user: FirebaseUser | null; prof
     console.log('🛡️ Cloud-First: Attempting Firebase Anonymous Sign-in...');
     const userCredential = await signInAnonymously(auth);
     const user = userCredential.user;
-    
+
     // Check for existing profile (in case of returning anonymous session)
     let profile = await getUserProfile(user.uid);
-    
+
     if (!profile) {
       const now = Date.now();
       profile = {
-          uid: user.uid,
-          name: 'Guest User',
-          email: 'guest@joecafe.com',
-          role: 'GUEST',
-          active: true,
-          createdAt: now,
+        uid: user.uid,
+        name: 'Guest User',
+        email: 'guest@joecafe.com',
+        role: 'GUEST',
+        active: true,
+        createdAt: now,
       };
-      
+
       await setDoc(doc(db, "users", user.uid), {
-          ...profile,
-          lastActive: serverTimestamp(),
-          createdAt: serverTimestamp()
+        ...profile,
+        lastActive: serverTimestamp(),
+        createdAt: serverTimestamp()
       }, { merge: true }).catch(e => console.warn("Silent profile sync fail", e));
     } else if (profile.role !== 'GUEST') {
       // 🛡️ [HARDENED FIX] Clean up tainted legacy guest accounts that incorrectly got CASHIER
       console.log('🛡️ Sanitizing malicious/tainted guest role -> GUEST');
       profile.role = 'GUEST';
       await setDoc(doc(db, "users", user.uid), {
-          role: 'GUEST',
-          lastActive: serverTimestamp()
+        role: 'GUEST',
+        lastActive: serverTimestamp()
       }, { merge: true }).catch(e => console.warn("Silent profile sanity fail", e));
     }
-    
+
     return { user, profile };
   } catch (err: any) {
     if (err.code === 'auth/admin-restricted-operation') {
-        console.warn('⚠️ Console Settings Check: Anonymous Auth is RESTRICTED in Firebase Console.');
+      console.warn('⚠️ Console Settings Check: Anonymous Auth is RESTRICTED in Firebase Console.');
     }
     console.warn('⚡ Fallback: Generating High-Entropy Local ID...', err.code);
-    
-    const localId = `ls_guest_${Math.random().toString(36).substring(2, 15)}`;
-    const now = Date.now();
-    const gProfile: UserProfile = {
-        uid: localId,
-        name: 'Guest User',
-        email: 'guest@joecafe.local',
-        role: 'GUEST',
-        active: true,
-        createdAt: now
+
+    // Offline local guest fallback
+    const offlineProfile: UserProfile = {
+      uid: 'offline_guest_' + Math.random().toString(36).substring(7),
+      name: 'Guest User',
+      email: 'guest@joecafe.com',
+      role: 'GUEST',
+      active: true,
+      createdAt: Date.now()
     };
-    
-    return { user: null, profile: gProfile };
+    return { user: null, profile: offlineProfile };
   }
 };
 
@@ -292,7 +290,7 @@ export const onAuthStateChange = (
 
   const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
     // Clear previous profile listener
-    if (profileUnsub) { 
+    if (profileUnsub) {
       profileUnsub();
       profileUnsub = null;
     }
@@ -310,11 +308,11 @@ export const onAuthStateChange = (
           const data = snapshot.data();
           const email = data.email || firebaseUser.email || '';
           const currentRole = (data.role || '').toUpperCase() as UserRole;
-          
+
           // 🔒 [STABILITY] Removed aggressive auto-correction.
           // This fixes the issue where manually set roles were being overwritten 
           // because the email didn't match a hardcoded prefix.
-          
+
           if (!data.active) {
             console.warn("🛑 Account deactivated:", email);
             await firebaseSignOut(auth);
@@ -338,7 +336,7 @@ export const onAuthStateChange = (
           const isAnonymous = firebaseUser.isAnonymous;
           const now = Date.now();
           const inferredRole = isAnonymous ? 'GUEST' : (inferRoleFromEmail(email) || ROLES.STUDENT);
-          
+
           const newProfile: UserProfile = {
             uid: firebaseUser.uid,
             name: isAnonymous ? 'Guest User' : (firebaseUser.displayName || email.split('@')[0] || 'User'),
@@ -354,7 +352,7 @@ export const onAuthStateChange = (
             lastActive: serverTimestamp(),
             createdAt: serverTimestamp()
           }, { merge: true });
-          
+
           // No need to call callback yet, once setDoc finishes, the onSnapshot will fire again
         }
       },

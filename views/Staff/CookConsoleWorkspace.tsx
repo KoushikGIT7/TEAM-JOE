@@ -7,7 +7,7 @@ import { startBatch, finalizeBatch } from '../../services/firestore-db';
 import { safeListener } from '../../services/safeListener';
 import {
   collection, query, where, orderBy, onSnapshot,
-  limit, doc, setDoc, increment, serverTimestamp
+  limit, doc, setDoc, increment, serverTimestamp, deleteDoc
 } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 

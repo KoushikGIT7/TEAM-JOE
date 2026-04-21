@@ -4013,3 +4013,40 @@ export const runMaintenanceCycle = async (nodeId: string): Promise<{ restored: n
   }
 };
 
+// serveItem is defined above (line ~2723) - duplicate removed
+
+export const rejectItem = async (orderId: string, itemId: string, staffId: string) => {
+    const orderRef = doc(db, 'orders', orderId);
+    await runTransaction(db, async (tx) => {
+        const orderDoc = await tx.get(orderRef);
+        if (!orderDoc.exists()) throw new Error('Order not found');
+
+        const orderData = orderDoc.data();
+        let updatedItems = [...orderData.items];
+        let found = false;
+
+        updatedItems = updatedItems.map((it: any) => {
+            if (it.id === itemId && it.status !== 'SERVED') {
+                found = true;
+                it.status = 'ABANDONED';
+                it.remainingQty = 0;
+                it.servedAt = Date.now();
+                it.servedBy = staffId;
+            }
+            return it;
+        });
+
+        if (!found) throw new Error('Item cannot be rejected.');
+
+        const stillHasUnfinished = updatedItems.some((it: any) => it.status !== 'SERVED' && it.status !== 'ABANDONED');
+        
+        const subRef = doc(db, 'orders', orderId, 'items', itemId);
+        tx.set(subRef, { status: 'ABANDONED', servedAt: serverTimestamp(), servedBy: staffId }, { merge: true });
+
+        tx.update(orderRef, {
+            items: updatedItems,
+            updatedAt: serverTimestamp(),
+            ...(stillHasUnfinished ? {} : { qrState: 'SERVED', orderStatus: 'COMPLETED' })
+        });
+    });
+};
