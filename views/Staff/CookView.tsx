@@ -32,33 +32,47 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
 
   const handleMarkReady = async (itemId: string, count?: number) => {
     if (processingItem) return;
-    const itemBatches = batches.filter(b => b.itemId === itemId).sort((a, b) => a.createdAt - b.createdAt);
-    const targetBatch = itemBatches.find(b => b.status === 'PREPARING') || itemBatches[0];
-    if (!targetBatch) return;
+
+    // Get all QUEUED/PREPARING batches for this item, oldest first
+    const itemBatches = batches
+      .filter(b => b.itemId === itemId && (b.status === 'QUEUED' || b.status === 'PREPARING'))
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+    if (itemBatches.length === 0) return;
+
+    // How many batches to mark ready:
+    // - count undefined → mark ALL (cook pressed "ALL (N)")
+    // - count = N → mark the N oldest batches (one per student order)
+    const toMark = count ? itemBatches.slice(0, count) : itemBatches;
 
     setProcessingItem(itemId);
     try {
-        await markBatchReady(targetBatch.id, count);
-        if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
-        setExpandedItemId(null);
+      // ⚡ Mark each batch ready in parallel — one READY per student order
+      await Promise.all(toMark.map(batch => markBatchReady(batch.id)));
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+      setExpandedItemId(null);
     } catch (e) {
-        console.error("Mark Ready failed", e);
+      console.error("Mark Ready failed", e);
     } finally {
-        setProcessingItem(null);
+      setProcessingItem(null);
     }
   };
 
   const groupedItems = useMemo(() => {
     const itemMap: Record<string, { itemId: string, name: string, count: number, isPreparing: boolean }> = {};
-    
-    batches.forEach(b => {
+
+    // Only count QUEUED and PREPARING batches (active orders awaiting the cook)
+    batches
+      .filter(b => b.status === 'QUEUED' || b.status === 'PREPARING')
+      .forEach(b => {
         const id = b.itemId || 'GEN';
         if (!itemMap[id]) {
-            itemMap[id] = { itemId: id, name: b.itemName || 'Item', count: 0, isPreparing: false };
+          itemMap[id] = { itemId: id, name: b.itemName || 'Item', count: 0, isPreparing: false };
         }
-        itemMap[id].count += (b.items || []).length || b.quantity || 0;
+        // Each batch = 1 student order. Count batches, not internal quantity.
+        itemMap[id].count += 1;
         if (b.status === 'PREPARING') itemMap[id].isPreparing = true;
-    });
+      });
 
     return Object.values(itemMap).sort((a, b) => b.count - a.count);
   }, [batches]);
