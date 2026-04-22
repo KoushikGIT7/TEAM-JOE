@@ -135,7 +135,7 @@ export const ContactUs: React.FC<{ onBack: () => void }> = ({ onBack }) => (
         <h3 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-2">Corporate Office</h3>
         <p className="text-sm text-textMain font-black leading-relaxed">
           JOE Automation Solutions,<br />
-          Hyderabad, Telangana, India
+          Kishkinda University, Ballari, Karnataka, Siruguppa Road
         </p>
       </div>
     </div>
