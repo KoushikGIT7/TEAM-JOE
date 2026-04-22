@@ -50,32 +50,51 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       // 🚀 [HYPER-CORE]: Unlock the scanner 1ms after DB results to permit "Rapid-Fire" multi-student intake
       // Success modal stays up for visibility, but doesn't block the NEXT scan.
       
-      const { order, result, targetItemId } = await validateQRForServing(token, profile.uid, true); // true = autoServeReady
+      const { order, result } = await validateQRForServing(token, profile.uid, true); // true = autoServeReady
 
-      if (result === 'CONSUMED') {
-        setScanState('ERROR');
-        setFeedback('ALREADY SERVED');
-        resetToIdle(800); 
+      // ✅ CONSUMED = all fast-items were just served atomically RIGHT NOW → big success
+      // ✅ MANIFESTED = dynamic/prep items queued for kitchen → success (waiting)
+      // ✅ ALREADY_MANIFESTED = re-scan of prep order, kitchen still cooking → show success
+      if (result === 'CONSUMED' || result === 'MANIFESTED' || result === 'ALREADY_MANIFESTED') {
+        setScanState('SUCCESS');
+        setStudentName(order.userName || 'Student');
+
+        // Show items that were just served (within 5s) or all served items for CONSUMED
+        const justServed = order.items?.filter((i: any) =>
+          i.status === 'SERVED' && (result === 'CONSUMED' || (Date.now() - (i.servedAt || 0) < 5000))
+        ).map((i: any) => i.name) || [];
+        setServedItems(justServed);
+
+        // Haptic feedback
+        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
+
+        // ⚡ RELEASE LOCK EARLY: Next student can be scanned immediately
+        isProcessingScannerRef.current = false;
+        resetToIdle(result === 'ALREADY_MANIFESTED' ? 3000 : 2000);
         return;
       }
 
-      // If it returned success, it means the serve items were already committed atomically if present.
-      setScanState('SUCCESS');
-      setStudentName(order.userName || 'Student');
-      setServedItems(order.items?.filter((i: any) => i.status === 'SERVED' && (Date.now() - (i.servedAt || 0) < 5000)).map((i: any) => i.name) || []);
-      
-      if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
-      
-      // ⚡ RELEASE LOCK EARLY: Next student can be scanned immediately
+      // AWAITING_PAYMENT: rare edge case
+      setScanState('ERROR');
+      setFeedback('PAYMENT PENDING');
       isProcessingScannerRef.current = false;
-      
-      resetToIdle(2000); 
+      resetToIdle(1500);
 
     } catch (err: any) {
+      // Translate raw Firebase/internal error codes into human-readable messages
+      const msg: string = err.message || '';
+      let display = 'SCAN ERROR';
+      if (msg.includes('ALREADY_CONSUMED') || msg.includes('ALREADY_SERVED'))  display = 'ALREADY SERVED';
+      else if (msg.includes('ORDER_NOT_FOUND'))                                 display = 'ORDER NOT FOUND';
+      else if (msg.includes('INVALID_QR') || msg.includes('INVALID_PAYLOAD'))  display = 'INVALID QR CODE';
+      else if (msg.includes('SECURITY_BREACH'))                                 display = 'SECURITY ALERT';
+      else if (msg.includes('PAYMENT'))                                         display = 'PAYMENT NOT VERIFIED';
+      else if (msg.includes('EXPIRED'))                                         display = 'QR CODE EXPIRED';
+
       setScanState('ERROR');
-      setFeedback(err.message || 'SCAN ERROR');
+      setFeedback(display);
       isProcessingScannerRef.current = false;
-      resetToIdle(1000);
+      resetToIdle(1500);
     }
   }, [profile.uid, resetToIdle]);
 
