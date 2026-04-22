@@ -4,7 +4,8 @@ import { getAuth, Auth } from "firebase/auth";
 import { 
   initializeFirestore, 
   Firestore, 
-  persistentLocalCache, 
+  persistentLocalCache,
+  persistentMultipleTabManager,
   getFirestore 
 } from "firebase/firestore";
 import { getMessaging, Messaging } from "firebase/messaging";
@@ -26,13 +27,15 @@ const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) 
 export const auth: Auth = getAuth(app);
 export const messaging: Messaging = getMessaging(app);
 
-// Initialize Firestore with single-tab persistence to resolve BloomFilter synchronization errors
-// occurring in multi-tab managers under high volume (as reported in SDK 12.8.0).
-// In Vite HMR, we must avoid multiple calls to initializeFirestore with different options.
+// 🛡️ [TAB-SYNC-FIX] Replaced single-tab cache with persistentMultipleTabManager.
+// Prevents "Failed to obtain exclusive access to the persistence layer" when multiple tabs
+// or Vite HMR sessions access Firestore's IndexedDB at the same time.
 let db: Firestore;
 try {
   db = initializeFirestore(app, {
-    localCache: persistentLocalCache({}), // Single tab is more stable for kitchen consoles
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    }),
     experimentalForceLongPolling: true,
   });
 } catch (e) {
