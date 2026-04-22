@@ -3480,6 +3480,14 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
     (snap: any) => snap.docs.map((d: any) => ({ ...d.data(), id: d.id } as PrepBatch)),
     () => [],
     (all: PrepBatch[]) => {
+      const getMs = (val: any) => {
+        if (!val) return 0;
+        if (typeof val.toMillis === 'function') return val.toMillis();
+        if (typeof val === 'number') return val;
+        if (val.seconds) return val.seconds * 1000;
+        return 0;
+      };
+
       // Filter to only active statuses client-side
       const active = all.filter(b =>
         b.status === 'QUEUED' || b.status === 'PREPARING' ||
@@ -3490,11 +3498,11 @@ export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() =
       // READY/ALMOST_READY by readyAt asc (served in order they became ready)
       const prep = active
         .filter(b => b.status === 'QUEUED' || b.status === 'PREPARING')
-        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        .sort((a, b) => getMs(a.createdAt) - getMs(b.createdAt));
 
       const ready = active
         .filter(b => b.status === 'READY' || b.status === 'ALMOST_READY')
-        .sort((a, b) => (a.readyAt || a.updatedAt || 0) - (b.readyAt || b.updatedAt || 0));
+        .sort((a, b) => getMs(a.readyAt || a.updatedAt) - getMs(b.readyAt || b.updatedAt));
 
       callback([...prep, ...ready.slice(0, 5)]);
     }

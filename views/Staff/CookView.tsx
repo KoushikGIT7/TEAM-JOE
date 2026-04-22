@@ -33,10 +33,18 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
   const handleMarkReady = async (itemId: string, count?: number) => {
     if (processingItem) return;
 
+    const getMs = (val: any) => {
+      if (!val) return 0;
+      if (typeof val.toMillis === 'function') return val.toMillis();
+      if (typeof val === 'number') return val;
+      if (val.seconds) return val.seconds * 1000;
+      return 0;
+    };
+
     // Get all QUEUED/PREPARING batches for this item, oldest first
     const itemBatches = batches
       .filter(b => b.itemId === itemId && (b.status === 'QUEUED' || b.status === 'PREPARING'))
-      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      .sort((a, b) => getMs(a.createdAt) - getMs(b.createdAt));
 
     if (itemBatches.length === 0) return;
 
