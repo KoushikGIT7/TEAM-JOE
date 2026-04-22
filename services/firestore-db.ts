@@ -3819,21 +3819,24 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
     return await runTransaction(db, async (tx) => {
       const snap = await tx.get(maintenanceRef);
       if (!snap.exists()) {
-        tx.set(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId });
+        tx.set(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId }, { merge: true });
         return true;
       }
       
       const data = snap.data() as SystemMaintenance;
       if (now - data.lastHeartbeatAt > 30000) {
-        tx.update(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId });
+        // 🛡️ [RACE-CONDITION-FIX] Use set({merge:true}) instead of update().
+        // update() strictly enforces an exact version precondition that causes noisy 400 
+        // Bad Request errors during concurrent leader-election (like Vite HMR reloads).
+        tx.set(maintenanceRef, { lastHeartbeatAt: now, activeNodeId: nodeId }, { merge: true });
         return true;
       }
       
       return false;
     });
   } catch (err: any) {
-    if (err?.code === 'permission-denied') {
-       // Silent yield: This device is not authorized to run system maintenance (e.g. Student phone)
+    if (err?.code === 'permission-denied' || err?.code === 'failed-precondition') {
+       // Silent yield: This device is not authorized or lost the concurrent race to another tab.
        return false;
     }
     console.warn("Maintenance lock acquisition failed (non-fatal):", err?.message);
