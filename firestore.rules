@@ -69,6 +69,19 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // ─── INVENTORY SHARDS ─────────────────────────────────────────────────────
+    // Written by staff on each QR serve (atomic shard increment).
+    // Read for aggregated stock calculation in admin/inventory panels.
+    match /inventory_shards/{itemId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+
+      match /shards/{shardId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
     match /system_messages/{msgId} {
       allow read: if true;
       allow write: if isStaff();
