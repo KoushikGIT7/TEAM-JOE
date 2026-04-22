@@ -3893,19 +3893,31 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
 
       if (currentMissedCount >= 3) {
         const newItems = (data.items || []).map((it: any) => ({ ...it, status: 'ABANDONED' }));
-        masterBatch.update(d.ref, {
-          "pickupWindow.status": 'ABANDONED',
-          "serveFlowStatus": 'ABANDONED',
-          "orderStatus": 'ABANDONED',
-          "missedCount": currentMissedCount,
-          "updatedAt": serverTimestamp(),
-          "items": newItems
-        });
-        
-        newItems.forEach((it: any) => {
-          const itRef = doc(db, 'orders', d.id, 'items', it.id || it.itemId);
-          masterBatch.update(itRef, { status: 'ABANDONED', updatedAt: serverTimestamp() });
-        });
+        try {
+          masterBatch.update(d.ref, {
+            "pickupWindow.status": 'ABANDONED',
+            "serveFlowStatus": 'ABANDONED',
+            "orderStatus": 'ABANDONED',
+            "missedCount": currentMissedCount,
+            "updatedAt": serverTimestamp(),
+            "items": newItems
+          });
+          
+          newItems.forEach((it: any) => {
+            const itRef = doc(db, 'orders', d.id, 'items', it.id || it.itemId);
+            masterBatch.update(itRef, { status: 'ABANDONED', updatedAt: serverTimestamp() });
+          });
+          
+          // 🧹 [INVENTORY-RECOVERY] Release the locked stock for standard items ONLY
+          // Dosas/Dynamic items do NOT have inventory_meta docs, so updating them throws errors!
+          const staticItems = (data.items || []).filter((i: any) => isStaticItem(i));
+          staticItems.forEach((it: any) => {
+             const stockRef = doc(db, 'inventory_meta', it.id || it.itemId);
+             masterBatch.update(stockRef, { consumed: increment(- (it.quantity || 1)) });
+          });
+        } catch (subErr) {
+          console.warn(`[WATCHDOG] Failed to abandon order ${d.id}`, subErr);
+        }
       } else {
         const isDynamic = (data.items || []).some((it: any) => it.orderType === 'PREPARATION_ITEM');
         
@@ -3919,72 +3931,70 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
            return it;
         });
 
-        // 1. Update the Order doc
-        masterBatch.update(d.ref, {
-          "pickupWindow.status": 'COLLECTING', // Keep active
-          "serveFlowStatus": isDynamic ? 'PENDING' : 'READY', // Never show 'Preparing' for static!
-          "orderStatus": 'ACTIVE',
-          "qrStatus": 'ACTIVE',
-          "qrState": 'ACTIVE',
-          "missedCount": currentMissedCount,
-          "arrivalTimeSlot": nextSlot, // Audit trail
-          "items": reQueuedItems,
-          "updatedAt": serverTimestamp()
-        });
+        try {
+          // 1. Update the Order doc
+          masterBatch.update(d.ref, {
+            "pickupWindow.status": 'COLLECTING', // Keep active
+            "serveFlowStatus": isDynamic ? 'PENDING' : 'READY', // Never show 'Preparing' for static!
+            "orderStatus": 'ACTIVE',
+            "qrStatus": 'ACTIVE',
+            "qrState": 'ACTIVE',
+            "missedCount": currentMissedCount,
+            "arrivalTimeSlot": nextSlot, // Audit trail
+            "items": reQueuedItems,
+            "updatedAt": serverTimestamp()
+          });
 
-        // 1.5 Update Subcollection Items & Create Kitchen Batches
-        reQueuedItems.forEach((it: any) => {
-           if (it.status === 'PENDING') {
-              // Standardize itemId: prefer 'id' then 'itemId' then 'name'
-              const idName = it.id || it.itemId || it.name;
-              const itRef = doc(db, 'orders', d.id, 'items', idName);
-              // Fallback time for paidAt: guaranteed to be a millisecond number
-              const fallback = (data.confirmedAt?.toMillis?.() || data.confirmedAt || data.createdAt?.toMillis?.() || data.createdAt || Date.now());
-              
-              masterBatch.update(itRef, { 
-                 status: 'PENDING', 
-                 // 🛡️ [TIMESTAMP-STABILITY] Standardize as ms number for consistent query sorting
-                 paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
-                 reQueuedAt: serverTimestamp(),
-                 updatedAt: serverTimestamp() 
-              });
+          // 1.5 Update Subcollection Items & Create Kitchen Batches
+          reQueuedItems.forEach((it: any) => {
+             if (it.status === 'PENDING') {
+                const idName = it.id || it.itemId || it.name;
+                const itRef = doc(db, 'orders', d.id, 'items', idName);
+                const fallback = (data.confirmedAt?.toMillis?.() || data.confirmedAt || data.createdAt?.toMillis?.() || data.createdAt || Date.now());
+                
+                masterBatch.update(itRef, { 
+                   status: 'PENDING', 
+                   paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
+                   reQueuedAt: serverTimestamp(),
+                   updatedAt: serverTimestamp() 
+                });
 
-              // ⚡ [INSTANT-KITCHEN-REQUEUE] Blast a new prepBatch for the kitchen terminal
-              const batchRef = doc(collection(db, "prepBatches"));
-              masterBatch.set(batchRef, {
-                 id: batchRef.id,
-                 itemId: idName,
-                 itemName: it.name || 'Unnamed Item',
-                 quantity: it.quantity || 1,
-                 stationId: STATION_ID_BY_ITEM_ID[idName] || 'kitchen',
-                 // ✅ CookConsole rendering requirements
-                 items: [{
-                    id: idName,
-                    itemId: idName,
-                    orderId: d.id,
-                    name: it.name || 'Unnamed Item',
-                    quantity: it.quantity || 1,
-                    userName: data.userName || 'Student',
-                    paymentStatus: data.paymentStatus || 'SUCCESS',
-                 }],
-                 status: 'QUEUED',
-                 paymentStatus: data.paymentStatus || 'SUCCESS',
-                 createdAt: serverTimestamp(),
-                 updatedAt: serverTimestamp(),
-                 orderIds: [d.id],
-                 arrivalTimeSlot: nextSlot,
-                 paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
-                 isRequeued: true // audit trail label
-              });
-           }
-        });
+                const batchRef = doc(collection(db, "prepBatches"));
+                masterBatch.set(batchRef, {
+                   id: batchRef.id,
+                   itemId: idName,
+                   itemName: it.name || 'Unnamed Item',
+                   quantity: it.quantity || 1,
+                   stationId: STATION_ID_BY_ITEM_ID[idName] || 'kitchen',
+                   items: [{
+                      id: idName,
+                      itemId: idName,
+                      orderId: d.id,
+                      name: it.name || 'Unnamed Item',
+                      quantity: it.quantity || 1,
+                      userName: data.userName || 'Student',
+                      paymentStatus: data.paymentStatus || 'SUCCESS',
+                   }],
+                   status: 'QUEUED',
+                   paymentStatus: data.paymentStatus || 'SUCCESS',
+                   createdAt: serverTimestamp(),
+                   updatedAt: serverTimestamp(),
+                   orderIds: [d.id],
+                   arrivalTimeSlot: nextSlot,
+                   paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
+                   isRequeued: true
+                });
+             }
+          });
 
-        // 📣 [ONESIGNAL-STRIKE] Notify student they are bumped to next batch
-        if (data.userId) {
-            const missedItem = (data.items || []).find((it: any) => it.status === 'READY' || it.status === 'COLLECTING');
-            notifyOrderUpdate(data.userId, 'MISSED', missedItem?.name || 'Item');
+          // 📣 [ONESIGNAL-STRIKE] Notify student they are bumped to next batch
+          if (data.userId) {
+              const missedItem = (data.items || []).find((it: any) => it.status === 'READY' || it.status === 'COLLECTING');
+              notifyOrderUpdate(data.userId, 'MISSED', missedItem?.name || 'Item');
+          }
+        } catch (subErr) {
+          console.warn(`[WATCHDOG] Failed to re-queue order ${d.id}`, subErr);
         }
-
       }
       updatedCount++;
     }
