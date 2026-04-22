@@ -3465,13 +3465,12 @@ export const listenToPrepMetrics = (callback: (metrics: { avgPrepTimeMs: number 
 };
 
 export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
-  // ⚡ [INDEX-FREE QUERY]: Only orderBy createdAt — requires NO composite index.
-  // Status filtering is done client-side for maximum reliability.
-  // Firebase auto-indexes single-field queries, so this always works.
+  // ⚡ [BLOOM-FILTER-FIX] Remove limit(100) + orderBy which crashes the local cache Bloom Filter
+  // Instead, use a strict 'in' filter to natively pull ONLY the active/relevant statuses.
+  // This reduces payload size significantly and completely bypasses the cursor indexing bug.
   const q = query(
     collection(db, "prepBatches"),
-    orderBy("createdAt", "desc"),
-    limit(100)
+    where("status", "in", ["QUEUED", "PREPARING", "ALMOST_READY", "READY"])
   );
 
   return safeListener(
