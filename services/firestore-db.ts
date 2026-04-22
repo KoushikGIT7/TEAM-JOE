@@ -1261,74 +1261,80 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
 
     console.log("🍱 [ROOT-FIX] Order committed with Atomic Inventory Guard:", orderId);
 
-    // 🏎️ [PERFORMANCE-PULSE] Offload non-critical post-processing to background
-    // This allows the user to navigate to the QR screen IMMEDIATELY
+    // ⚡ [INSTANT-KITCHEN-INJECT] Write items subcollection + prepBatches IMMEDIATELY
+    // This is the critical path — must NOT be deferred to background for dynamic/dosa orders
+    const now = Date.now();
+
+    // Write per-item subcollection docs (used by CookConsole & brain-logic)
+    const itemWritePromises = itemsWithResolvedType.map((it: any) => {
+      const itRef = doc(db, "orders", id, "items", it.id);
+      const isFast = it.orderType === 'FAST_ITEM';
+      return setDoc(itRef, {
+        ...it,
+        orderId: id,
+        status: isFast ? 'READY' : 'PENDING',
+        paidAt: now,
+        readyAt: isFast ? serverTimestamp() : null,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    });
+
+    // ⚡ [INSTANT-DOSA-BLAST] Create prepBatches for ALL dynamic items immediately
+    // This runs for BOTH UPI (SUCCESS) and CASH (AWAITING_CONFIRMATION) so kitchen
+    // always sees the dosa order instantly — cashier confirms payment later.
+    const batchWritePromises: Promise<any>[] = [];
+    if (isDynamic) {
+      for (const [station, _qty] of Object.entries(qtyByStation)) {
+        const stationItems = prepItems.filter(it => (STATION_ID_BY_ITEM_ID[it.id] || 'default') === station);
+        if (stationItems.length === 0) continue;
+
+        const batchRef = doc(collection(db, "prepBatches"));
+        const firstItem = stationItems[0];
+        const totalQty = stationItems.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
+
+        batchWritePromises.push(setDoc(batchRef, {
+          id: batchRef.id,
+          itemId: firstItem.id,
+          itemName: firstItem.name || 'Unnamed Item',
+          quantity: totalQty,
+          stationId: station,
+          // ✅ All fields CookConsole needs: id, orderId, name, quantity, userName
+          items: stationItems.map(it => ({
+            id: it.id,
+            itemId: it.id,
+            orderId: id,
+            name: it.name,
+            quantity: it.quantity,
+            userName: finalizedOrder.userName,
+            paymentStatus: finalizedOrder.paymentStatus,
+          })),
+          status: 'QUEUED',
+          paymentStatus: finalizedOrder.paymentStatus, // so cook can see if cash/UPI
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          orderIds: [id],
+          arrivalTimeSlot: targetSlot,
+          paidAt: now,
+        }));
+      }
+    }
+
+    // Fire all kitchen writes in parallel — instant kitchen delivery
+    await Promise.all([...itemWritePromises, ...batchWritePromises]);
+
+    // 🏎️ [BACKGROUND] Non-critical: slot stats + idempotency + cache (never blocks QR release)
     (async () => {
       try {
         if (isDynamic) {
-          // 1. Slot Stats Pulse
-          const incrementPayload: any = { 
-              totalVolume: increment(requestedQty), 
-              updatedAt: serverTimestamp() 
+          const incrementPayload: any = {
+            totalVolume: increment(requestedQty),
+            updatedAt: serverTimestamp()
           };
           for (const [station, qty] of Object.entries(qtyByStation)) {
-              incrementPayload[station] = increment(qty);
+            incrementPayload[station] = increment(qty);
           }
           await setDoc(doc(db, "slot_stats", targetSlot.toString()), incrementPayload, { merge: true });
-
-          // 2. Kitchen Batch Injection
-          if (finalizedOrder.paymentStatus === 'SUCCESS') {
-              const now = Date.now();
-              
-              // Update individual item statuses
-              await Promise.all(itemsWithResolvedType.map((it: any) => {
-                 const itRef = doc(db, "orders", id, "items", it.id);
-                 const isFast = it.orderType === 'FAST_ITEM';
-                 
-                 return setDoc(itRef, { 
-                   ...it, 
-                   status: isFast ? 'READY' : 'PENDING', 
-                   paidAt: now, 
-                   readyAt: isFast ? serverTimestamp() : null,
-                   updatedAt: serverTimestamp() 
-                 }, { merge: true });
-              }));
-
-              // Create prepBatch
-              if (isDynamic) {
-                for (const [station, _qty] of Object.entries(qtyByStation)) {
-                    const stationItems = prepItems.filter(it => (STATION_ID_BY_ITEM_ID[it.id] || 'default') === station);
-                    if (stationItems.length === 0) continue;
-
-                    const batchRef = doc(collection(db, "prepBatches"));
-                    const firstItem = stationItems[0];
-                    const totalQty = stationItems.reduce((acc, curr) => acc + (curr.quantity || 1), 0);
-
-                    await setDoc(batchRef, {
-                       id: batchRef.id,
-                       itemId: firstItem.id,
-                       itemName: firstItem.name || 'Unnamed Item',
-                       quantity: totalQty,
-                       stationId: station,
-                       items: stationItems.map(it => ({
-                          orderId: id,
-                          itemId: it.id,
-                          name: it.name,
-                          quantity: it.quantity,
-                          userName: finalizedOrder.userName
-                       })),
-                       status: 'QUEUED',
-                       createdAt: serverTimestamp(),
-                       updatedAt: serverTimestamp(),
-                       orderIds: [id],
-                       arrivalTimeSlot: targetSlot
-                    });
-                }
-              }
-          }
         }
-
-        // 3. IDEMPOTENCY & CACHE
         if (idempRef) await setDoc(idempRef, { orderId: id, createdAt: serverTimestamp() });
         const { invalidateReportsCache } = await import('./reporting');
         invalidateReportsCache();
