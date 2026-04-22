@@ -13,6 +13,13 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
   const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [processingItem, setProcessingItem] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // ⏱️ Live clock — ticks every second so "Live Sync" is genuinely live
+  useEffect(() => {
+    const tick = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   useEffect(() => {
     const unsub = listenToBatches((live) => {
@@ -73,7 +80,7 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
         <div className="flex items-center gap-4">
           <div className="text-right mr-6 hidden md:block">
             <div className="text-3xl font-black font-mono">
-              {new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+              {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
             <div className="text-gray-500 font-bold tracking-widest text-[10px] uppercase">Live Sync</div>
           </div>
