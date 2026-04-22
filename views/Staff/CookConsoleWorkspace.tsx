@@ -107,11 +107,19 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
         ? b.items.reduce((sum, it) => sum + (it.quantity || 1), 0)
         : (b.quantity || 1);
       
+      const getMs = (val: any) => {
+        if (!val) return 0;
+        if (typeof val.toMillis === 'function') return val.toMillis();
+        if (typeof val === 'number') return val;
+        if (val.seconds) return val.seconds * 1000;
+        return 0;
+      };
+
       return {
         ...b,
         status: optimisticStatus[b.id] ?? b.status, 
         totalUnits,
-        batchCreatedAt: (b.createdAt as any)?.toMillis?.() ?? (b.createdAt as number) ?? 0,
+        batchCreatedAt: getMs(b.createdAt),
         id: b.id
       };
     });
