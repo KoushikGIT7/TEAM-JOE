@@ -3465,39 +3465,39 @@ export const listenToPrepMetrics = (callback: (metrics: { avgPrepTimeMs: number 
 };
 
 export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
-  const qOptimized = query(
-     collection(db, "prepBatches"), 
-     where("status", "in", ["QUEUED", "PREPARING", "ALMOST_READY", "READY"]),
-     orderBy("updatedAt", "asc"),
-     limit(50)
-  );
-
-  const qFallback = query(
-     collection(db, "prepBatches"), 
-     where("status", "in", ["QUEUED", "PREPARING", "ALMOST_READY", "READY"]),
-     limit(50)
+  // ⚡ [INDEX-FREE QUERY]: Only orderBy createdAt — requires NO composite index.
+  // Status filtering is done client-side for maximum reliability.
+  // Firebase auto-indexes single-field queries, so this always works.
+  const q = query(
+    collection(db, "prepBatches"),
+    orderBy("createdAt", "desc"),
+    limit(100)
   );
 
   return safeListener(
     'staff-prep-batches',
-    qOptimized,
-    (snap: any) => snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as PrepBatch)),
+    q,
+    (snap: any) => snap.docs.map((d: any) => ({ ...d.data(), id: d.id } as PrepBatch)),
     () => [],
-    (live) => {
-       // --- FIX 7: PRIORITY SORT (READY_AT) ---
-       const sorted = live.sort((a, b) => {
-          if (a.status === 'READY' && b.status === 'READY') {
-             return (a.readyAt || a.updatedAt || 0) - (b.readyAt || b.updatedAt || 0);
-          }
-          return (a.updatedAt || 0) - (b.updatedAt || 0);
-       });
+    (all: PrepBatch[]) => {
+      // Filter to only active statuses client-side
+      const active = all.filter(b =>
+        b.status === 'QUEUED' || b.status === 'PREPARING' ||
+        b.status === 'ALMOST_READY' || b.status === 'READY'
+      );
 
-       // --- FIX 2: MAX_READY_VISIBLE = 5 (READY_HOLD) ---
-       const ready = sorted.filter(b => b.status === 'READY' || b.status === 'ALMOST_READY');
-       const prep = sorted.filter(b => b.status === 'QUEUED' || b.status === 'PREPARING');
-       callback([...prep, ...ready.slice(0, 5)]);
-    },
-    qFallback
+      // Sort: QUEUED/PREPARING by createdAt asc (oldest first = highest priority)
+      // READY/ALMOST_READY by readyAt asc (served in order they became ready)
+      const prep = active
+        .filter(b => b.status === 'QUEUED' || b.status === 'PREPARING')
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+      const ready = active
+        .filter(b => b.status === 'READY' || b.status === 'ALMOST_READY')
+        .sort((a, b) => (a.readyAt || a.updatedAt || 0) - (b.readyAt || b.updatedAt || 0));
+
+      callback([...prep, ...ready.slice(0, 5)]);
+    }
   );
 };
 
