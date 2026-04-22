@@ -39,8 +39,8 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
     const now = Date.now();
     const token = data.trim();
     
-    // 🛡️ [RAPID-DEBOUNCE]: Fast-track next scanner (800ms ttl)
-    if (lastScannedTokenRef.current?.token === token && now - lastScannedTokenRef.current.time < 800) return;
+    // 🛡️ [RAPID-DEBOUNCE]: Prevent double-scans of the same QR code while phone is held up (4000ms ttl)
+    if (lastScannedTokenRef.current?.token === token && now - lastScannedTokenRef.current.time < 4000) return;
     if (isProcessingScannerRef.current) return;
     
     isProcessingScannerRef.current = true;

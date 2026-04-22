@@ -3922,7 +3922,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
           "updatedAt": serverTimestamp()
         });
 
-        // 1.5 Update Subcollection Items (Cook Console uses subcollections)
+        // 1.5 Update Subcollection Items & Create Kitchen Batches
         reQueuedItems.forEach((it: any) => {
            if (it.status === 'PENDING') {
               // Standardize itemId: prefer 'id' then 'itemId' then 'name'
@@ -3937,6 +3937,34 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
                  paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
                  reQueuedAt: serverTimestamp(),
                  updatedAt: serverTimestamp() 
+              });
+
+              // ⚡ [INSTANT-KITCHEN-REQUEUE] Blast a new prepBatch for the kitchen terminal
+              const batchRef = doc(collection(db, "prepBatches"));
+              masterBatch.set(batchRef, {
+                 id: batchRef.id,
+                 itemId: idName,
+                 itemName: it.name || 'Unnamed Item',
+                 quantity: it.quantity || 1,
+                 stationId: STATION_ID_BY_ITEM_ID[idName] || 'kitchen',
+                 // ✅ CookConsole rendering requirements
+                 items: [{
+                    id: idName,
+                    itemId: idName,
+                    orderId: d.id,
+                    name: it.name || 'Unnamed Item',
+                    quantity: it.quantity || 1,
+                    userName: data.userName || 'Student',
+                    paymentStatus: data.paymentStatus || 'SUCCESS',
+                 }],
+                 status: 'QUEUED',
+                 paymentStatus: data.paymentStatus || 'SUCCESS',
+                 createdAt: serverTimestamp(),
+                 updatedAt: serverTimestamp(),
+                 orderIds: [d.id],
+                 arrivalTimeSlot: nextSlot,
+                 paidAt: (it.paidAt?.toMillis?.() || it.paidAt || fallback),
+                 isRequeued: true // audit trail label
               });
            }
         });
