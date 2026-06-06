@@ -5,7 +5,7 @@ import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
 import { UserProfile, MenuItem, CartItem, Order } from '../../types';
 import { CATEGORIES, STATION_ID_BY_ITEM_ID, FAST_ITEM_CATEGORIES } from '../../constants';
-import { getMenuOnce, listenToUserOrders, saveCartDraft } from '../../services/firestore-db';
+import { getMenuOnce, listenToUserOrders } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import Logo from '../../components/Logo';
 import { 
@@ -119,7 +119,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
       }
       const cartArray = Object.values(newCart);
       localStorage.setItem('joe_cart', JSON.stringify(cartArray));
-      if (profile?.uid) saveCartDraft(profile.uid, cartArray);
+      // ⚡ [OPTIMIZATION] Cart lives in localStorage only — no Firestore write needed per tap
       return newCart;
     });
   };

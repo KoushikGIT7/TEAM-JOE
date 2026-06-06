@@ -8,7 +8,6 @@ import { requestNotificationPermission } from './services/notificationService';
 import { UserProfile } from './types';
 import { Bell, X } from 'lucide-react';
 import { joeSounds } from './utils/audio';
-import { useOneSignal } from './services/onesignal-push';
 import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
 
 // Views — Staff + Admin only; student portal removed
@@ -54,9 +53,6 @@ const App: React.FC = () => {
 
   // 🛠️ [SYSTEM-STABILITY] Background Maintenance (Leaders only)
   useMaintenanceWorker(profile?.uid || null, profile?.role || null);
-
-  // 📣 [ONESIGNAL-HANDSHAKE] Automated enrollment once identity is established
-  useOneSignal(profile?.uid || null);
 
   // 🔊 [SONIC-UNLOCK] Silently wake AudioContext on first interaction (no audible sound)
   useEffect(() => {

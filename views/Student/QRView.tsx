@@ -162,9 +162,27 @@ const ItemDotByQR: React.FC<{ item: CartItem; isActive: boolean; onClick: () => 
 };
 
 const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
-  const [order, setOrder] = useState<Order | null>(null);
-  const [liveItems, setLiveItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [order, setOrder] = useState<Order | null>(() => {
+    try {
+      const opt = sessionStorage.getItem('joe_optimistic_order');
+      if (opt) {
+        const parsed = JSON.parse(opt);
+        if (parsed.id === orderId) return parsed;
+      }
+    } catch {}
+    return null;
+  });
+  const [liveItems, setLiveItems] = useState<any[]>(() => {
+    try {
+      const opt = sessionStorage.getItem('joe_optimistic_order');
+      if (opt) {
+        const parsed = JSON.parse(opt);
+        if (parsed.id === orderId) return parsed.items || [];
+      }
+    } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(!order);
   const [flashState, setFlashState] = useState<'GREEN' | 'RED' | null>(null);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
   const [tick, setTick] = useState(0);
@@ -200,8 +218,12 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     if (!orderId) return;
     return listenToOrder(orderId, (data) => {
       if (!isMounted.current) return;
-      setOrder(data);
-      setLoading(false);
+      // 🛡️ Guard against the initial local snapshot returning null while the
+      // background createOrder transaction is still in-flight.
+      if (data) {
+        setOrder(data);
+        setLoading(false);
+      }
     });
   }, [orderId]);
 
@@ -210,7 +232,9 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     const q = query(collection(db, 'orders', orderId, 'items'));
     return onSnapshot(q, (snap) => {
       if (!isMounted.current) return;
-      setLiveItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (!snap.empty) {
+        setLiveItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
     });
   }, [orderId]);
 

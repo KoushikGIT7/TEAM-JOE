@@ -1,22 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "items",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "paidAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "items",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "readyAt", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "orders",
       "queryScope": "COLLECTION",
       "fields": [
@@ -46,23 +30,6 @@
       "collectionGroup": "orders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "orderStatus", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "orderStatus", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
         { "fieldPath": "paymentStatus", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
@@ -81,25 +48,6 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "orderStatus", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "orderStatus", "order": "ASCENDING" },
-        { "fieldPath": "paymentStatus", "order": "ASCENDING" },
-        { "fieldPath": "qrStatus", "order": "ASCENDING" },
-        { "fieldPath": "scannedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "paymentType", "order": "ASCENDING" },
-        { "fieldPath": "paymentStatus", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -124,9 +72,9 @@
       "collectionGroup": "orders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "preparationStationId", "order": "ASCENDING" },
-        { "fieldPath": "serveFlowStatus", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        { "fieldPath": "paymentType", "order": "ASCENDING" },
+        { "fieldPath": "paymentStatus", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
     {
@@ -138,44 +86,11 @@
       ]
     },
     {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "qrState", "order": "ASCENDING" },
-        { "fieldPath": "scannedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "pickupWindow.status", "order": "ASCENDING" },
-        { "fieldPath": "orderStatus", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "pickupWindow.status", "order": "ASCENDING" },
-        { "fieldPath": "orderStatus", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "prepBatches",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "prepBatches",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "ASCENDING" }
       ]
     },
     {
@@ -196,11 +111,11 @@
       ]
     },
     {
-      "collectionGroup": "notificationLogs",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "items",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "sentAt", "order": "DESCENDING" }
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "paidAt", "order": "ASCENDING" }
       ]
     }
   ],
@@ -214,6 +129,51 @@
         { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" },
         { "queryScope": "COLLECTION_GROUP", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "overrides",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "batchIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "sentPickupReminderAt",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "missedCount",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "estimatedQueueStartTime",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "missedFromBatchId",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "queuePosition",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "orders",
+      "fieldPath": "queueStatus",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "prepBatches",
+      "fieldPath": "orderIds",
+      "indexes": []
     }
   ]
 }

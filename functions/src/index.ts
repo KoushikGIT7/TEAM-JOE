@@ -5,97 +5,118 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📣 [ONESIGNAL] Secure notification engine — runs ONLY on the backend.
-// The REST API key NEVER touches the browser bundle.
-// Set via: firebase functions:secrets:set ONESIGNAL_REST_API_KEY
-// ─────────────────────────────────────────────────────────────────────────────
-
-const ONESIGNAL_APP_ID = "2561939d-5fe5-4311-b95c-c12b7ee9ded0";
-
 type NotificationEvent =
   | "PAYMENT_SUCCESS"
   | "PAYMENT_REJECTED"
-  | "FIRST_ITEM_READY"
   | "FULL_ORDER_READY"
-  | "ORDER_MISSED";
-
-interface NotificationPayload {
-  title: string;
-  body: string;
-  data?: Record<string, string>;
-}
-
-const NOTIFICATION_TEMPLATES: Record<NotificationEvent, NotificationPayload> = {
-  PAYMENT_SUCCESS: {
-    title: "✅ Payment Received",
-    body: "Your order is confirmed and now in the kitchen queue.",
-  },
-  PAYMENT_REJECTED: {
-    title: "❌ Payment Rejected",
-    body: "Your payment was declined by the cashier. Please pay again.",
-  },
-  FIRST_ITEM_READY: {
-    title: "⚡ First Item Ready",
-    body: "Your first item is ready. Head to the counter!",
-  },
-  FULL_ORDER_READY: {
-    title: "🎉 Order Ready for Pickup",
-    body: "Your full order is ready. Come collect it now!",
-  },
-  ORDER_MISSED: {
-    title: "⚠️ Order Re-queued",
-    body: "Your pickup window was missed. Your order has been re-queued.",
-  },
-};
+  | "ORDER_COLLECTED";
 
 /**
- * 🚀 [BACKEND-NOTIFY] Sends a targeted OneSignal push to a student.
- * Fails gracefully — never blocks the calling transaction.
+ * 🚀 [BACKEND-NOTIFY] Sends targeted FCM push notifications to a student's active devices.
+ * Prunes dead tokens on delivery failure to maintain zero bloat.
  */
 async function sendNotification(
-  externalUserId: string,
+  userId: string,
   event: NotificationEvent,
-  orderId: string
+  orderId: string,
+  orderData: any
 ): Promise<void> {
-  const apiKey = process.env.ONESIGNAL_REST_API_KEY;
-  if (!apiKey) {
-    functions.logger.error("[NOTIFY-ERROR] ONESIGNAL_REST_API_KEY secret not set.");
+  // 1. Determine title and body based on event and paymentType
+  let title = "";
+  let body = "";
+
+  if (event === "PAYMENT_SUCCESS") {
+    if (orderData.paymentType === "UPI") {
+      title = "Payment Confirmed";
+      body = "Your order has been placed successfully.";
+    } else {
+      // CASH order confirmed/approved by Cashier
+      title = "Order Confirmed";
+      body = "Your order has been accepted and is being prepared.";
+    }
+  } else if (event === "PAYMENT_REJECTED") {
+    title = "Order Rejected";
+    body = "Your order could not be accepted. Please contact the cashier.";
+  } else if (event === "FULL_ORDER_READY") {
+    title = "Order Ready for Pickup";
+    body = "Your order is ready at the counter.";
+  } else if (event === "ORDER_COLLECTED") {
+    title = "Order Completed";
+    body = "Your order has been successfully collected.";
+  } else {
+    // Unknown or unsupported event
     return;
   }
 
-  const template = NOTIFICATION_TEMPLATES[event];
-  if (!template) {
-    functions.logger.warn(`[NOTIFY-WARN] Unknown event type: ${event}`);
+  // 2. Fetch user's FCM tokens from Firestore
+  const userRef = db.collection("users").doc(userId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    functions.logger.warn(`[FCM-WARN] User ${userId} profile not found.`);
+    return;
+  }
+
+  const userData = userSnap.data()!;
+  const tokens: string[] = userData.fcmTokens || [];
+  if (userData.fcmToken) {
+    tokens.push(userData.fcmToken); // Fallback for legacy single token field
+  }
+
+  // Deduplicate and filter out empty strings
+  const uniqueTokens = Array.from(new Set(tokens.filter(t => typeof t === 'string' && t.trim() !== '')));
+
+  if (uniqueTokens.length === 0) {
+    functions.logger.info(`[FCM-INFO] No registered FCM tokens for user ${userId}. Skipping push.`);
     return;
   }
 
   const payload = {
-    app_id: ONESIGNAL_APP_ID,
-    include_external_user_ids: [externalUserId],
-    channel_for_external_user_ids: "push",
-    headings: { en: template.title },
-    contents: { en: template.body },
-    data: { orderId, event, ...(template.data || {}) },
-    priority: 10,
-    ttl: 3600,
+    notification: {
+      title,
+      body,
+    },
+    data: {
+      orderId,
+      event,
+    },
   };
 
+  functions.logger.info(`[FCM] Sending ${event} to user ${userId} (${uniqueTokens.length} devices)`);
+
   try {
-    const fetch = (await import("node-fetch")).default;
-    const response = await fetch("https://onesignal.com/api/v1/notifications", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        Authorization: `Basic ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: uniqueTokens,
+      notification: payload.notification,
+      data: payload.data,
     });
-    const result = await response.json() as Record<string, unknown>;
-    functions.logger.info(`[NOTIFY] ${event} sent for order ${orderId}`, { result });
+
+    const tokensToRemove: string[] = [];
+    response.responses.forEach((res, index) => {
+      if (!res.success) {
+        const err = res.error;
+        if (err) {
+          const code = err.code;
+          functions.logger.warn(`[FCM-SEND-ERROR] Token error at index ${index} (${uniqueTokens[index]}): ${code}`);
+          if (
+            code === "messaging/invalid-registration-token" ||
+            code === "messaging/registration-token-not-registered"
+          ) {
+            tokensToRemove.push(uniqueTokens[index]);
+          }
+        }
+      }
+    });
+
+    // Prune invalid/unregistered tokens from the database
+    if (tokensToRemove.length > 0) {
+      functions.logger.info(`[FCM-CLEANUP] Pruning ${tokensToRemove.length} stale tokens for user ${userId}`);
+      await userRef.update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToRemove),
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
   } catch (err) {
-    functions.logger.error(`[NOTIFY-ERROR] OneSignal send failed for order ${orderId}`, err);
-    // NON-BLOCKING: swallow error, business flow continues
+    functions.logger.error(`[FCM-ERROR] Multicast failed for order ${orderId}`, err);
   }
 }
 
@@ -105,7 +126,7 @@ async function sendNotification(
  */
 async function markEventSent(
   orderId: string,
-  event: NotificationEvent
+  event: string
 ): Promise<boolean> {
   const ref = db.collection("orders").doc(orderId);
 
@@ -127,7 +148,7 @@ async function markEventSent(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🔥 CLOUD FUNCTION: onOrderWrite — Watches ALL order-level state changes
-// Triggers: PAYMENT_SUCCESS, PAYMENT_REJECTED, FULL_ORDER_READY
+// Triggers: PAYMENT_SUCCESS, PAYMENT_REJECTED, FULL_ORDER_READY, ORDER_COLLECTED
 // ─────────────────────────────────────────────────────────────────────────────
 export const onOrderWrite = functions
   .firestore.document("orders/{orderId}")
@@ -144,14 +165,14 @@ export const onOrderWrite = functions
 
     const studentId: string = after.userId;
 
-    // ── PAYMENT SUCCESS ─────────────────────────────────────────────────────
+    // ── PAYMENT SUCCESS / CASHIER APPROVED ──────────────────────────────────────
     const wasNotPaid = !before || (before.paymentStatus !== "SUCCESS" && before.paymentStatus !== "VERIFIED");
     const isNowPaid = after.paymentStatus === "SUCCESS" || after.paymentStatus === "VERIFIED";
     if (wasNotPaid && isNowPaid) {
       const duplicate = await markEventSent(orderId, "PAYMENT_SUCCESS");
       if (!duplicate) {
         functions.logger.info(`[NOTIFY] PAYMENT_SUCCESS queued for order ${orderId}`);
-        await sendNotification(studentId, "PAYMENT_SUCCESS", orderId);
+        await sendNotification(studentId, "PAYMENT_SUCCESS", orderId, after);
       } else {
         functions.logger.info(`[NOTIFY-WARN] Duplicate PAYMENT_SUCCESS skipped for order ${orderId}`);
       }
@@ -159,13 +180,13 @@ export const onOrderWrite = functions
     }
 
     // ── PAYMENT REJECTED ────────────────────────────────────────────────────
-    const wasNotRejected = !before || before.paymentStatus !== "REJECTED";
-    const isNowRejected = after.paymentStatus === "REJECTED";
+    const wasNotRejected = !before || (before.paymentStatus !== "REJECTED" && before.orderStatus !== "REJECTED");
+    const isNowRejected = after.paymentStatus === "REJECTED" || after.orderStatus === "REJECTED";
     if (wasNotRejected && isNowRejected) {
       const duplicate = await markEventSent(orderId, "PAYMENT_REJECTED");
       if (!duplicate) {
         functions.logger.info(`[NOTIFY] PAYMENT_REJECTED sent for order ${orderId}`);
-        await sendNotification(studentId, "PAYMENT_REJECTED", orderId);
+        await sendNotification(studentId, "PAYMENT_REJECTED", orderId, after);
       } else {
         functions.logger.info(`[NOTIFY-WARN] Duplicate PAYMENT_REJECTED skipped for order ${orderId}`);
       }
@@ -179,74 +200,37 @@ export const onOrderWrite = functions
       const duplicate = await markEventSent(orderId, "FULL_ORDER_READY");
       if (!duplicate) {
         functions.logger.info(`[NOTIFY] FULL_ORDER_READY sent for order ${orderId}`);
-        await sendNotification(studentId, "FULL_ORDER_READY", orderId);
+        await sendNotification(studentId, "FULL_ORDER_READY", orderId, after);
       } else {
         functions.logger.info(`[NOTIFY-WARN] Duplicate FULL_ORDER_READY skipped for order ${orderId}`);
       }
       return;
     }
 
-    // ── ORDER MISSED (Re-queued) ─────────────────────────────────────────────
-    const wasNotMissed = !before || before.orderStatus !== "MISSED";
-    const isNowMissed = after.orderStatus === "MISSED";
-    if (wasNotMissed && isNowMissed) {
-      const duplicate = await markEventSent(orderId, "ORDER_MISSED");
+    // ── ORDER COLLECTED ─────────────────────────────────────────────────────
+    const wasNotCompleted = !before || (before.orderStatus !== "COMPLETED" && before.serveFlowStatus !== "SERVED");
+    const isNowCompleted = after.orderStatus === "COMPLETED" || after.serveFlowStatus === "SERVED";
+    if (wasNotCompleted && isNowCompleted) {
+      const duplicate = await markEventSent(orderId, "ORDER_COLLECTED");
       if (!duplicate) {
-        functions.logger.info(`[NOTIFY] ORDER_MISSED sent for order ${orderId}`);
-        await sendNotification(studentId, "ORDER_MISSED", orderId);
+        functions.logger.info(`[NOTIFY] ORDER_COLLECTED sent for order ${orderId}`);
+        await sendNotification(studentId, "ORDER_COLLECTED", orderId, after);
+      } else {
+        functions.logger.info(`[NOTIFY-WARN] Duplicate ORDER_COLLECTED skipped for order ${orderId}`);
       }
+      return;
     }
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔥 CLOUD FUNCTION: onItemWrite — Watches item subcollection for FIRST_ITEM_READY
-// Triggers: FIRST_ITEM_READY (only once, even when many items become READY)
+// 🔥 CLOUD FUNCTION: onItemWrite — Watches item subcollection (No-op FCM)
 // ─────────────────────────────────────────────────────────────────────────────
 export const onItemWrite = functions
   .firestore.document("orders/{orderId}/items/{itemId}")
   .onWrite(async (change, context) => {
-    const before = change.before.exists ? change.before.data() : null;
-    const after = change.after.exists ? change.after.data() : null;
-    const orderId = context.params.orderId;
-
-    if (!after) return;
-
-    // Only care about PREPARATION_ITEM going READY
-    const itemType = after.orderType || "PREPARATION_ITEM";
-    if (itemType === "FAST_ITEM") return; // Static items never need a FIRST_ITEM_READY push
-
-    const wasNotReady = !before || before.status !== "READY";
-    const isNowReady = after.status === "READY";
-    if (!wasNotReady || !isNowReady) return;
-
-    // Fetch the parent order document to get the studentId
-    const orderSnap = await db.collection("orders").doc(orderId).get();
-    if (!orderSnap.exists) {
-      functions.logger.warn(`[NOTIFY-WARN] Parent order ${orderId} not found for FIRST_ITEM_READY`);
-      return;
-    }
-    const orderData = orderSnap.data()!;
-    if (!orderData.userId) {
-      functions.logger.warn(`[NOTIFY-WARN] Missing userId on order ${orderId}`);
-      return;
-    }
-
-    // Idempotency: only send once per order, even if multiple items go READY
-    const duplicate = await markEventSent(orderId, "FIRST_ITEM_READY");
-    if (duplicate) {
-      functions.logger.info(`[NOTIFY-WARN] Duplicate FIRST_ITEM_READY skipped for order ${orderId}`);
-      return;
-    }
-
-    // Check: if FULL_ORDER_READY was already sent, skip FIRST_ITEM_READY (no spam)
-    const sentEvents = orderData.notificationEvents || {};
-    if (sentEvents["FULL_ORDER_READY"]) {
-      functions.logger.info(`[NOTIFY-WARN] FULL_ORDER_READY already sent for ${orderId}, skipping FIRST_ITEM_READY`);
-      return;
-    }
-
-    functions.logger.info(`[NOTIFY] FIRST_ITEM_READY sent for order ${orderId}`);
-    await sendNotification(orderData.userId, "FIRST_ITEM_READY", orderId);
+    // 🔕 [FCM-SILENCE] FIRST_ITEM_READY pushes have been disabled to prevent spam.
+    // Real-time foreground status tracking is handled via Firestore listeners.
+    return;
   });
 
 // ─────────────────────────────────────────────────────────────────────────────

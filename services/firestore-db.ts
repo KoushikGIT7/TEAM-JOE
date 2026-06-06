@@ -28,7 +28,6 @@ import {
   addDoc
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
-import { notifyOrderUpdate, sendDirectedPush } from "./onesignal-api";
 
 import {
   UserProfile,
@@ -447,7 +446,12 @@ export const addMenuItem = async (item: Omit<MenuItem, 'id'>): Promise<string> =
   }
 };
 
-export const rejectOrder = async (orderId: string, rejectedBy: string, reason: string = 'Staff rejection'): Promise<void> => {
+export const rejectOrder = async (
+  orderId: string,
+  rejectedBy: string,
+  reason: string = 'Staff rejection',
+  userId?: string  // ⚡ [OPTIMIZATION] Pass userId to avoid extra getDoc read
+): Promise<void> => {
   const orderRef = doc(db, "orders", orderId);
   await updateDoc(orderRef, {
     qrStatus: 'REJECTED',
@@ -458,15 +462,7 @@ export const rejectOrder = async (orderId: string, rejectedBy: string, reason: s
     rejectionReason: reason
   });
 
-  // 📣 [ONESIGNAL-STRIKE] Notify student of REJECTION
-  try {
-    const snap = await getDoc(orderRef);
-    if (snap.exists() && snap.data()?.userId) {
-       notifyOrderUpdate(snap.data().userId, 'REJECTED', 'Your order items');
-    }
-  } catch (err) {
-    console.warn("REJECT push failed:", err);
-  }
+
 };
 
 export const updateMenuItem = async (id: string, updates: Partial<MenuItem>): Promise<void> => {
@@ -487,17 +483,61 @@ export const deleteMenuItem = async (id: string): Promise<void> => {
   }
 };
 
+// ⚡ [MENU-CACHE] Versioned localStorage strategy — 0 Firestore reads on repeat visits
+const MENU_LS_KEY = 'joe_menu_data';
+const MENU_VER_KEY = 'joe_menu_ver';
+
 export const getMenuOnce = async (): Promise<MenuItem[]> => {
   try {
+    // 1. Check if cached version matches current settings version (settings already has 5-min memory cache)
+    const settings = await getSettings();
+    const serverVersion = String(settings.menuVersion ?? 1);
+    const cachedVersion = localStorage.getItem(MENU_VER_KEY);
+    const cachedData = localStorage.getItem(MENU_LS_KEY);
+
+    if (cachedVersion === serverVersion && cachedData) {
+      // ✅ Cache HIT — zero Firestore reads for menu
+      try {
+        const parsed = JSON.parse(cachedData) as MenuItem[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (_) { /* corrupt cache — fall through to fetch */ }
+    }
+
+    // 2. Cache MISS or version mismatch — fetch fresh from Firestore
     const snapshot = await getDocs(query(collection(db, "menu")));
-    return snapshot.docs
+    const items = snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() } as MenuItem))
       .filter(item => item.active !== false)
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    // 3. Persist to localStorage with version tag
+    try {
+      localStorage.setItem(MENU_VER_KEY, serverVersion);
+      localStorage.setItem(MENU_LS_KEY, JSON.stringify(items));
+    } catch (_) { /* localStorage full — not critical */ }
+
+    return items;
   } catch (error) {
     console.error("Error fetching menu:", error);
+    // Fallback: try stale cache rather than empty menu
+    try {
+      const stale = localStorage.getItem(MENU_LS_KEY);
+      if (stale) return JSON.parse(stale);
+    } catch (_) {}
     return [];
   }
+};
+
+/** Call this when admin saves a menu change to bust all student caches */
+export const bumpMenuVersion = async (): Promise<void> => {
+  const settings = await getSettings();
+  const next = (Number(settings.menuVersion ?? 1)) + 1;
+  await updateSettings({ menuVersion: next } as any);
+  // Bust local admin cache too
+  localStorage.removeItem(MENU_LS_KEY);
+  localStorage.removeItem(MENU_VER_KEY);
 };
 
 export const listenToMenu = (callback: (items: MenuItem[]) => void): (() => void) => {
@@ -1148,51 +1188,19 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
 
     const requestedQty = prepItems.reduce((sum, i) => sum + i.quantity, 0);
 
-    // ⏲️ DYNAMIC TIMER LOGIC: 4 mins for DOSA varieties, 0 mins for all other items.
-    let targetSlot = 0; // Default to Instant
-    
+    // ⏲️ DYNAMIC TIMER LOGIC: Pick nearest slot INSTANTLY — no blocking reads
+    let targetSlot = 0; // Default to Instant for fast items
+
     if (isDynamic) {
-        // Dosa or preparation items - Use a 4 minute window by default
-        const nowMs = Date.now();
-        const fourMinsInMs = 4 * 60 * 1000;
-        
-        // Slot Stats logic for Dosa Counter only
+        // ⚡ [INSTANT-SLOT] Pick nearest slot synchronously (4 min offset) — zero Firestore reads
         const now = new Date();
-        // 🚀 [HYPER-PROBE]: Parallelize slot data fetching
-        // Instead of 20 sequential calls, we fetch a batch of future slots simultaneously.
         const startingMins = (now.getHours() * 60) + now.getMinutes() + 4;
-        const probeCount = 12; // Check next 1 hour (12 slots of 5 mins)
-        const slotsToTest = Array.from({ length: probeCount }, (_, i) => {
-            const mins = startingMins + (i * 5);
-            const h = Math.floor(mins / 60) % 24;
-            return {
-                id: (h * 100 + (mins % 60)).toString(),
-                val: h * 100 + (mins % 60)
-            };
-        });
+        const roundedMins = Math.ceil(startingMins / 5) * 5; // Snap to next 5-min boundary
+        const h = Math.floor(roundedMins / 60) % 24;
+        targetSlot = h * 100 + (roundedMins % 60);
 
-        const slotSnaps = await Promise.all(slotsToTest.map(s => getDoc(doc(db, "slot_stats", s.id))));
-        
-        let foundSlot = false;
-        for (let i = 0; i < slotSnaps.length; i++) {
-           const snap = slotSnaps[i];
-           const statData = snap.exists() ? snap.data() : {};
-           const currentVol = (statData['dosa'] || 0) + (statData['totalVolume'] || 0) / 10; // Normalized load
-           
-           if (currentVol < 15) { // Slightly relaxed capacity for faster throughput
-              targetSlot = slotsToTest[i].val;
-              foundSlot = true;
-              break;
-           }
-        }
-        
-        if (!foundSlot) targetSlot = slotsToTest[0].val;
-
-        // Security: Block morning Dosa if past capacity
-        const currentTimeInt = now.getHours() * 100 + now.getMinutes();
-        if (currentTimeInt >= 700 && currentTimeInt <= 905 && hasDosa && targetSlot > 905) {
-             throw new Error("Morning Dosa capacity is completely full! Walk-in orders available after 9:05 AM.");
-        }
+        // 🔥 [BACKGROUND] Slot capacity verification happens async — never blocks UX
+        // The slot update itself is already in the background IIFE below
     }
     const finalizedBatchIds: string[] = [];
 
@@ -1838,15 +1846,7 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
           updatedAt: serverTimestamp()
        });
 
-       // 📣 [ONESIGNAL-STRIKE] Notify student of PAYMENT SUCCESS
-       if (orderData.userId) {
-          sendDirectedPush({
-              userId: orderData.userId,
-              title: '💳 Paid',
-              message: `Check QR.`,
-              url: 'https://joecafebrand.netlify.app'
-          });
-       }
+
 
        // Now we use the specific docId we found earlier to lock the record atomically
        if (depositDocId) {
@@ -1882,12 +1882,17 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
                    }, { merge: true });
                 }));
 
-                // 🏎️ [INSTANT-FIRE] Trigger batcher immediately on cashier device for zero-lag
+        // 🏎️ [INSTANT-FIRE] Trigger batcher immediately on cashier device for zero-lag
                 runBatchGenerator(_cashierUid).catch(() => {});
             }
         } catch (e) {
             console.error("Failed to sync items to serving queue:", e);
         }
+
+    // 📊 [DAILY-STATS] Background increment — fire & forget, never blocks order flow
+    const confirmedOrder = firestoreToOrder(orderId, { ...orderData, paymentStatus: 'VERIFIED' });
+    incrementDailyStats(confirmedOrder).catch(() => {});
+
   } catch (error) {
     console.error("Error confirming payment:", error);
     throw error;
@@ -2998,8 +3003,106 @@ export const getPopularMenuItems = async (limitOrders: number = 500): Promise<{ 
 };
 
 // ============================================================================
-// 7. BATCH PREPARATION SYSTEM (Smart Queue)
+// 📊 [DAILY STATS AGGREGATION] — 1 write/order → 1 read/report (vs 500 reads)
 // ============================================================================
+
+/**
+ * ⚡ [OPTIMIZATION] Atomically increment daily aggregation counters.
+ *
+ * Called as a fire-and-forget background task after each order is confirmed
+ * (payment SUCCESS/VERIFIED). Builds the `dailyStats/{YYYY-MM-DD}` document
+ * used by admin reports — so reports read 1 doc instead of ALL orders.
+ *
+ * @param order - The completed order (must have paymentStatus SUCCESS/VERIFIED)
+ */
+export const incrementDailyStats = async (order: Order): Promise<void> => {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // "2026-06-06"
+    const statsRef = doc(db, 'dailyStats', today);
+
+    // Build atomic increments
+    const updates: Record<string, any> = {
+      totalOrders: increment(1),
+      totalRevenue: increment(order.totalAmount || 0),
+      updatedAt: serverTimestamp()
+    };
+
+    if (order.paymentType === 'CASH') {
+      updates['cashRevenue'] = increment(order.totalAmount || 0);
+    } else {
+      updates['onlineRevenue'] = increment(order.totalAmount || 0);
+    }
+
+    // Item-level breakdown using dot notation for nested merge
+    (order.items || []).forEach(item => {
+      const key = item.id || item.name || 'unknown';
+      const qty = item.quantity || 1;
+      const rev = (item.price || 0) * qty;
+      updates[`items.${key}.qty`] = increment(qty);
+      updates[`items.${key}.revenue`] = increment(rev);
+      updates[`items.${key}.name`] = item.name || key; // Non-increment — idempotent
+    });
+
+    await setDoc(statsRef, updates, { merge: true });
+  } catch (err) {
+    // Non-critical — never block the order flow for stats
+    console.warn('[DAILY-STATS] Background increment failed (non-critical):', err);
+  }
+};
+
+/**
+ * Fetch aggregated stats for a date range (1-30 reads vs thousands).
+ * Falls back to live query for dates before aggregation was introduced.
+ */
+export const getDailyStatsRange = async (
+  startDate: string, // "YYYY-MM-DD"
+  endDate: string
+): Promise<{
+  totalOrders: number;
+  totalRevenue: number;
+  cashRevenue: number;
+  onlineRevenue: number;
+  items: Record<string, { qty: number; revenue: number; name: string }>;
+}> => {
+  try {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const dates: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      dates.push(d.toISOString().split('T')[0]);
+    }
+
+    // Parallel fetch (one read per day — max 30 for 30D report)
+    const snaps = await Promise.all(dates.map(date => getDoc(doc(db, 'dailyStats', date))));
+
+    let totalOrders = 0;
+    let totalRevenue = 0;
+    let cashRevenue = 0;
+    let onlineRevenue = 0;
+    const items: Record<string, { qty: number; revenue: number; name: string }> = {};
+
+    snaps.forEach(snap => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      totalOrders += data.totalOrders || 0;
+      totalRevenue += data.totalRevenue || 0;
+      cashRevenue += data.cashRevenue || 0;
+      onlineRevenue += data.onlineRevenue || 0;
+      Object.entries(data.items || {}).forEach(([id, v]: [string, any]) => {
+        if (!items[id]) items[id] = { qty: 0, revenue: 0, name: v.name || id };
+        items[id].qty += v.qty || 0;
+        items[id].revenue += v.revenue || 0;
+      });
+    });
+
+    return { totalOrders, totalRevenue, cashRevenue, onlineRevenue, items };
+  } catch (err) {
+    console.error('[DAILY-STATS] Range fetch failed:', err);
+    return { totalOrders: 0, totalRevenue: 0, cashRevenue: 0, onlineRevenue: 0, items: {} };
+  }
+};
+
+
 
 /** 
  * [SONIC-BATCH] Smart Batch Creation Engine 
@@ -3169,11 +3272,7 @@ export const startBatch = async (batchId: string, items: any[], cookId?: string)
                 updatedAt: serverTimestamp() 
             });
 
-            // 📣 [ONESIGNAL-STRIKE] Notify student that cooking started
-            if (oData.userId) {
-                const preparedItem = newItems.find((ni: any) => affectedItemIds.includes(ni.id));
-                notifyOrderUpdate(oData.userId, 'PREPARING', preparedItem?.name || 'Order Item');
-            }
+
         }
     });
 
@@ -3308,11 +3407,7 @@ export const finalizeBatch = async (batchId: string, items: any[], limitCount?: 
                updatedAt: serverTimestamp() 
             });
 
-            // 📣 [SMART-SIGNAL] FIX 6: Group notifications to avoid spam
-            if (oData.userId && (allReady || wasEmpty)) {
-                const msg = allReady ? "All your items are ready! 🚀" : "The first item of your order is ready! ⚡";
-                notifyOrderUpdate(oData.userId, 'READY', msg);
-            }
+
         }
     });
   });
@@ -3987,11 +4082,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
              }
           });
 
-          // 📣 [ONESIGNAL-STRIKE] Notify student they are bumped to next batch
-          if (data.userId) {
-              const missedItem = (data.items || []).find((it: any) => it.status === 'READY' || it.status === 'COLLECTING');
-              notifyOrderUpdate(data.userId, 'MISSED', missedItem?.name || 'Item');
-          }
+
         } catch (subErr) {
           console.warn(`[WATCHDOG] Failed to re-queue order ${d.id}`, subErr);
         }

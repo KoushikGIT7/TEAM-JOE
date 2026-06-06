@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Smartphone, Banknote, ChevronRight, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Smartphone, Banknote, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { UserProfile, CartItem } from '../../types';
 import { createOrder, listenToOrder, getOrderingEnabled } from '../../services/firestore-db';
 import { doc, serverTimestamp } from 'firebase/firestore';
 import { joeSounds } from '../../utils/audio';
 import { sonicVoice } from '../../services/voice-engine';
+
+/** Generate a local order ID instantly (same format as firestore-db.ts) */
+const genLocalOrderId = () => 'order_' + Math.random().toString(36).substr(2, 9);
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -61,58 +64,97 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
 
   const total = cart.reduce((acc, it) => acc + it.price * it.quantity, 0);
 
-  const handlePayment = async () => {
+  const handlePayment = () => {
     if (state === 'PROCESSING') return;
-    setState('PROCESSING');
-    try {
-      const guestId = profile?.uid || (() => {
-        const s = sessionStorage.getItem('joe_guest_id') || `guest_${Math.random().toString(36).substr(2, 12)}`;
-        sessionStorage.setItem('joe_guest_id', s); return s;
-      })();
 
-      const newOrderId = await createOrder({
+    // ⚡ OPTIMISTIC UI — generate order ID locally, navigate INSTANTLY
+    const guestId = profile?.uid || (() => {
+      const s = sessionStorage.getItem('joe_guest_id') || `guest_${Math.random().toString(36).substr(2, 12)}`;
+      sessionStorage.setItem('joe_guest_id', s); return s;
+    })();
+
+    const optimisticOrderId = genLocalOrderId();
+    localStorage.setItem('activeOrderId', optimisticOrderId);
+    localStorage.removeItem('joe_cart');
+
+    if (selectedMethod === 'UPI') {
+      // UPI: play sound + open UPI app + go to QR screen — zero wait
+      joeSounds.stopAll();
+      joeSounds.playPaymentConfirmed();
+      try {
+        // Only trigger UPI deep link on mobile devices to prevent desktop console errors
+        if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            const q = `?pa=${UPI_PA}&pn=${encodeURIComponent(UPI_PN)}&am=${total}&cu=INR`;
+            const a = document.createElement('a');
+            a.href = `upi://pay${q}`;
+            a.click();
+        }
+      } catch (_) {}
+      localStorage.removeItem('activeOrderId');
+
+      const optimisticOrderPayload = {
+        id: optimisticOrderId, // <-- FIXED: ensure Firestore uses the same ID UI is listening to
         userId: guestId,
         userName: profile?.name || 'Guest',
         items: cart,
         totalAmount: total,
-        paymentType: selectedMethod,
-        // UPI = auto-verified (trust-based, gateway integration later)
-        // CASH = awaits cashier confirmation
-        paymentStatus: selectedMethod === 'UPI' ? 'SUCCESS' : 'AWAITING_CONFIRMATION',
+        paymentType: 'UPI',
+        paymentStatus: 'SUCCESS',
         queueStatus: 'NOT_IN_QUEUE',
         orderStatus: 'PENDING',
-        cashRequestedAt: selectedMethod === 'CASH' ? serverTimestamp() : undefined,
-        qrStatus: selectedMethod === 'UPI' ? 'ACTIVE' : 'PENDING_PAYMENT',
+        qrStatus: 'ACTIVE',
         cafeteriaId: 'MAIN_CAFE',
         idempotencyKey: activeAttemptKey,
-      } as any);
+        createdAt: Date.now()
+      };
 
-      setOrderId(newOrderId);
-      localStorage.setItem('activeOrderId', newOrderId);
-      localStorage.removeItem('joe_cart');
-      if (selectedMethod === 'UPI') {
-        // Try to open UPI app — fails silently on desktop, works on mobile
-        try {
-          const query = `?pa=${UPI_PA}&pn=${encodeURIComponent(UPI_PN)}&am=${total}&cu=INR`;
-          const a = document.createElement('a');
-          a.href = `upi://pay${query}`;
-          a.click();
-        } catch (_) { /* UPI not available on this device — that's fine */ }
-        // Navigate to QR immediately regardless (auto-verified)
-        localStorage.removeItem('activeOrderId');
-        joeSounds.stopAll();
-        joeSounds.playPaymentConfirmed();
-        onSuccess(newOrderId);
-        return;
-      }
+      // ⚡ INSTANT HYDRATION: Save to sessionStorage so QRView renders with 0ms delay
+      sessionStorage.setItem('joe_optimistic_order', JSON.stringify(optimisticOrderPayload));
 
-      joeSounds.stopAll();
-      joeSounds.playOrderPlaced();
-      setState('WAITING');
-    } catch (err: any) {
-      setState('IDLE');
-      alert(err?.message || 'Failed. Please try again.');
+      // 🔥 Commit to Firestore in background — UI already moved on
+      createOrder(optimisticOrderPayload as any).catch(e => {
+          console.warn('[OPTIMISTIC] Background UPI order write failed:', e);
+          alert('Failed to process order on server: ' + (e.message || 'Unknown error'));
+      });
+      
+      onSuccess(optimisticOrderId);
+      return;
     }
+
+    // CASH: show WAITING screen instantly, commit in background
+    joeSounds.stopAll();
+    joeSounds.playOrderPlaced();
+    setOrderId(optimisticOrderId);
+    setState('WAITING');
+
+    // 🔥 Background commit — WAITING screen is already visible
+    createOrder({
+      id: optimisticOrderId, // <-- FIXED: ensure Firestore uses the same ID UI is listening to
+      userId: guestId,
+      userName: profile?.name || 'Guest',
+      items: cart,
+      totalAmount: total,
+      paymentType: 'CASH',
+      paymentStatus: 'AWAITING_CONFIRMATION',
+      queueStatus: 'NOT_IN_QUEUE',
+      orderStatus: 'PENDING',
+      cashRequestedAt: serverTimestamp(),
+      qrStatus: 'PENDING_PAYMENT',
+      cafeteriaId: 'MAIN_CAFE',
+      idempotencyKey: activeAttemptKey,
+    } as any)
+      .then(confirmedId => {
+        // Swap to real Firestore ID once available (usually <2s, but UI already shown)
+        localStorage.setItem('activeOrderId', confirmedId);
+        setOrderId(confirmedId);
+      })
+      .catch(err => {
+        // Firestore failed — roll back to IDLE and show error
+        localStorage.removeItem('activeOrderId');
+        setOrderId(null);
+        setState('IDLE');
+        alert(err?.message || 'Order failed. Please try again.');
+      });
   };
 
   const handleCancel = async () => {
@@ -285,17 +327,14 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           <span className="text-3xl font-black text-gray-900">₹{total}</span>
         </div>
         <button
-          disabled={state === 'PROCESSING' || orderingDisabled}
+          disabled={orderingDisabled}
           onClick={handlePayment}
           className="w-full h-16 bg-gray-900 text-white rounded-[1.5rem] font-black flex items-center justify-between px-8 shadow-xl active:scale-95 transition-all disabled:opacity-40"
         >
           <span className="text-sm uppercase tracking-widest">
-            {state === 'PROCESSING' ? 'Placing Order...' : selectedMethod === 'CASH' ? 'Place Order' : 'Pay with UPI'}
+            {selectedMethod === 'CASH' ? 'Place Order' : 'Pay with UPI'}
           </span>
-          {state === 'PROCESSING'
-            ? <Loader2 className="w-5 h-5 animate-spin" />
-            : <ChevronRight className="w-5 h-5" />
-          }
+          <ChevronRight className="w-5 h-5" />
         </button>
       </div>
     </div>

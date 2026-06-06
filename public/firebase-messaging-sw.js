@@ -1,34 +1,64 @@
-// 👻 [GHOST-SERVICE] JOE Background Messaging SW
-// This file MUST live in your 'public/' folder for the phone to wake up.
+// 👻 [SERVICE-WORKER] JOE Background Messaging Service Worker
+// This file MUST live in the 'public/' folder so that browsers can load it at '/firebase-messaging-sw.js'.
 
-importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
 
-// 🔥 Initialize your project config here (Copy from your Project Settings -> General)
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBRzOIMBTExHkfM92EMNfCodh63t54OKSw",
+  authDomain: "joecafe-a7fff.firebaseapp.com",
+  projectId: "joecafe-a7fff",
+  storageBucket: "joecafe-a7fff.firebasestorage.app",
+  messagingSenderId: "1034738714307",
+  appId: "1:1034738714307:web:95e1f52bfa57a101ae8476"
 };
 
 firebase.initializeApp(firebaseConfig);
-
-// 🔊 [SYSTEM-TRAY] Handle Background Messages
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('📬 Background Pulse Caught:', payload);
+  console.log('📬 Background FCM Message:', payload);
 
-  const notificationTitle = payload.notification.title || "JOE Pulse";
+  const title = payload.notification?.title || payload.data?.title || "JOE Cafeteria";
+  const body = payload.notification?.body || payload.data?.body || "New update regarding your order!";
+  const orderId = payload.data?.orderId || "";
+  
   const notificationOptions = {
-    body: payload.notification.body || "New cafeteria update!",
-    icon: "/logo.png", // Ensure you have a logo in public/ for the system tray
-    tag: 'marketing-pulse',
-    data: { url: window.location.origin }
+    body: body,
+    icon: "/JeoLogoFinal.png",
+    badge: "/JeoLogoFinal.png",
+    tag: orderId || 'order-update',
+    renotify: true,
+    data: {
+      url: self.location.origin + (orderId ? `/?orderId=${orderId}` : ''),
+      orderId: orderId
+    }
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  self.registration.showNotification(title, notificationOptions);
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification.data?.url || self.location.origin;
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // If there's an open window, focus it
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.focus();
+          if ('navigate' in client && client.url !== urlToOpen) {
+            return client.navigate(urlToOpen);
+          }
+          return;
+        }
+      }
+      // If no window is open, open a new one
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
 });

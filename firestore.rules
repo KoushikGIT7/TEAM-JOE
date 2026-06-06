@@ -9,7 +9,6 @@ service cloud.firestore {
     }
 
     function getUserRole() {
-      // Safe read of the role field, forcing to lowercase for normalized comparison
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.lower();
     }
 
@@ -17,8 +16,7 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    // 🛡️ [STAFF-RESOLVER]: Determines if the session belongs to legitimate operations.
-    // Handles case-insensitive roles and provides an email-prefix fast-track for zero-lag UI.
+    // Staff: email prefix fast-track OR Firestore role
     function isStaff() {
       let email = request.auth.token.email.lower();
       let staffEmail = email.matches('^(admin|server|cashier|cook)@.*');
@@ -43,35 +41,55 @@ service cloud.firestore {
       );
     }
 
-    // ─── PUBLIC / OPEN COLLECTIONS ────────────────────────────────────────────
-
+    // ─── MENU — Read public, Write admin only ─────────────────────────────────
     match /menu/{itemId} {
-      allow read, write: if true;
+      allow read: if true;           // Students + guests can browse menu
+      allow write: if isAdmin();     // Only admin can add/edit/delete items
     }
 
+    // ─── SETTINGS — Read public, Write admin only ─────────────────────────────
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
+    match /system_settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ─── SLOT STATS — Read public, Write authenticated ────────────────────────
     match /slot_stats/{slotId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
 
+    // ─── CARTS — Own user only ────────────────────────────────────────────────
     match /carts/{userId} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
+    // ─── INVENTORY (legacy) — Staff only ─────────────────────────────────────
     match /inventory/{itemId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
     }
 
+    // ─── INVENTORY META — Read auth, Write staff (Students can only increment consumed) ──────────────
     match /inventory_meta/{itemId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isStaff() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['consumed', 'updatedAt'])
+      );
+      allow create: if isAuthenticated() && (
+        isStaff() ||
+        request.resource.data.keys().hasOnly(['consumed', 'updatedAt'])
+      );
+      allow delete: if isStaff();
     }
 
-    // ─── INVENTORY SHARDS ─────────────────────────────────────────────────────
-    // Written by staff on each QR serve (atomic shard increment).
-    // Read for aggregated stock calculation in admin/inventory panels.
+    // ─── INVENTORY SHARDS — Auth read, Auth write (shard counter) ─────────────
     match /inventory_shards/{itemId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
@@ -82,6 +100,7 @@ service cloud.firestore {
       }
     }
 
+    // ─── SYSTEM MESSAGES ──────────────────────────────────────────────────────
     match /system_messages/{msgId} {
       allow read: if true;
       allow write: if isStaff();
@@ -89,41 +108,7 @@ service cloud.firestore {
 
     match /system_status/{docId} {
       allow read: if true;
-      allow write: if isAuthenticated(); // metrics written by any logged-in user
-    }
-
-    match /system_settings/{docId} {
-      allow read: if true;
-      allow write: if isStaff();
-    }
-
-    // ─── ORDERS ────────────────────────────────────────────────────────────────
-
-    match /orders/{orderId} {
-      allow read, write: if isAuthenticated();
-
-      match /items/{itemId} {
-        allow read, write: if isAuthenticated();
-      }
-    }
-
-    // ─── PREP BATCHES ─────────────────────────────────────────────────────────
-    // Batch generator, cooks, and servers all need full read/write.
-    // Any authenticated user can read (student order tracking).
-    // Only staff may create/update; only admin may delete.
-
-    match /prepBatches/{batchId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated(); // generator runs as logged-in staff
-      allow delete: if isStaff();
-    }
-
-    // ─── SYSTEM LOCKS ─────────────────────────────────────────────────────────
-    // 🛡️ [ROOT-FIX]: Coordination locks are pure operational signaling.
-    // Restricting these to isStaff() caused pulse failure for non-prefixed staff emails.
-    // Relaxed to isAuthenticated() to ensure background stability across all client nodes.
-    match /system_locks/{lockId} {
-      allow read, write: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /system/{docId} {
@@ -131,8 +116,50 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
-    // ─── IDEMPOTENCY KEYS ─────────────────────────────────────────────────────
+    // ─── ORDERS ───────────────────────────────────────────────────────────────
+    // Students: create own orders + read own orders
+    // Students: cannot write critical status fields (qrStatus, orderStatus, etc.)
+    // Staff: full read/write
+    match /orders/{orderId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
 
+      // Students can update own orders but NEVER critical status fields
+      // Staff can update anything
+      allow update: if isAuthenticated() && (
+        isStaff() ||
+        (
+          request.auth.uid == resource.data.userId &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'qrStatus', 'qrState', 'orderStatus', 'paymentStatus',
+            'serveFlowStatus', 'kitchenStatus', 'confirmedBy', 'confirmedAt',
+            'rejectedBy', 'rejectedAt', 'scannedAt', 'servedAt'
+          ])
+        )
+      );
+
+      // Only staff or the order owner can delete
+      allow delete: if isStaff();
+
+      match /items/{itemId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // ─── PREP BATCHES ─────────────────────────────────────────────────────────
+    match /prepBatches/{batchId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isStaff();
+    }
+
+    // ─── SYSTEM LOCKS ─────────────────────────────────────────────────────────
+    match /system_locks/{lockId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ─── IDEMPOTENCY KEYS ─────────────────────────────────────────────────────
     match /idempotency_keys/{keyId} {
       allow read, create: if isAuthenticated();
       allow update: if false;
@@ -140,13 +167,11 @@ service cloud.firestore {
     }
 
     // ─── USERS ────────────────────────────────────────────────────────────────
-
     match /users/{userId} {
       allow read, write: if request.auth.uid == userId || isAdmin();
     }
 
     // ─── LOGS ─────────────────────────────────────────────────────────────────
-
     match /scanLogs/{logId} {
       allow read, create: if isStaff();
       allow update, delete: if isAdmin();
@@ -158,21 +183,28 @@ service cloud.firestore {
     }
 
     // ─── FINANCE ──────────────────────────────────────────────────────────────
-
     match /dailyReports/{reportId} {
       allow read: if isCashier();
       allow write: if isAdmin();
+    }
+
+    // ─── DAILY STATS (aggregation) ────────────────────────────────────────────
+    match /dailyStats/{dateId} {
+      allow read: if isStaff();
+      allow write: if isAuthenticated(); // background increment after order serve
     }
 
     match /payments_ledger/{utrId} {
       allow read, write: if isStaff();
     }
 
-    // ─── COLLECTIONGROUP: items subcollection ─────────────────────────────────
-    // Batch generator uses collectionGroup('items') to find PENDING items across
-    // all orders in a single indexed query. This must be readable by any
-    // authenticated user (staff) and writable by authenticated users.
+    // ─── NOTIFICATION LOGS ────────────────────────────────────────────────────
+    match /notificationLogs/{logId} {
+      allow read: if isStaff();
+      allow write: if isAuthenticated();
+    }
 
+    // ─── COLLECTIONGROUP: items subcollection ─────────────────────────────────
     match /{path=**}/items/{itemId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();

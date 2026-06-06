@@ -15,11 +15,14 @@ import {
 } from 'recharts';
 import { UserProfile, Order, MenuItem, SystemSettings, InventoryItem, InventoryMetaItem } from '../../types';
 import { 
-  listenToAllOrders, listenToMenu, listenToAllUsers,
+  listenToAllOrders, listenToMenu, getMenuOnce,
   updateUserRole, toggleUserStatus, addMenuItem, updateMenuItem, deleteMenuItem,
-  listenToSettings, updateSettings, listenToInventory, listenToInventoryMeta, updateInventoryItem,
-  getDailyConsumptionByItem, getPopularMenuItems, initializeMenu
+  listenToSettings, updateSettings, listenToInventoryMeta, updateInventoryItem,
+  getDailyConsumptionByItem, getPopularMenuItems, initializeMenu, bumpMenuVersion,
+  listenToAllUsers
 } from '../../services/firestore-db';
+import { getDocs, collection } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { CATEGORIES } from '../../constants';
 import Logo from '../../components/Logo';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
@@ -42,6 +45,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [inventoryMeta, setInventoryMeta] = useState<InventoryMetaItem[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -66,26 +70,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
   const [restockAmount, setRestockAmount] = useState<number>(50);
 
+  // ⚡ [OPTIMIZATION] Only keep real-time listeners where data MUST be live:
+  //   - listenToAllOrders: cashier/admin needs instant order updates
+  //   - listenToSettings:  settings changes must reflect immediately
+  //   - listenToInventoryMeta: stock levels change on every order
+  // getDocs (one-time) for: users list, menu items (admin), legacy inventory
   useEffect(() => {
     const unsubs = [
       listenToAllOrders((data) => {
         setOrders(data);
         offlineDetector.recordPing();
       }),
-      listenToMenu((data) => {
-        setMenuItems(data);
-        offlineDetector.recordPing();
-      }),
-      listenToAllUsers((data) => {
-        setUsers(data);
-        offlineDetector.recordPing();
-      }),
       listenToSettings((data) => {
         setSettings(data);
-        offlineDetector.recordPing();
-      }),
-      listenToInventory((data) => {
-        setInventory(data);
         offlineDetector.recordPing();
       }),
       listenToInventoryMeta((data) => {
@@ -94,6 +91,55 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
       })
     ];
     return () => unsubs.forEach(fn => fn());
+  }, []);
+
+  // ⚡ [OPTIMIZATION] Menu for admin — getDocs once on mount (not real-time)
+  useEffect(() => {
+    getMenuOnce().then(setMenuItems).catch(() => {});
+  }, []);
+
+  // ⚡ [OPTIMIZATION] Users list — getDocs once (admin refreshes manually)
+  const fetchUsers = async () => {
+    setUsersLoading(true);
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const list = snap.docs.map(d => {
+        const data = d.data();
+        const toMs = (ts: any) => ts?.toMillis?.() ?? (typeof ts === 'number' ? ts : Date.now());
+        return {
+          uid: d.id,
+          name: data.name || 'Unknown',
+          email: data.email || '',
+          role: data.role || 'STUDENT',
+          studentType: data.studentType,
+          active: data.active ?? true,
+          createdAt: toMs(data.createdAt),
+          lastActive: toMs(data.lastActive),
+        } as UserProfile;
+      }).sort((a, b) => b.createdAt - a.createdAt);
+      setUsers(list);
+    } catch (e) {
+      console.error('Failed to load users:', e);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  // ⚡ [OPTIMIZATION] Legacy inventory — getDocs once, not real-time
+  useEffect(() => {
+    getDocs(collection(db, 'inventory')).then(snap => {
+      const toMs = (ts: any) => ts?.toMillis?.() ?? Date.now();
+      setInventory(snap.docs.map(d => ({
+        itemId: d.id,
+        itemName: d.data().itemName || '',
+        openingStock: d.data().openingStock || 0,
+        consumed: d.data().consumed || 0,
+        lastUpdated: toMs(d.data().lastUpdated),
+        category: d.data().category || '',
+      } as InventoryItem)));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -221,6 +267,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
       } else {
         await addMenuItem(menuForm);
       }
+      // ⚡ Bust student menu cache so they get fresh menu next visit
+      await bumpMenuVersion();
+      // Refresh admin menu list
+      getMenuOnce().then(setMenuItems).catch(() => {});
       offlineDetector.recordPing();
       setShowMenuModal(false);
       setEditingItem(null);
@@ -522,9 +572,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const renderTeam = () => (
     <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm overflow-hidden animate-in fade-in duration-500">
       <div className="p-5 sm:p-8 border-b flex flex-col gap-4">
-        <div>
-          <h3 className="text-xl font-black text-textMain tracking-tighter uppercase">Team Management</h3>
-          <p className="text-xs text-textSecondary font-bold mt-1">Configure staff roles and access</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-black text-textMain tracking-tighter uppercase">Team Management</h3>
+            <p className="text-xs text-textSecondary font-bold mt-1">Configure staff roles and access</p>
+          </div>
+          {/* ⚡ Manual refresh instead of real-time listener */}
+          <button
+            onClick={fetchUsers}
+            disabled={usersLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl text-[10px] font-black uppercase tracking-widest text-textSecondary hover:bg-primary/10 hover:text-primary transition-all border border-black/5 active:scale-95"
+          >
+            <RefreshCw className={`w-3 h-3 ${usersLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textSecondary" />

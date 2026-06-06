@@ -112,43 +112,39 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
 
-    // 🛡️ [INSTANT-HANDSHAKE] Try Popup flow first for best UX
+    // ⚡ [OPTIMIZATION] Popup-first flow for best UX
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
 
-    // Check for existing profile (will be auto-provisioned by listener if missing)
-    let profile = await getUserProfile(user.uid);
+    // ⚡ [OPTIMIZATION] Do NOT call getUserProfile here — onAuthStateChange already
+    // opens an onSnapshot on users/{uid} which handles profile resolution.
+    // Calling it here was a duplicate read on every login.
+    //
+    // The onAuthStateChange listener will:
+    //   1. Fire with firebaseUser
+    //   2. Open onSnapshot(users/uid)
+    //   3. If profile missing → auto-provision via setDoc
+    //   4. Emit (user, profile) to useAuth
+    //
+    // We return a minimal profile object for immediate UI use — onSnapshot updates it.
+    const email = user.email || '';
+    const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT;
+    const immediateProfile: UserProfile = {
+      uid: user.uid,
+      name: user.displayName || email.split('@')[0] || 'User',
+      email,
+      role: inferredRole,
+      active: true,
+      createdAt: Date.now(),
+    };
 
-    // If profile is missing (brand new user), we define it here for the immediate return
-    if (!profile) {
-      const email = user.email || '';
-      const inferredRole = inferRoleFromEmail(email) || ROLES.STUDENT; // Default to Student for all new Google logins
-
-      profile = {
-        uid: user.uid,
-        name: user.displayName || email.split('@')[0] || 'User',
-        email: email,
-        role: inferredRole,
-        active: true,
-        createdAt: Date.now(),
-      };
-
-      // Fire & Forget: Let the background process handle the DB write
-      setDoc(doc(db, "users", user.uid), {
-        ...profile,
-        lastActive: serverTimestamp(),
-        createdAt: serverTimestamp()
-      }, { merge: true }).catch(e => console.warn("Background provision fail", e));
-    }
-
-    return { user, profile };
+    return { user, profile: immediateProfile };
   } catch (error: any) {
     if (error.code === 'auth/popup-blocked') {
-      // Fallback to Redirect if popup is blocked by browser
       await signInWithRedirect(auth, new GoogleAuthProvider());
       return new Promise(() => { });
     }
-    console.error("❌ Universal Google Login failed:", error);
+    console.error("❌ Google Login failed:", error);
     throw error;
   }
 };
@@ -269,6 +265,14 @@ export const signInAsGuest = async (): Promise<{ user: FirebaseUser | null; prof
  */
 export const signOut = async (): Promise<void> => {
   try {
+    // 🗑️ Clean up FCM registration token on logout to prevent push leaks
+    try {
+      const { clearFCMToken } = await import('./notificationService');
+      await clearFCMToken();
+    } catch (tokenErr) {
+      console.warn("Non-blocking FCM token clearance failure:", tokenErr);
+    }
+    
     await firebaseSignOut(auth);
   } catch (error) {
     console.error("Sign out error:", error);
