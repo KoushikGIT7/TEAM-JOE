@@ -34,16 +34,32 @@ export function NotificationProvider({ children, onViewOrder }: NotificationProv
       const notification = payload.notification || {};
       const data = payload.data || {};
 
-      showToast({
-        title: notification.title || 'Notification',
-        body: notification.body || '',
-        orderReady: data.type === 'ORDER_READY' ? {
-          type: 'ORDER_READY',
-          orderId: data.orderId,
-          pickupWindowStart: data.pickupWindowStart,
-          pickupWindowEnd: data.pickupWindowEnd
-        } as any : undefined
-      });
+      if (document.visibilityState === 'hidden') {
+        // Tab is minimized, backgrounded, or screen is locked. Show native OS notification!
+        try {
+          if (Notification.permission === 'granted') {
+            new Notification(notification.title || 'JOE Cafeteria', {
+              body: notification.body || '',
+              icon: '/JeoLogoFinal.png',
+              tag: data.orderId || 'order-update'
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to trigger native notification in hidden state:', err);
+        }
+      } else {
+        // Tab is active and visible. Show in-app Toast.
+        showToast({
+          title: notification.title || 'Notification',
+          body: notification.body || '',
+          orderReady: data.type === 'ORDER_READY' ? {
+            type: 'ORDER_READY',
+            orderId: data.orderId,
+            pickupWindowStart: data.pickupWindowStart,
+            pickupWindowEnd: data.pickupWindowEnd
+          } as any : undefined
+        });
+      }
     });
     return () => {
       if (typeof unsub === 'function') unsub();
