@@ -152,6 +152,7 @@ export const trackAnalyticsEvent = async (eventName: string, data: Record<string
 };
 
 export const getPushSubscriptionState = (): boolean => {
+  if (typeof window === 'undefined' || !isInitialized) return false;
   try {
     return OneSignal.User.PushSubscription.optedIn ?? false;
   } catch (e) {
@@ -161,6 +162,7 @@ export const getPushSubscriptionState = (): boolean => {
 };
 
 export const setPushSubscriptionState = async (enable: boolean) => {
+  if (typeof window === 'undefined' || !isInitialized) return;
   try {
     if (enable) {
       if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
@@ -177,6 +179,7 @@ export const setPushSubscriptionState = async (enable: boolean) => {
 };
 
 export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => void) => {
+  if (typeof window === 'undefined' || !isInitialized) return;
   try {
     OneSignal.User.PushSubscription.addEventListener("change", (e: any) => {
       if (e && e.current) {
@@ -189,6 +192,7 @@ export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => vo
 };
 
 export const getPushSubscriptionId = (): string | undefined => {
+  if (typeof window === 'undefined' || !isInitialized) return undefined;
   try {
     return OneSignal.User.PushSubscription.id;
   } catch (e) {
