@@ -286,10 +286,10 @@ export const parseServingQR = (rawData: string): ParsedIntakeQR => {
     qrKind: 'MALFORMED'
   };
 
-  // Helper to ensure 'order_' prefix exists
+  // Helper to safely extract ID without forcing a prefix
   const normalizeId = (id: string) => {
      if (!id) return '';
-     return id.startsWith('order_') ? id : `order_${id}`;
+     return id; // Return exact ID to prevent ORDER_NOT_FOUND for naked Firestore IDs
   };
 
   // --- PATH 0: URL Recovery ---
@@ -304,24 +304,30 @@ export const parseServingQR = (rawData: string): ParsedIntakeQR => {
      }
   }
 
-  // --- PATH 1: Modern Secure Payload (v1.order_xxxx.hash.exp) ---
+  // --- PATH 1: Modern Secure Payload (v1.orderId.itemId.hash.exp OR v1.orderId.hash.exp) ---
   if (data.includes('v1.')) {
      const parts = data.split('.');
      const vIdx = parts.findIndex(p => p.startsWith('v1'));
-     if (vIdx !== -1 && parts.length >= vIdx + 4) {
-        result.orderId = normalizeId(parts[vIdx+1]);
-        result.itemId = parts[vIdx+2]; // Extracted target item
-        result.qrKind = 'SECURE_V1';
-        result.paymentMode = 'UPI'; 
-        result.timestamp = parseInt(parts[vIdx+4] || '0', 10);
-        return result;
-     } else if (vIdx !== -1 && parts.length === vIdx + 3) {
-        // Fallback for legacy v1 format without itemId
-        result.orderId = normalizeId(parts[vIdx+1]);
-        result.itemId = 'all';
-        result.qrKind = 'SECURE_V1';
-        result.paymentMode = 'UPI';
-        return result;
+     
+     if (vIdx !== -1) {
+        const len = parts.length - vIdx;
+        if (len >= 5) {
+           // 5-part format: v1.orderId.itemId.hash.exp
+           result.orderId = normalizeId(parts[vIdx+1]);
+           result.itemId = parts[vIdx+2]; 
+           result.qrKind = 'SECURE_V1';
+           result.paymentMode = 'UPI'; 
+           result.timestamp = parseInt(parts[vIdx+4] || '0', 10);
+           return result;
+        } else if (len === 4) {
+           // 4-part format: v1.orderId.hash.exp
+           result.orderId = normalizeId(parts[vIdx+1]);
+           result.itemId = 'all';
+           result.qrKind = 'SECURE_V1';
+           result.paymentMode = 'UPI';
+           result.timestamp = parseInt(parts[vIdx+3] || '0', 10);
+           return result;
+        }
      }
   }
 
