@@ -1103,6 +1103,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
   if (useCallables()) {
     try {
       const { data } = await createOrderCallable({
+        id: (orderData as any).id,
         userId: orderData.userId,
         userName: orderData.userName,
         items: orderData.items.map((item) => ({
@@ -1133,7 +1134,7 @@ export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt'> & {
     }
   }
   try {
-    const id = 'order_' + Math.random().toString(36).substr(2, 9);
+    const id = (orderData as any).id || ('order_' + Math.random().toString(36).substr(2, 9));
     const createdAt = Date.now();
     const itemsWithQty = orderData.items.map(item => {
       // 🛡️ [BLOAT-SHIELD] Absolute zero-bloat strategy
