@@ -22,7 +22,8 @@ import { WalletSummary } from '../../types';
 import { 
   getPushSubscriptionState, 
   setPushSubscriptionState, 
-  addSubscriptionChangeListener 
+  addSubscriptionChangeListener,
+  getPushSubscriptionId
 } from '../../services/onesignal';
 
 interface HomeViewProps {
@@ -44,6 +45,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [subscriptionId, setSubscriptionId] = useState<string | undefined>(undefined);
   const [walletSummary, setWalletSummary] = useState<WalletSummary>({ walletBalance: 0, totalRecharged: 0, totalSpent: 0 });
   const { stockByItemId, isOutOfStock } = useInventory();
 
@@ -57,8 +59,10 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
 
   useEffect(() => {
     setNotificationsEnabled(getPushSubscriptionState());
+    setSubscriptionId(getPushSubscriptionId());
     addSubscriptionChangeListener((optedIn) => {
       setNotificationsEnabled(optedIn);
+      setSubscriptionId(getPushSubscriptionId());
     });
   }, [isDrawerOpen]);
 
@@ -71,11 +75,13 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
     await setPushSubscriptionState(nextState);
     
     setNotificationsEnabled(getPushSubscriptionState());
+    setSubscriptionId(getPushSubscriptionId());
     
     // Poll to sync state if service worker registration takes a moment
     for (const delay of [500, 1000, 2000, 4000]) {
       setTimeout(() => {
         setNotificationsEnabled(getPushSubscriptionState());
+        setSubscriptionId(getPushSubscriptionId());
       }, delay);
     }
   };
@@ -205,26 +211,33 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <Receipt className="w-4 h-4" /> My Order History
           </button>
           {/* Notification Toggle Button */}
-          <button
-            onClick={handleToggleNotifications}
-            className={`w-full py-4 rounded-3xl font-black text-xs uppercase flex items-center justify-between px-5 active:scale-95 transition-all border shadow-sm ${
-              notificationsEnabled 
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-100 hover:bg-emerald-100/70' 
-                : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-slate-100/50'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Bell className={`w-4 h-4 ${notificationsEnabled ? 'text-emerald-600 animate-bounce' : 'text-slate-400'}`} />
-              <span>Notifications</span>
-            </div>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              notificationsEnabled 
-                ? 'bg-emerald-200 text-emerald-900' 
-                : 'bg-slate-200 text-slate-500'
-            }`}>
-              {notificationsEnabled ? 'ON' : 'OFF'}
-            </span>
-          </button>
+          <div className="flex flex-col gap-1.5 w-full">
+            <button
+              onClick={handleToggleNotifications}
+              className={`w-full py-4 rounded-3xl font-black text-xs uppercase flex items-center justify-between px-5 active:scale-95 transition-all border shadow-sm ${
+                notificationsEnabled 
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-100 hover:bg-emerald-100/70' 
+                  : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-slate-100/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Bell className={`w-4 h-4 ${notificationsEnabled ? 'text-emerald-600 animate-bounce' : 'text-slate-400'}`} />
+                <span>Notifications</span>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                notificationsEnabled 
+                  ? 'bg-emerald-200 text-emerald-900' 
+                  : 'bg-slate-200 text-slate-500'
+              }`}>
+                {notificationsEnabled ? 'ON' : 'OFF'}
+              </span>
+            </button>
+            {notificationsEnabled && subscriptionId && (
+              <p className="text-[7px] text-slate-400 font-bold px-2 truncate leading-tight select-all">
+                ID: {subscriptionId}
+              </p>
+            )}
+          </div>
 
           <div className="pt-2 border-t border-slate-50">
             <button onClick={onLogout} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 active:scale-95 transition-all">

@@ -181,3 +181,12 @@ export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => vo
     console.error("🔔 [OneSignal] Event listener registration error:", e);
   }
 };
+
+export const getPushSubscriptionId = (): string | undefined => {
+  try {
+    return OneSignal.User.PushSubscription.id;
+  } catch (e) {
+    console.error("🔔 [OneSignal] Get subscription ID error:", e);
+    return undefined;
+  }
+};

@@ -80,7 +80,7 @@ const scheduledFunction: Handler = async (event, context) => {
   const appId = "2ce03ee2-27d2-49b7-9fea-21c1f2f124cd";
   const payload = {
     app_id: appId,
-    included_segments: ["Subscribed Users"],
+    included_segments: ["Active Users"],
     target_channel: "push",
     headings: { en: copy.title },
     contents: { en: copy.body },
