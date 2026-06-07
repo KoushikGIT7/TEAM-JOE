@@ -167,10 +167,8 @@ export const useOrderNotifications = (userId: string | null) => {
                         const dKeyComplete = `${orderId}-SCANNED-AUDIO`;
                         if (!sessionDedupeRef.current.has(dKeyComplete)) {
                             sessionDedupeRef.current.add(dKeyComplete);
-                            setTimeout(() => {
-                                joeSounds.stopAll();
-                                joeSounds.playStudentScanComplete();
-                            }, 1000);
+                            joeSounds.stopAll();
+                            joeSounds.playStudentScanComplete();
                         }
                     }
                 }
