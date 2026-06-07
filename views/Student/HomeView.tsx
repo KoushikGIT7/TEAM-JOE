@@ -8,7 +8,7 @@ import { CATEGORIES, STATION_ID_BY_ITEM_ID, FAST_ITEM_CATEGORIES } from '../../c
 import { getMenuOnce, listenToUserOrders } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import Logo from '../../components/Logo';
-import NotificationInbox from '../../components/NotificationInbox';
+
 import { 
   PrivacyPolicy, 
   RefundPolicy, 
@@ -194,7 +194,6 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <button onClick={() => setIsDrawerOpen(true)} className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all"><Menu className="w-6 h-6 text-slate-600" /></button>
             <h2 className="text-lg font-black text-slate-800 tracking-tighter">{profile?.name || 'Welcome'}</h2>
           </div>
-          <NotificationInbox />
         </div>
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />

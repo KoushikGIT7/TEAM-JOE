@@ -50,3 +50,6 @@ old_*.tsx
 dist/
 node_modules/
 .env*
+
+# Local Netlify folder
+.netlify

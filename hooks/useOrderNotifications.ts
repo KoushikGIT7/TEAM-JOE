@@ -189,17 +189,7 @@ export const useOrderNotifications = (userId: string | null) => {
 };
 
 const triggerLocalNotification = (title: string, body: string) => {
-    // Audio is now handled at the call site with the correct specific sound
-    if (!('Notification' in window)) return;
-    
-    if (Notification.permission === 'granted') {
-        new Notification(title, {
-            body: body,
-            icon: '/JeoLogoFinal.png',
-            tag: 'order-update',
-            requireInteraction: true // Keep it visible until dismissed
-        });
-    } else {
-        console.warn('🔔 Notification permission not granted.');
-    }
+    // Disabled native browser notifications for students because OneSignal 
+    // handles push notifications universally. This prevents duplicate prompts 
+    // and duplicate popup messages.
 };

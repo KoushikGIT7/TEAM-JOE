@@ -90,10 +90,9 @@ export const shouldShowQR = (order: Order): boolean => {
   if (unservedCount === 0) return false;
 
   const isPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
-  const isCash = order.paymentType === 'CASH';
   
-  // Release QR if it's paid or if it's a cash order awaiting verification
-  if (!isPaid && !isCash) return false;
+  // SECURE LOCK: QR Code ONLY releases if the order is fully paid/verified
+  if (!isPaid) return false;
 
   return true;
 };

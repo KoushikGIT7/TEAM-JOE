@@ -36,7 +36,6 @@ const getItemBadge = (item: CartItem): 'SERVED' | 'READY' | 'COOKING' | 'QUEUED'
   return 'QUEUED';
 };
 
-const DOSA_LOCK_IDS = new Set(['BKT03', 'BKT04', 'BKT06']);
 
 interface RichQRCardProps {
   qrString: string;
@@ -45,20 +44,19 @@ interface RichQRCardProps {
   isServed: boolean;
   isMissed: boolean;
   itemConfig: any;
+  isOrderPaid: boolean;
 }
 
 const RichQRCard: React.FC<RichQRCardProps> = ({
-  qrString, activeItem, isVisible, isServed, isMissed, itemConfig
+  qrString, activeItem, isVisible, isServed, isMissed, itemConfig, isOrderPaid
 }) => {
   const badge = getItemBadge(activeItem);
   const qty = activeItem.quantity ?? 1;
   
-  // 🔬 [ID-NORMALIZATION]: Check both subcollection ID and original item code
-  const isDosaType = DOSA_LOCK_IDS.has(activeItem.id) || DOSA_LOCK_IDS.has(activeItem.itemId || '');
   const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
   
-  // 🛡️ [STRICT-KITCHEN-LOCK]: Dosas require READY status. Others release immediately if order is active.
-  const qrUnlocked = isVisible && !isMissed && !isAlreadyServed && (!isDosaType || badge === 'READY');
+  // 🛡️ [STRICT-KITCHEN-LOCK]: All items require READY status. Fast items are READY by default.
+  const qrUnlocked = isVisible && !isMissed && !isAlreadyServed && (badge === 'READY') && isOrderPaid;
 
   return (
     <div className="flex flex-col items-center">
@@ -106,12 +104,12 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
 
           {!qrUnlocked && !isServed && !isMissed && !isAlreadyServed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white animate-in fade-in duration-500">
-               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center ${badge === 'COOKING' ? 'bg-orange-50' : 'bg-slate-50'}`}>
-                 {badge === 'COOKING' ? <ChefHat className="w-10 h-10 text-orange-500" /> : <Clock className="w-10 h-10 text-slate-400" />}
+               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center ${!isOrderPaid ? 'bg-rose-50' : badge === 'COOKING' ? 'bg-orange-50' : 'bg-slate-50'}`}>
+                 {!isOrderPaid ? <AlertCircle className="w-10 h-10 text-rose-500" /> : badge === 'COOKING' ? <ChefHat className="w-10 h-10 text-orange-500" /> : <Clock className="w-10 h-10 text-slate-400" />}
                </div>
                <div className="text-center px-6">
-                 <p className="text-lg font-black text-slate-900 tracking-tight">{badge === 'COOKING' ? 'Cooking Now' : 'In Queue'}</p>
-                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 italic">QR Unlocks when Ready</p>
+                 <p className="text-lg font-black text-slate-900 tracking-tight">{!isOrderPaid ? 'Payment Pending' : badge === 'COOKING' ? 'Cooking Now' : 'In Queue'}</p>
+                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 italic">{!isOrderPaid ? 'Awaiting Cashier Approval' : 'QR Unlocks when Ready'}</p>
                </div>
             </div>
           )}
@@ -142,7 +140,7 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
             {isAlreadyServed ? 'Order Collected' : itemConfig.label}
           </p>
           <p className={`text-[9px] font-bold ${qrUnlocked || isAlreadyServed ? 'text-white/80' : 'text-gray-400'}`}>
-            {isAlreadyServed ? 'Proceed to next section if any' : (qrUnlocked ? `Fresh & Ready for Scan` : 'Being Prepared in Kitchen')}
+            {isAlreadyServed ? 'Proceed to next section if any' : (qrUnlocked ? `Fresh & Ready for Scan` : (!isOrderPaid ? 'Awaiting Cashier Approval' : 'Being Prepared in Kitchen'))}
           </p>
         </div>
       </div>
@@ -322,6 +320,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
             isServed={isDone}
             isMissed={isMissed}
             itemConfig={getItemConfig(activeItem.id)}
+            isOrderPaid={order?.paymentStatus === 'SUCCESS' || order?.paymentStatus === 'VERIFIED'}
           />
         )}
       </div>

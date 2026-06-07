@@ -10,7 +10,6 @@ import { Bell, X } from 'lucide-react';
 import { joeSounds } from './utils/audio';
 import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
 import { initializeOneSignal, loginUser, logoutUser } from './services/onesignal';
-import OneSignalPermissionModal from './components/OneSignalPermissionModal';
 import { triggerOneSignalWebhook } from './services/onesignal-webhook';
 
 // Views — Staff + Admin only; student portal removed
@@ -44,8 +43,6 @@ type ViewState =
 
 const App: React.FC = () => {
   const { user: authUser, profile: authProfile, loading: authLoading } = useAuth();
-  const [showOneSignalPrompt, setShowOneSignalPrompt] = useState(false);
-  
   const [guestProfile, setGuestProfile] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('joe_guest_profile');
@@ -89,17 +86,6 @@ const App: React.FC = () => {
     }
   }, [profile]);
 
-  // Wallet Recharge Approved trigger for Push consent modal
-  useEffect(() => {
-    const handleRecharge = () => {
-      const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
-      if (!promptStatus) {
-        setTimeout(() => setShowOneSignalPrompt(true), 1500);
-      }
-    };
-    window.addEventListener('joe_wallet_recharged', handleRecharge);
-    return () => window.removeEventListener('joe_wallet_recharged', handleRecharge);
-  }, []);
 
   // Low Balance Push Notification Trigger
   useEffect(() => {
@@ -426,9 +412,6 @@ const App: React.FC = () => {
         {showCompliance === 'refund' && <RefundPolicy onBack={() => setShowCompliance(null)} />}
         {showCompliance === 'terms' && <TermsAndConditions onBack={() => setShowCompliance(null)} />}
         {showCompliance === 'contact' && <ContactUs onBack={() => setShowCompliance(null)} />}
-
-        {/* OneSignal Consent Prompt Modal */}
-        <OneSignalPermissionModal isOpen={showOneSignalPrompt} onClose={() => setShowOneSignalPrompt(false)} />
       </GlobalErrorBoundary>
     </div>
   );

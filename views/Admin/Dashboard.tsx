@@ -14,7 +14,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
 import { UserProfile, Order, MenuItem, SystemSettings, InventoryItem, InventoryMetaItem, WalletRechargeRequest } from '../../types';
-import NotificationInbox from '../../components/NotificationInbox';
+
 import { 
   listenToAllOrders, listenToMenu, getMenuOnce,
   updateUserRole, toggleUserStatus, addMenuItem, updateMenuItem, deleteMenuItem,
@@ -1530,7 +1530,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
               <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               Live
             </div>
-            <NotificationInbox />
           </div>
         </header>
 

@@ -85,6 +85,8 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       if (!isWalletSufficient) { setWalletError(`Insufficient balance. Available: ₹${walletBalance}`); return; }
 
       setState('PROCESSING');
+      await new Promise(r => setTimeout(r, 1800)); // Premium gateway delay
+
       const optimisticOrderId = genLocalOrderId();
       try {
         // 1. Deduct wallet atomically (throws if balance insufficient)
@@ -118,6 +120,8 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           console.warn('[WALLET-ORDER] Background order write failed:', e);
         });
 
+        setState('SUCCESS');
+        await new Promise(r => setTimeout(r, 1200)); // Show success checkmark briefly
         onSuccess(optimisticOrderId);
       } catch (err: any) {
         setState('IDLE');
@@ -137,7 +141,10 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     localStorage.removeItem('joe_cart');
 
     if (selectedMethod === 'UPI') {
-      // UPI: play sound + open UPI app + go to QR screen — zero wait
+      setState('PROCESSING');
+      await new Promise(r => setTimeout(r, 1500)); // Secure gateway delay
+      
+      // UPI: play sound + open UPI app + go to QR screen
       joeSounds.stopAll();
       joeSounds.playPaymentConfirmed();
       try {
@@ -176,11 +183,16 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           alert('Failed to process order on server: ' + (e.message || 'Unknown error'));
       });
       
+      setState('SUCCESS');
+      await new Promise(r => setTimeout(r, 1000));
       onSuccess(optimisticOrderId);
       return;
     }
 
     // CASH: show WAITING screen instantly, commit in background
+    setState('PROCESSING');
+    await new Promise(r => setTimeout(r, 1200));
+
     joeSounds.stopAll();
     joeSounds.playOrderPlaced();
     setOrderId(optimisticOrderId);
@@ -227,6 +239,63 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     localStorage.removeItem('activeOrderId');
     onBack();
   };
+
+  // ── PROCESSING STATE ──────────────────────────────────────────────────────────
+  if (state === 'PROCESSING') {
+    return (
+      <div className="h-screen bg-slate-900 flex flex-col w-full max-w-md mx-auto p-8 overflow-hidden relative border-x border-slate-900">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-900/20 via-slate-900 to-slate-900" />
+        
+        <div className="flex-1 flex flex-col items-center justify-center gap-10 relative z-10 animate-in fade-in duration-500">
+          <div className="relative">
+             <div className="w-32 h-32 rounded-[3rem] bg-slate-800 flex items-center justify-center border border-slate-700 shadow-2xl relative overflow-hidden">
+                {selectedMethod === 'WALLET' ? <Wallet className="w-12 h-12 text-emerald-500 animate-pulse relative z-10" /> : 
+                 selectedMethod === 'UPI' ? <Smartphone className="w-12 h-12 text-blue-500 animate-pulse relative z-10" /> :
+                 <Banknote className="w-12 h-12 text-amber-500 animate-pulse relative z-10" />}
+                <div className={`absolute inset-0 -translate-y-full animate-[scan_2s_ease-in-out_infinite] ${selectedMethod === 'WALLET' ? 'bg-emerald-500/10' : selectedMethod === 'UPI' ? 'bg-blue-500/10' : 'bg-amber-500/10'}`} />
+             </div>
+             <div className="absolute inset-[-40px] border-2 border-slate-800 rounded-[4rem] animate-[spin_3s_linear_infinite]" />
+             <div className="absolute inset-[-60px] border-2 border-slate-800/50 rounded-[5rem] animate-[spin_4s_linear_infinite_reverse]" />
+          </div>
+
+          <div className="text-center space-y-3">
+            <h2 className="text-2xl font-black text-white tracking-widest uppercase italic">Secure Gateway</h2>
+            <p className={`font-bold text-xs uppercase tracking-[0.2em] animate-pulse ${selectedMethod === 'WALLET' ? 'text-emerald-500' : selectedMethod === 'UPI' ? 'text-blue-500' : 'text-amber-500'}`}>
+              {selectedMethod === 'WALLET' ? 'Authenticating JOE Wallet...' : 
+               selectedMethod === 'UPI' ? 'Connecting to UPI...' : 
+               'Generating Cash Request...'}
+            </p>
+          </div>
+        </div>
+
+        <div className="relative z-10 flex flex-col items-center gap-3">
+           <div className="flex gap-2">
+              <div className="w-2 h-2 rounded-full bg-slate-700 animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="w-2 h-2 rounded-full bg-slate-700 animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="w-2 h-2 rounded-full bg-slate-700 animate-bounce" style={{ animationDelay: '300ms' }} />
+           </div>
+           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Processing Transaction</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── SUCCESS STATE ──────────────────────────────────────────────────────────
+  if (state === 'SUCCESS') {
+    return (
+      <div className="h-screen bg-emerald-600 flex flex-col w-full max-w-md mx-auto p-8 overflow-hidden relative border-x border-emerald-600">
+        <div className="flex-1 flex flex-col items-center justify-center gap-8 relative z-10 animate-in fade-in zoom-in duration-300">
+          <div className="w-40 h-40 bg-white rounded-[3.5rem] flex items-center justify-center shadow-2xl shadow-emerald-900/50">
+             <CheckCircle2 className="w-20 h-20 text-emerald-500" />
+          </div>
+          <div className="text-center">
+            <h2 className="text-4xl font-black text-white tracking-tighter mb-2">Payment Successful</h2>
+            <p className="text-emerald-100 font-bold uppercase tracking-widest text-xs">Generating QR Code...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── WAITING STATE ──────────────────────────────────────────────────────────
   if (state === 'WAITING') {
