@@ -6,6 +6,7 @@ import { UserProfile } from '../types';
 const ONESIGNAL_APP_ID = '2ce03ee2-27d2-49b7-9fea-21c1f2f124cd';
 
 let isInitialized = false;
+let initPromise: Promise<void> | null = null;
 
 /**
  * 🔔 Safe Client-Side OneSignal Initialization
@@ -15,19 +16,24 @@ export const initializeOneSignal = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
   if (isInitialized) return;
 
-  try {
-    console.log('🔌 [ONESIGNAL] Initializing Web SDK...');
-    await OneSignal.init({
-      appId: ONESIGNAL_APP_ID,
-      allowLocalhostAsSecureOrigin: true,
-      // Do not auto-prompt instantly on load
-      autoRegister: false,
-    });
-    isInitialized = true;
-    console.log('✅ [ONESIGNAL] Web SDK Initialized successfully.');
-  } catch (error) {
-    console.error('❌ [ONESIGNAL] Initialization failed:', error);
+  if (!initPromise) {
+    initPromise = (async () => {
+      try {
+        console.log('🔌 [ONESIGNAL] Initializing Web SDK...');
+        await OneSignal.init({
+          appId: ONESIGNAL_APP_ID,
+          allowLocalhostAsSecureOrigin: true,
+        });
+        isInitialized = true;
+        console.log('✅ [ONESIGNAL] Web SDK Initialized successfully.');
+      } catch (error) {
+        console.error('❌ [ONESIGNAL] Initialization failed:', error);
+        initPromise = null; // allow retry
+      }
+    })();
   }
+  
+  return initPromise;
 };
 
 /**
