@@ -166,8 +166,10 @@ export const useOrderNotifications = (userId: string | null) => {
                         const dKeyComplete = `${orderId}-COMPLETED`;
                         if (!sessionDedupeRef.current.has(dKeyComplete)) {
                             sessionDedupeRef.current.add(dKeyComplete);
-                            joeSounds.stopAll();
-                            joeSounds.playStudentScanComplete();
+                            setTimeout(() => {
+                                joeSounds.stopAll();
+                                joeSounds.playStudentScanComplete();
+                            }, 3000);
                         }
                     }
 
