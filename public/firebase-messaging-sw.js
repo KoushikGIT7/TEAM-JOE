@@ -1,6 +1,7 @@
 // 👻 [SERVICE-WORKER] JOE Background Messaging Service Worker
 // This file MUST live in the 'public/' folder so that browsers can load it at '/firebase-messaging-sw.js'.
 
+importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
 
