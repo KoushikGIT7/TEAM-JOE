@@ -23,7 +23,7 @@ class SoundService {
       
       // 🚀 PRELOAD: Fetch background buffers immediately so playback has 0ms latency
       this.loadAudioBuffer('/sounds/server_success.mp3').then(b => this.serverSuccessBuffer = b);
-      this.loadAudioBuffer('/sounds/student_success.mp3').then(b => this.studentSuccessBuffer = b);
+      this.loadAudioBuffer('/sounds/student_scan_success_v2.mp3').then(b => this.studentSuccessBuffer = b);
     }
     if (this.ctx?.state === 'suspended') {
       await this.ctx.resume();
@@ -274,7 +274,7 @@ class SoundService {
       if (typeof window === 'undefined') return;
       await this.init();
       if (!this.studentSuccessBuffer) {
-        this.studentSuccessBuffer = await this.loadAudioBuffer('/sounds/student_success.mp3');
+        this.studentSuccessBuffer = await this.loadAudioBuffer('/sounds/student_scan_success_v2.mp3');
       }
       const played = this.playBuffer(this.studentSuccessBuffer);
       if (!played) this.playFoodReady(); // Fallback
