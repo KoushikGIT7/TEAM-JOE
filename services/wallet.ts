@@ -303,9 +303,11 @@ export const approveRechargeRequest = async (
       uid,
       type: 'credit',
       amount,
+      balanceBefore: currentBalance,
       balanceAfter: newBalance,
       reason: 'wallet_recharge',
       rechargeRequestId: requestId,
+      status: 'SUCCESS',
       createdAt: serverTimestamp(),
     });
   });
@@ -361,12 +363,13 @@ export const deductWalletForOrder = async (
   uid: string,
   amount: number,
   orderId: string
-): Promise<number> => {
+): Promise<{ newBalance: number; transactionId: string }> => {
   if (!uid) throw new Error('User not authenticated');
   if (amount <= 0) throw new Error('Deduction amount must be > 0');
 
   const userRef = doc(db, USERS_COL, uid);
   let newBalance = 0;
+  let transactionId = '';
 
   await runTransaction(db, async (tx) => {
     const userSnap = await tx.get(userRef);
@@ -392,19 +395,22 @@ export const deductWalletForOrder = async (
 
     // 2. Create debit transaction record
     const txRef = doc(collection(db, TX_COL));
+    transactionId = txRef.id;
     tx.set(txRef, {
       uid,
       type: 'debit',
       amount,
+      balanceBefore: currentBalance,
       balanceAfter: newBalance,
       reason: 'order_purchase',
       orderId,
+      status: 'SUCCESS',
       createdAt: serverTimestamp(),
     });
   });
 
   console.log(`[WALLET] Deducted ₹${amount} for order ${orderId}. New balance: ₹${newBalance}`);
-  return newBalance;
+  return { newBalance, transactionId };
 };
 
 // ─── UTILITY: CHECK BALANCE ───────────────────────────────────────────────────

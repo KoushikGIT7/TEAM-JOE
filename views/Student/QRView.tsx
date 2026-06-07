@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ChevronLeft, CheckCircle2, ChefHat, Clock, Check, PackageCheck, AlertCircle, ArrowLeft, ShoppingBag } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, ChefHat, Clock, Check, PackageCheck, AlertCircle, ArrowLeft, ShoppingBag, Lock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
 import { Order, CartItem } from '../../types';
@@ -104,12 +104,12 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
 
           {!qrUnlocked && !isServed && !isMissed && !isAlreadyServed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white animate-in fade-in duration-500">
-               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center ${!isOrderPaid ? 'bg-rose-50' : badge === 'COOKING' ? 'bg-orange-50' : 'bg-slate-50'}`}>
-                 {!isOrderPaid ? <AlertCircle className="w-10 h-10 text-rose-500" /> : badge === 'COOKING' ? <ChefHat className="w-10 h-10 text-orange-500" /> : <Clock className="w-10 h-10 text-slate-400" />}
+               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center ${!isOrderPaid ? 'bg-rose-50' : 'bg-slate-50'}`}>
+                 {!isOrderPaid ? <AlertCircle className="w-10 h-10 text-rose-500" /> : <Lock className="w-10 h-10 text-slate-400 animate-pulse" />}
                </div>
                <div className="text-center px-6">
-                 <p className="text-lg font-black text-slate-900 tracking-tight">{!isOrderPaid ? 'Payment Pending' : badge === 'COOKING' ? 'Cooking Now' : 'In Queue'}</p>
-                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 italic">{!isOrderPaid ? 'Awaiting Cashier Approval' : 'QR Unlocks when Ready'}</p>
+                 <p className="text-lg font-black text-slate-900 tracking-tight">{!isOrderPaid ? 'Payment Pending' : 'Preparing Your Food'}</p>
+                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 italic">{!isOrderPaid ? 'Awaiting Cashier Approval' : 'QR Locked Until Preparation Complete'}</p>
                </div>
             </div>
           )}
@@ -140,7 +140,7 @@ const RichQRCard: React.FC<RichQRCardProps> = ({
             {isAlreadyServed ? 'Order Collected' : itemConfig.label}
           </p>
           <p className={`text-[9px] font-bold ${qrUnlocked || isAlreadyServed ? 'text-white/80' : 'text-gray-400'}`}>
-            {isAlreadyServed ? 'Proceed to next section if any' : (qrUnlocked ? `Fresh & Ready for Scan` : (!isOrderPaid ? 'Awaiting Cashier Approval' : 'Being Prepared in Kitchen'))}
+            {isAlreadyServed ? 'Proceed to next section if any' : (qrUnlocked ? `Fresh & Ready for Scan` : (!isOrderPaid ? 'Awaiting Cashier Approval' : 'Order Confirmed - Being Prepared'))}
           </p>
         </div>
       </div>
@@ -192,6 +192,16 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
+
+  // 🛡️ [STRICT-ROUTE-LOCK]: Boot user if payment is not valid
+  useEffect(() => {
+    if (!loading && order) {
+      if (order.paymentStatus !== 'SUCCESS' && order.paymentStatus !== 'VERIFIED') {
+        alert('Payment verification required.');
+        onBack();
+      }
+    }
+  }, [loading, order, onBack]);
 
   const items = useMemo(() => {
     if (!order) return [];

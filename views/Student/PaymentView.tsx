@@ -22,7 +22,7 @@ const UPI_PN = 'JOE Cafeteria';
 const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'WAITING' | 'SUCCESS'>('IDLE');
-  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'CASH' | 'WALLET'>('UPI');
+  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'CASH' | 'WALLET'>('WALLET');
   const [orderId, setOrderId] = useState<string | null>(null);
   const [orderingDisabled, setOrderingDisabled] = useState(false);
   const [activeAttemptKey] = useState(() => `idemp_${profile?.uid || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
@@ -82,7 +82,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
     // ─── WALLET PAYMENT ────────────────────────────────────────────────────────
     if (selectedMethod === 'WALLET') {
       if (!profile?.uid) { setWalletError('Please sign in to use wallet'); return; }
-      if (!isWalletSufficient) { setWalletError(`Insufficient balance. Available: ₹${walletBalance}`); return; }
+      if (!isWalletSufficient) { setWalletError('Insufficient JOE Coins. Recharge wallet to continue.'); return; }
 
       setState('PROCESSING');
       await new Promise(r => setTimeout(r, 1800)); // Premium gateway delay
@@ -90,7 +90,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
       const optimisticOrderId = genLocalOrderId();
       try {
         // 1. Deduct wallet atomically (throws if balance insufficient)
-        await deductWalletForOrder(profile.uid, total, optimisticOrderId);
+        const { transactionId } = await deductWalletForOrder(profile.uid, total, optimisticOrderId);
 
         // 2. Build order payload (paymentStatus: SUCCESS — already paid from wallet)
         const orderPayload = {
@@ -106,6 +106,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           qrStatus: 'ACTIVE',
           cafeteriaId: 'MAIN_CAFE',
           idempotencyKey: activeAttemptKey,
+          walletTransactionId: transactionId,
           createdAt: Date.now(),
         };
 
@@ -400,11 +401,20 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         {/* Payment Method */}
         <div className="bg-white rounded-[2rem] p-6 border border-black/5 shadow-sm">
           <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">Payment Method</h3>
+          
+          {/* BANNER: Pilot Launch Constraint */}
+          <div className="mb-4 bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center justify-center">
+             <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest text-center">
+               Digital wallet payments only during pilot launch.
+             </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-3 mb-3">
 
             <button
+              disabled
               onClick={() => setSelectedMethod('UPI')}
-              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all active:scale-95 ${
+              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all opacity-50 cursor-not-allowed ${
                 selectedMethod === 'UPI'
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-100 bg-gray-50'
@@ -415,14 +425,15 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
               </div>
               <div className="text-center">
                 <p className={`text-sm font-black ${selectedMethod === 'UPI' ? 'text-blue-600' : 'text-gray-700'}`}>UPI Pay</p>
-                <p className="text-[9px] font-bold text-gray-400 mt-0.5">PhonePe · GPay</p>
+                <p className="text-[9px] font-bold text-gray-400 mt-0.5">(Coming Soon)</p>
               </div>
               {selectedMethod === 'UPI' && <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
             </button>
 
             <button
+              disabled
               onClick={() => setSelectedMethod('CASH')}
-              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all active:scale-95 ${
+              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all opacity-50 cursor-not-allowed ${
                 selectedMethod === 'CASH'
                   ? 'border-amber-500 bg-amber-50'
                   : 'border-gray-100 bg-gray-50'
@@ -433,7 +444,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
               </div>
               <div className="text-center">
                 <p className={`text-sm font-black ${selectedMethod === 'CASH' ? 'text-amber-600' : 'text-gray-700'}`}>Cash</p>
-                <p className="text-[9px] font-bold text-gray-400 mt-0.5">Pay at counter</p>
+                <p className="text-[9px] font-bold text-gray-400 mt-0.5">(Coming Soon)</p>
               </div>
               {selectedMethod === 'CASH' && <div className="w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
             </button>
