@@ -169,7 +169,7 @@ export const useOrderNotifications = (userId: string | null) => {
                             setTimeout(() => {
                                 joeSounds.stopAll();
                                 joeSounds.playStudentScanComplete();
-                            }, 3000);
+                            }, 1000);
                         }
                     }
 
