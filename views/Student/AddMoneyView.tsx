@@ -297,7 +297,6 @@ const AddMoneyView: React.FC<AddMoneyViewProps> = ({ profile, onBack }) => {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             onChange={handleFileChange}
             className="hidden"
           />
