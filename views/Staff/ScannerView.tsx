@@ -29,14 +29,21 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
   const [terminalState, setTerminalState] = useState<'IDLE' | 'SCANNING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [lastResult, setLastResult] = useState<{ title: string; sub: string } | null>(null);
 
+import { joeSounds } from '../../utils/audio';
+
   // 🛡️ [Principal Architect] Sonic Feedback Engine
   const triggerStrobe = (state: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
     setLastResult({ title, sub });
     setTerminalState(state);
     
-    if ('vibrate' in navigator) {
-       if (state === 'SUCCESS') navigator.vibrate(100);
-       else navigator.vibrate([200, 100, 200]);
+    joeSounds.stopAll();
+    
+    if (state === 'SUCCESS') {
+       if ('vibrate' in navigator) navigator.vibrate(100);
+       joeSounds.playServerScanSuccess();
+    } else {
+       if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+       joeSounds.playErrorBuzzer();
     }
 
     // Auto-dismiss 

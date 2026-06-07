@@ -157,26 +157,40 @@ export const useOrderNotifications = (userId: string | null) => {
                     }, delay);
                 }
 
-                // 3. STREAK REWARD: When order becomes COMPLETED
-                if ((!prev || prev.status !== 'COMPLETED') && currentStatus === 'COMPLETED' && !data.streakCounted) {
-                    try {
-                        const userRef = doc(db, 'users', userId);
-                        const userSnap = await getDoc(userRef);
-                        if (userSnap.exists()) {
-                            const newCount = (userSnap.data().completedOrdersCount || 0) + 1;
-                            await updateDoc(userRef, { completedOrdersCount: newCount });
-                            await updateDoc(doc(db, 'orders', orderId), { streakCounted: true });
-                            
-                            if (newCount > 0 && newCount % 5 === 0) {
-                                triggerOneSignalWebhook(
-                                    userId,
-                                    "🎉 5-Order Streak!",
-                                    `You've completed ${newCount} orders. You're a JOE regular!`
-                                );
-                            }
+                // 3. STUDENT SCAN COMPLETE / STREAK REWARD: When order becomes COMPLETED
+                if ((!prev || prev.status !== 'COMPLETED') && currentStatus === 'COMPLETED') {
+                    
+                    // 🔔 NEW: Only play the custom student success MP3 if this is a live transition (prev exists)
+                    // This prevents the sound from blasting on app launch for past completed orders.
+                    if (prev && prev.status !== 'COMPLETED') {
+                        const dKeyComplete = `${orderId}-COMPLETED`;
+                        if (!sessionDedupeRef.current.has(dKeyComplete)) {
+                            sessionDedupeRef.current.add(dKeyComplete);
+                            joeSounds.stopAll();
+                            joeSounds.playStudentScanComplete();
                         }
-                    } catch (e) {
-                        console.error('Streak update error:', e);
+                    }
+
+                    if (!data.streakCounted) {
+                        try {
+                            const userRef = doc(db, 'users', userId);
+                            const userSnap = await getDoc(userRef);
+                            if (userSnap.exists()) {
+                                const newCount = (userSnap.data().completedOrdersCount || 0) + 1;
+                                await updateDoc(userRef, { completedOrdersCount: newCount });
+                                await updateDoc(doc(db, 'orders', orderId), { streakCounted: true });
+                                
+                                if (newCount > 0 && newCount % 5 === 0) {
+                                    triggerOneSignalWebhook(
+                                        userId,
+                                        "🎉 5-Order Streak!",
+                                        `You've completed ${newCount} orders. You're a JOE regular!`
+                                    );
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Streak update error:', e);
+                        }
                     }
                 }
 

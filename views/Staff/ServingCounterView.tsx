@@ -4,6 +4,7 @@ import { UserProfile } from '../../types';
 import { validateQRForServing, serveOrderItemsAtomic } from '../../services/firestore-db';
 import { STATION_ID_BY_ITEM_ID, PREPARATION_STATIONS } from '../../constants';
 import QRScanner from '../../components/QRScanner';
+import { joeSounds } from '../../utils/audio';
 
 interface Props {
   profile: UserProfile;
@@ -65,8 +66,10 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
         ).map((i: any) => i.name) || [];
         setServedItems(justServed);
 
-        // Haptic feedback
+        // Haptic + Audio feedback for Success
         if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
+        joeSounds.stopAll();
+        joeSounds.playServerScanSuccess();
 
         // ⚡ RELEASE LOCK EARLY: Next student can be scanned immediately
         isProcessingScannerRef.current = false;
@@ -77,6 +80,9 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       // AWAITING_PAYMENT: rare edge case
       setScanState('ERROR');
       setFeedback('PAYMENT PENDING');
+      if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+      joeSounds.stopAll();
+      joeSounds.playErrorBuzzer();
       isProcessingScannerRef.current = false;
       resetToIdle(1500);
 
@@ -93,6 +99,9 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
 
       setScanState('ERROR');
       setFeedback(display);
+      if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+      joeSounds.stopAll();
+      joeSounds.playErrorBuzzer();
       isProcessingScannerRef.current = false;
       resetToIdle(1500);
     }
