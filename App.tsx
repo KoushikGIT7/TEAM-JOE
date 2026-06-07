@@ -185,19 +185,30 @@ const App: React.FC = () => {
 
   const handleGoogleLogin = async () => {
     if (googleSignInLoading) return;
-    setGoogleSignInLoading(true);
+    
     joeSounds.init(); // Silent wake — no sound on sign-in
+    
     try {
-      const { profile: newProfile } = await signInWithGoogle();
+      // Execute sign-in Promise synchronously before any React state updates.
+      // This prevents the browser from blocking the popup in PWA/Safari environments.
+      const signInPromise = signInWithGoogle();
+      
+      setGoogleSignInLoading(true);
+      
+      const { profile: newProfile } = await signInPromise;
       setView(getViewForRole(newProfile.role));
       
-      // Trigger OneSignal push consent modal after successful login
+      // Trigger OneSignal push consent after successful login
       const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
       if (!promptStatus) {
-        setTimeout(() => setShowOneSignalPrompt(true), 2000);
+        setTimeout(() => requestNotificationPermission(), 2000);
       }
     } catch (error: any) {
       console.error('❌ Google sign-in error:', error);
+      // If popup is still blocked, we can alert the user
+      if (error.code === 'auth/popup-blocked') {
+        alert("Sign-in popup was blocked by your browser. Please allow popups for this app or try again.");
+      }
     } finally {
       setGoogleSignInLoading(false);
     }
@@ -316,10 +327,10 @@ const App: React.FC = () => {
                         onSuccess={(id) => {
                           setActiveOrderId(id);
                           setStudentSubView('QR');
-                          // Trigger OneSignal push consent modal after successful order
+                          // Trigger OneSignal push consent after successful order
                           const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
                           if (!promptStatus) {
-                            setTimeout(() => setShowOneSignalPrompt(true), 2000);
+                            setTimeout(() => requestNotificationPermission(), 2000);
                           }
                         }}
                       />

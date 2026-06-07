@@ -140,11 +140,9 @@ export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; profile:
 
     return { user, profile: immediateProfile };
   } catch (error: any) {
-    if (error.code === 'auth/popup-blocked') {
-      await signInWithRedirect(auth, new GoogleAuthProvider());
-      return new Promise(() => { });
-    }
     console.error("❌ Google Login failed:", error);
+    // Let App.tsx handle auth/popup-blocked gracefully 
+    // rather than falling back to broken redirect flow in PWA.
     throw error;
   }
 };
