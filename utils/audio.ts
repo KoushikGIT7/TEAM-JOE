@@ -20,6 +20,10 @@ class SoundService {
     if (!this.ctx && typeof window !== 'undefined') {
       const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AC();
+      
+      // 🚀 PRELOAD: Fetch background buffers immediately so playback has 0ms latency
+      this.loadAudioBuffer('/sounds/server_success.mp3').then(b => this.serverSuccessBuffer = b);
+      this.loadAudioBuffer('/sounds/student_success.mp3').then(b => this.studentSuccessBuffer = b);
     }
     if (this.ctx?.state === 'suspended') {
       await this.ctx.resume();

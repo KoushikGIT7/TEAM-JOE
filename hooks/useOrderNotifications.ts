@@ -157,13 +157,14 @@ export const useOrderNotifications = (userId: string | null) => {
                     }, delay);
                 }
 
-                // 3. STUDENT SCAN COMPLETE / STREAK REWARD: When order becomes COMPLETED
-                if ((!prev || prev.status !== 'COMPLETED') && currentStatus === 'COMPLETED') {
-                    
+                // 3. STUDENT SCAN COMPLETE AUDIO: When order is scanned by server
+                const isNowScanned = currentFlow === 'CONSUMED' || currentFlow === 'MANIFESTED';
+                const wasScanned = prev && (prev.flow === 'CONSUMED' || prev.flow === 'MANIFESTED');
+
+                if (isNowScanned && !wasScanned) {
                     // 🔔 NEW: Only play the custom student success MP3 if this is a live transition (prev exists)
-                    // This prevents the sound from blasting on app launch for past completed orders.
-                    if (prev && prev.status !== 'COMPLETED') {
-                        const dKeyComplete = `${orderId}-COMPLETED`;
+                    if (prev) {
+                        const dKeyComplete = `${orderId}-SCANNED-AUDIO`;
                         if (!sessionDedupeRef.current.has(dKeyComplete)) {
                             sessionDedupeRef.current.add(dKeyComplete);
                             setTimeout(() => {
@@ -172,6 +173,10 @@ export const useOrderNotifications = (userId: string | null) => {
                             }, 1000);
                         }
                     }
+                }
+
+                // 4. STREAK REWARD: When order becomes completely COMPLETED
+                if ((!prev || prev.status !== 'COMPLETED') && currentStatus === 'COMPLETED') {
 
                     if (!data.streakCounted) {
                         try {
