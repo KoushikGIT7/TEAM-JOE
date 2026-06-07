@@ -216,23 +216,51 @@ class SoundService {
     }
   }
   // ═══════════════════════════════════════════════════════
-  // 7. CUSTOM VOICE ALERTS (MP3 Files)
+  // 7. CUSTOM VOICE ALERTS (MP3 Files - Web Audio API)
   // ═══════════════════════════════════════════════════════
-  private serverSuccessAudio: HTMLAudioElement | null = null;
-  private studentSuccessAudio: HTMLAudioElement | null = null;
+  private serverSuccessBuffer: AudioBuffer | null = null;
+  private studentSuccessBuffer: AudioBuffer | null = null;
+
+  private async loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
+    try {
+      await this.init();
+      if (!this.ctx) return null;
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      return await this.ctx.decodeAudioData(arrayBuffer);
+    } catch (e) {
+      console.warn(`[JOE Audio] Failed to load buffer for ${url}:`, e);
+      return null;
+    }
+  }
+
+  private playBuffer(buffer: AudioBuffer | null) {
+    if (!this.ctx || !buffer) return false;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.ctx.destination);
+    source.start(0);
+    this.activeOscillators.push(source as any); // Track it so stopAll() can silence it if needed
+    
+    // Clean up reference
+    setTimeout(() => {
+      this.activeOscillators = this.activeOscillators.filter(o => o !== (source as any));
+    }, (buffer.duration + 0.1) * 1000);
+    
+    return true;
+  }
 
   public async playServerScanSuccess() {
     try {
       if (typeof window === 'undefined') return;
-      if (!this.serverSuccessAudio) {
-        this.serverSuccessAudio = new Audio('/sounds/server_success.mp3');
-        this.serverSuccessAudio.preload = 'auto';
+      await this.init();
+      if (!this.serverSuccessBuffer) {
+        this.serverSuccessBuffer = await this.loadAudioBuffer('/sounds/server_success.mp3');
       }
-      this.serverSuccessAudio.currentTime = 0;
-      await this.serverSuccessAudio.play();
+      const played = this.playBuffer(this.serverSuccessBuffer);
+      if (!played) this.playSuccess(); // Fallback
     } catch (e) {
       console.warn('[JOE Audio] Server MP3 blocked:', e);
-      // Fallback
       this.playSuccess();
     }
   }
@@ -240,15 +268,14 @@ class SoundService {
   public async playStudentScanComplete() {
     try {
       if (typeof window === 'undefined') return;
-      if (!this.studentSuccessAudio) {
-        this.studentSuccessAudio = new Audio('/sounds/student_success.mp3');
-        this.studentSuccessAudio.preload = 'auto';
+      await this.init();
+      if (!this.studentSuccessBuffer) {
+        this.studentSuccessBuffer = await this.loadAudioBuffer('/sounds/student_success.mp3');
       }
-      this.studentSuccessAudio.currentTime = 0;
-      await this.studentSuccessAudio.play();
+      const played = this.playBuffer(this.studentSuccessBuffer);
+      if (!played) this.playFoodReady(); // Fallback
     } catch (e) {
       console.warn('[JOE Audio] Student MP3 blocked:', e);
-      // Fallback
       this.playFoodReady();
     }
   }
