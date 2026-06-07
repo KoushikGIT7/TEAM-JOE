@@ -26,6 +26,8 @@ const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
 const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
 const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
 const QRView      = React.lazy(() => import('./views/Student/QRView'));
+const WalletView  = React.lazy(() => import('./views/Student/WalletView'));
+const AddMoneyView = React.lazy(() => import('./views/Student/AddMoneyView'));
 import { PrivacyPolicy, RefundPolicy, TermsAndConditions, ContactUs } from './views/Student/ComplianceView';
 
 type ViewState =
@@ -87,7 +89,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
-  const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR'>('HOME');
+  const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR' | 'WALLET' | 'ADD_MONEY'>('HOME');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [showCompliance, setShowCompliance] = useState<'privacy' | 'refund' | 'terms' | 'contact' | null>(null);
 
@@ -250,18 +252,19 @@ const App: React.FC = () => {
                 case 'HOME':
                   return (
                     <React.Suspense fallback={<FoodLoader />}>
-                      <HomeView
-                        profile={profile!}
-                        onLogout={handleLogout}
-                        onProceed={() => setStudentSubView('PAYMENT')}
-                        onViewOrders={() => setStudentSubView('ORDERS')}
-                        onOpenCompliance={setShowCompliance}
-                        onViewQR={(id) => {
-                          setActiveOrderId(id);
-                          setStudentSubView('QR');
-                        }}
-                      />
-                    </React.Suspense>
+                    <HomeView
+                      profile={profile!}
+                      onLogout={handleLogout}
+                      onProceed={() => setStudentSubView('PAYMENT')}
+                      onViewOrders={() => setStudentSubView('ORDERS')}
+                      onViewWallet={() => setStudentSubView('WALLET')}
+                      onOpenCompliance={setShowCompliance}
+                      onViewQR={(id) => {
+                        setActiveOrderId(id);
+                        setStudentSubView('QR');
+                      }}
+                    />
+                  </React.Suspense>
                   );
                 case 'PAYMENT':
                   return (
@@ -296,6 +299,25 @@ const App: React.FC = () => {
                         orderId={activeOrderId!}
                         onBack={() => setStudentSubView('HOME')}
                         onViewOrders={() => setStudentSubView('ORDERS')}
+                      />
+                    </React.Suspense>
+                  );
+                case 'WALLET':
+                  return (
+                    <React.Suspense fallback={<FoodLoader />}>
+                      <WalletView
+                        profile={profile!}
+                        onBack={() => setStudentSubView('HOME')}
+                        onAddMoney={() => setStudentSubView('ADD_MONEY')}
+                      />
+                    </React.Suspense>
+                  );
+                case 'ADD_MONEY':
+                  return (
+                    <React.Suspense fallback={<FoodLoader />}>
+                      <AddMoneyView
+                        profile={profile!}
+                        onBack={() => setStudentSubView('WALLET')}
                       />
                     </React.Suspense>
                   );

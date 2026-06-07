@@ -221,3 +221,57 @@ if (typeof window !== 'undefined') {
         requestNotificationPermission();
     };
 }
+
+// ─── JOE WALLET NOTIFICATIONS ──────────────────────────────────────────────
+
+/**
+ * Notify student that their recharge has been approved.
+ * Called by WalletView's real-time listener detecting status change from 'pending' → 'approved'.
+ * 
+ * FCM SERVER PUSH: For background notification, call a Cloud Function here.
+ * Current: local Notification API only (works while app is open/focused).
+ */
+export const notifyRechargeApproved = (amount: number): void => {
+    triggerLocalNotification(
+        '✅ Recharge Approved!',
+        `₹${amount} has been added to your JOE Wallet.`
+    );
+    // Dispatch DOM event so WalletView can show an in-app toast
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('joe_wallet_recharged', { detail: { amount } }));
+    }
+};
+
+/**
+ * Notify student that their recharge was rejected.
+ */
+export const notifyRechargeRejected = (amount: number, note?: string): void => {
+    triggerLocalNotification(
+        '❌ Recharge Rejected',
+        `Your ₹${amount} recharge request was declined.${note ? ` Reason: ${note}` : ''}`
+    );
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('joe_wallet_rejected', { detail: { amount, note } }));
+    }
+};
+
+/**
+ * Warn student of low balance.
+ * Called when wallet balance drops below threshold after an order.
+ */
+export const notifyLowBalance = (balance: number): void => {
+    triggerLocalNotification(
+        '⚠️ Low Wallet Balance',
+        `Your JOE Wallet balance is ₹${balance}. Recharge to keep ordering.`
+    );
+};
+
+/**
+ * Notify student that wallet was debited for an order.
+ */
+export const notifyWalletDebited = (amount: number, balanceAfter: number): void => {
+    // Silent — no popup, just dispatch DOM event for in-app update
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('joe_wallet_debited', { detail: { amount, balanceAfter } }));
+    }
+};

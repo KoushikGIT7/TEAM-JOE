@@ -3947,6 +3947,7 @@ export const tryAcquireMaintenanceLock = async (nodeId: string): Promise<boolean
 };
 
 export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
+  if (!auth.currentUser) return 0;
   const now = Date.now();
 
   try {

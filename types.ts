@@ -272,3 +272,57 @@ export interface SystemMaintenance {
   lastHeartbeatAt: number;
   activeNodeId: string;
 }
+
+// ─── JOE WALLET TYPES ────────────────────────────────────────────────────────
+
+/** Status of a student wallet recharge request */
+export type RechargeStatus = 'pending' | 'approved' | 'rejected';
+
+/** Type of wallet transaction */
+export type WalletTransactionType = 'credit' | 'debit';
+
+/** Reason for a wallet transaction */
+export type WalletTransactionReason = 'wallet_recharge' | 'order_purchase' | 'refund' | 'adjustment';
+
+/**
+ * A student's request to recharge their wallet.
+ * Created by the student; approved/rejected by cashier/admin.
+ */
+export interface WalletRechargeRequest {
+  id: string;
+  uid: string;
+  studentName: string;
+  amount: number;
+  screenshotUrl: string;
+  status: RechargeStatus;
+  createdAt: number;
+  reviewedBy?: string;
+  reviewedAt?: number;
+  rejectionNote?: string;
+}
+
+/**
+ * An auditable wallet transaction record.
+ * Created by the wallet service inside Firestore transactions — never directly from the client.
+ */
+export interface WalletTransaction {
+  id: string;
+  uid: string;
+  type: WalletTransactionType;
+  amount: number;
+  balanceAfter: number;
+  reason: WalletTransactionReason;
+  orderId?: string;
+  rechargeRequestId?: string;
+  createdAt: number;
+}
+
+/**
+ * Wallet summary stored on the user document.
+ * These fields are managed by wallet.ts service — never directly editable.
+ */
+export interface WalletSummary {
+  walletBalance: number;
+  totalRecharged: number;
+  totalSpent: number;
+}

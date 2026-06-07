@@ -9,7 +9,8 @@ service cloud.firestore {
     }
 
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.lower();
+      let data = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return ('role' in data) ? data.role.lower() : 'student';
     }
 
     function hasRoleDoc() {
@@ -18,8 +19,8 @@ service cloud.firestore {
 
     // Staff: email prefix fast-track OR Firestore role
     function isStaff() {
-      let email = request.auth.token.email.lower();
-      let staffEmail = email.matches('^(admin|server|cashier|cook)@.*');
+      let email = ('email' in request.auth.token) ? request.auth.token.email.lower() : '';
+      let staffEmail = email != '' && email.matches('^(admin|server|cashier|cook)@.*');
       return isAuthenticated() && (
         staffEmail ||
         (hasRoleDoc() && getUserRole() in ['admin', 'server', 'cashier', 'cook', 'manager'])
@@ -27,16 +28,17 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      let email = request.auth.token.email.lower();
+      let email = ('email' in request.auth.token) ? request.auth.token.email.lower() : '';
       return isAuthenticated() && (
-        email.matches('^admin@.*') ||
+        (email != '' && email.matches('^admin@.*')) ||
         (hasRoleDoc() && getUserRole() == 'admin')
       );
     }
 
     function isCashier() {
+      let email = ('email' in request.auth.token) ? request.auth.token.email.lower() : '';
       return isStaff() && (
-        request.auth.token.email.lower().matches('^(admin|cashier)@.*') ||
+        (email != '' && email.matches('^(admin|cashier)@.*')) ||
         (hasRoleDoc() && getUserRole() in ['admin', 'cashier'])
       );
     }
@@ -208,6 +210,37 @@ service cloud.firestore {
     match /{path=**}/items/{itemId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
+    }
+
+    // ─── JOE WALLET ───────────────────────────────────────────────────────────
+
+    // wallet_recharge_requests
+    // Students: create own requests, read own requests
+    // Cashier/Admin: read all + update (approve/reject)
+    match /wallet_recharge_requests/{reqId} {
+      allow read: if isAuthenticated() && (
+        isStaff() ||
+        (resource != null && request.auth.uid == resource.data.uid)
+      );
+      allow create: if isAuthenticated() &&
+        request.auth.uid == request.resource.data.uid &&
+        request.resource.data.status == 'pending';
+      allow update: if isCashier(); // approve/reject
+      allow delete: if isAdmin();
+    }
+
+    // wallet_transactions
+    // Students: read own; Staff: read all; nobody writes directly from client
+    // All writes happen inside server-side runTransaction() calls
+    match /wallet_transactions/{txId} {
+      allow read: if isAuthenticated() && (
+        isStaff() ||
+        (resource != null && request.auth.uid == resource.data.uid)
+      );
+      // Transactions are created inside Firestore runTransaction (SDK auth context)
+      // We allow create only from authenticated users (runTransaction runs as the user)
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // immutable audit trail
     }
   }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, AlertCircle, Sparkles, Bell, Receipt } from 'lucide-react';
+import { LogOut, Plus, Minus, Search, Menu, X as CloseIcon, Clock, AlertCircle, Sparkles, Bell, Receipt, Wallet, AlertTriangle } from 'lucide-react';
 import { getOrderUIState } from '../../utils/orderLifecycle';
 import SmartImage from '../../components/Common/SmartImage';
 import FoodLoader from '../../components/Common/FoodLoader';
@@ -8,6 +8,7 @@ import { CATEGORIES, STATION_ID_BY_ITEM_ID, FAST_ITEM_CATEGORIES } from '../../c
 import { getMenuOnce, listenToUserOrders } from '../../services/firestore-db';
 import { useInventory } from '../../hooks/useInventory';
 import Logo from '../../components/Logo';
+import NotificationInbox from '../../components/NotificationInbox';
 import { 
   PrivacyPolicy, 
   RefundPolicy, 
@@ -16,16 +17,20 @@ import {
   ComplianceFooter 
 } from './ComplianceView';
 
+import { listenToWalletSummary, WALLET_LOW_BALANCE_THRESHOLD } from '../../services/wallet';
+import { WalletSummary } from '../../types';
+
 interface HomeViewProps {
   profile: UserProfile | null;
   onProceed: () => void;
   onViewOrders?: () => void;
   onViewQR?: (orderId: string) => void;
+  onViewWallet?: () => void;
   onLogout: () => void;
   onOpenCompliance: (view: 'privacy' | 'refund' | 'terms' | 'contact') => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, onViewQR, onLogout, onOpenCompliance }) => {
+const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, onViewQR, onViewWallet, onLogout, onOpenCompliance }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('Breakfast');
   const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [search, setSearch] = useState('');
@@ -34,7 +39,16 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   const [isNotifGranted, setIsNotifGranted] = useState(Notification.permission === 'granted');
+  const [walletSummary, setWalletSummary] = useState<WalletSummary>({ walletBalance: 0, totalRecharged: 0, totalSpent: 0 });
   const { stockByItemId, isOutOfStock } = useInventory();
+
+  // Real-time wallet balance (authenticated students only)
+  useEffect(() => {
+    if (!profile?.uid || profile.role === 'GUEST') return;
+    return listenToWalletSummary(profile.uid, setWalletSummary);
+  }, [profile?.uid, profile?.role]);
+
+  const isLowBalance = walletSummary.walletBalance < WALLET_LOW_BALANCE_THRESHOLD;
 
   useEffect(() => {
     const handleNotifUpdate = () => setIsNotifGranted(true);
@@ -142,6 +156,24 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
           <p className="text-[10px] uppercase font-black text-slate-300 tracking-[0.2em] mt-1 italic">Verified Official Profile</p>
         </div>
         <div className="space-y-4">
+          {/* Wallet Card — authenticated students only */}
+          {profile?.uid && profile.role !== 'GUEST' && onViewWallet && (
+            <button
+              onClick={() => { setIsDrawerOpen(false); onViewWallet(); }}
+              className="w-full py-4 bg-slate-900 text-white rounded-3xl font-black text-xs uppercase flex items-center justify-between px-5 active:scale-95 transition-all shadow-lg"
+            >
+              <div className="flex items-center gap-3">
+                <Wallet className="w-4 h-4" />
+                <span>JOE Wallet</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isLowBalance && (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                )}
+                <span className="text-sm font-black">₹{walletSummary.walletBalance}</span>
+              </div>
+            </button>
+          )}
           <button 
              onClick={() => { setIsDrawerOpen(false); if (onViewOrders) onViewOrders(); }}
              className="w-full py-5 bg-slate-50 text-slate-700 rounded-3xl font-black text-xs uppercase flex items-center justify-center gap-3 active:scale-95 transition-all border border-slate-100"
@@ -162,16 +194,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
             <button onClick={() => setIsDrawerOpen(true)} className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all"><Menu className="w-6 h-6 text-slate-600" /></button>
             <h2 className="text-lg font-black text-slate-800 tracking-tighter">{profile?.name || 'Welcome'}</h2>
           </div>
-          <button 
-            onClick={() => (window as any).joeSubscribe?.()}
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-all duration-700 active:scale-90 ${
-              isNotifGranted 
-              ? 'bg-emerald-50 text-emerald-500 border-emerald-100 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
-              : 'bg-slate-50 text-slate-400 border-slate-100'
-            }`}
-          >
-            <Bell className={`w-5 h-5 ${isNotifGranted ? 'fill-current' : ''}`} />
-          </button>
+          <NotificationInbox />
         </div>
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />

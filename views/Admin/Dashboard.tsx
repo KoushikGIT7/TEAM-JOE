@@ -13,7 +13,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
-import { UserProfile, Order, MenuItem, SystemSettings, InventoryItem, InventoryMetaItem } from '../../types';
+import { UserProfile, Order, MenuItem, SystemSettings, InventoryItem, InventoryMetaItem, WalletRechargeRequest } from '../../types';
+import NotificationInbox from '../../components/NotificationInbox';
 import { 
   listenToAllOrders, listenToMenu, getMenuOnce,
   updateUserRole, toggleUserStatus, addMenuItem, updateMenuItem, deleteMenuItem,
@@ -28,6 +29,12 @@ import Logo from '../../components/Logo';
 import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
 import { offlineDetector } from '../../utils/offlineDetector';
 import AuditDownloadButton from '../../components/AuditDownloadButton';
+import {
+  listenToAllRechargeRequests,
+  approveRechargeRequest,
+  rejectRechargeRequest,
+  getWalletAnalytics,
+} from '../../services/wallet';
 
 const COLORS = ['#0F9D58', '#34D399', '#FBBF24', '#6B7280', '#EF4444'];
 
@@ -37,7 +44,7 @@ interface AdminDashboardProps {
   onOpenKitchen?: () => void;
 }
 
-type AdminTab = 'Overview' | 'Team' | 'Menu' | 'Inventory' | 'Settings' | 'Reports';
+type AdminTab = 'Overview' | 'Team' | 'Menu' | 'Inventory' | 'Settings' | 'Reports' | 'Wallet';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOpenKitchen }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('Overview');
@@ -50,6 +57,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
   const [inventoryMeta, setInventoryMeta] = useState<InventoryMetaItem[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [inventorySearch, setInventorySearch] = useState('');
+  // ─── Wallet state ─────────────────────────────────────────────────────────
+  const [walletRequests, setWalletRequests] = useState<WalletRechargeRequest[]>([]);
+  const [walletRequestFilter, setWalletRequestFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [walletAnalytics, setWalletAnalytics] = useState({ totalRechargedToday: 0, totalRevenueAllTime: 0, pendingRequestsCount: 0 });
+  const [walletActionLoading, setWalletActionLoading] = useState<string | null>(null);
+  const [walletRejectNote, setWalletRejectNote] = useState<Record<string, string>>({});
+  const [walletScreenshotModal, setWalletScreenshotModal] = useState<string | null>(null);
   const [dailyConsumption, setDailyConsumption] = useState<Record<string, number>>({});
   const [popularItems, setPopularItems] = useState<{ itemId: string; itemName?: string; quantity: number }[]>([]);
   const [reportStart, setReportStart] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -151,6 +165,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
     }, 60000);
     return () => clearInterval(t);
   }, []);
+
+  // ── Wallet: real-time listener + analytics (only when Wallet tab is active) ──
+  useEffect(() => {
+    if (activeTab !== 'Wallet') return;
+    const unsub = listenToAllRechargeRequests(setWalletRequests);
+    getWalletAnalytics().then(a => setWalletAnalytics(a)).catch(() => {});
+    return unsub;
+  }, [activeTab]);
 
   useEffect(() => {
     const loadReport = async () => {
@@ -324,6 +346,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
     { id: 'Inventory', icon: Package },
     { id: 'Reports', icon: FileText },
     { id: 'Settings', icon: SettingsIcon },
+    { id: 'Wallet', icon: Wallet },
   ] as const;
 
   const hasReportData = reportData && reportData.orders && reportData.orders.length > 0;
@@ -1161,7 +1184,162 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
     </div>
   );
 
+  const renderWallet = () => {
+    const filteredRequests = walletRequests.filter(r => r.status === walletRequestFilter);
+    const formatTime = (ms: number) => new Date(ms).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+
+        {/* Analytics Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { label: 'Pending Requests', value: walletAnalytics.pendingRequestsCount, color: 'bg-amber-50 text-amber-600', icon: '⏳' },
+            { label: 'Recharged Today', value: `₹${walletAnalytics.totalRechargedToday.toLocaleString()}`, color: 'bg-emerald-50 text-emerald-600', icon: '💳' },
+            { label: 'Total Revenue', value: `₹${walletAnalytics.totalRevenueAllTime.toLocaleString()}`, color: 'bg-blue-50 text-blue-600', icon: '🏦' },
+          ].map((s, i) => (
+            <div key={i} className="bg-white p-6 rounded-[1.5rem] border border-black/5 shadow-sm flex items-center gap-4">
+              <div className={`p-3 rounded-2xl ${s.color} text-2xl`}>{s.icon}</div>
+              <div>
+                <p className="text-[9px] font-black text-textSecondary uppercase tracking-widest">{s.label}</p>
+                <h3 className="text-xl font-black text-textMain mt-0.5">{s.value}</h3>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Recharge Requests */}
+        <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm overflow-hidden">
+          <div className="p-6 border-b flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-black text-textMain tracking-tighter uppercase">Recharge Requests</h3>
+              <p className="text-xs text-textSecondary font-bold mt-1">Review and approve student wallet recharges</p>
+            </div>
+            <div className="flex gap-2">
+              {(['pending', 'approved', 'rejected'] as const).map(status => (
+                <button
+                  key={status}
+                  onClick={() => setWalletRequestFilter(status)}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    walletRequestFilter === status
+                      ? status === 'pending' ? 'bg-amber-500 text-white' : status === 'approved' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
+                      : 'bg-gray-100 text-textSecondary hover:bg-gray-200'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredRequests.length === 0 ? (
+            <div className="p-16 text-center">
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">💳</div>
+              <p className="font-black text-textMain uppercase text-xs tracking-widest">No {walletRequestFilter} requests</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {filteredRequests.map(req => (
+                <div key={req.id} className="p-5 sm:p-6 flex flex-col sm:flex-row items-start gap-4">
+                  {/* Screenshot thumbnail */}
+                  <button
+                    onClick={() => setWalletScreenshotModal(req.screenshotUrl)}
+                    className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200 shrink-0 hover:scale-105 transition-all"
+                  >
+                    <img src={req.screenshotUrl} alt="Payment screenshot" className="w-full h-full object-cover" />
+                  </button>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <p className="font-black text-textMain">{req.studentName}</p>
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        req.status === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                        req.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                        'bg-red-50 text-red-600 border border-red-100'
+                      }`}>{req.status}</span>
+                    </div>
+                    <p className="text-2xl font-black text-textMain">₹{req.amount}</p>
+                    <p className="text-[10px] text-textSecondary font-bold mt-0.5">{formatTime(req.createdAt)}</p>
+                    {req.reviewedBy && <p className="text-[10px] text-textSecondary font-bold mt-0.5">Reviewed by {req.reviewedBy} · {formatTime(req.reviewedAt || 0)}</p>}
+                    {req.rejectionNote && <p className="text-[10px] text-red-500 font-bold mt-0.5">Note: {req.rejectionNote}</p>}
+
+                    {/* Reject note input for pending */}
+                    {req.status === 'pending' && (
+                      <input
+                        placeholder="Rejection note (optional)"
+                        value={walletRejectNote[req.id] || ''}
+                        onChange={e => setWalletRejectNote(prev => ({ ...prev, [req.id]: e.target.value }))}
+                        className="mt-2 w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  {req.status === 'pending' && (
+                    <div className="flex gap-2 sm:flex-col shrink-0">
+                      <button
+                        onClick={async () => {
+                          setWalletActionLoading(req.id + '_approve');
+                          try {
+                            await approveRechargeRequest(req.id, profile.name);
+                            getWalletAnalytics().then(a => setWalletAnalytics(a)).catch(() => {});
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to approve');
+                          } finally {
+                            setWalletActionLoading(null);
+                          }
+                        }}
+                        disabled={!!walletActionLoading}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {walletActionLoading === req.id + '_approve' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                        Approve
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setWalletActionLoading(req.id + '_reject');
+                          try {
+                            await rejectRechargeRequest(req.id, profile.name, walletRejectNote[req.id] || '');
+                            getWalletAnalytics().then(a => setWalletAnalytics(a)).catch(() => {});
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to reject');
+                          } finally {
+                            setWalletActionLoading(null);
+                          }
+                        }}
+                        disabled={!!walletActionLoading}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-red-50 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-100 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {walletActionLoading === req.id + '_reject' ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />}
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Screenshot Modal */}
+        {walletScreenshotModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setWalletScreenshotModal(null)}>
+            <div className="bg-white rounded-3xl overflow-hidden max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-4 border-b flex justify-between items-center">
+                <p className="font-black text-sm uppercase tracking-widest text-textMain">Payment Screenshot</p>
+                <button onClick={() => setWalletScreenshotModal(null)} className="p-2 bg-gray-100 rounded-xl"><CloseIcon className="w-4 h-4" /></button>
+              </div>
+              <img src={walletScreenshotModal} alt="Payment screenshot" className="w-full object-contain max-h-[70vh]" />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderSettings = () => (
+
     <div className="max-w-3xl mx-auto space-y-6 animate-in zoom-in-95 duration-500">
       <div className="bg-white p-5 sm:p-10 rounded-[2rem] border border-black/5 shadow-sm space-y-8">
         <div className="flex justify-between items-center">
@@ -1352,10 +1530,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
               <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               Live
             </div>
-            <button className="p-2.5 bg-gray-50 text-textSecondary rounded-xl hover:bg-primary/10 hover:text-primary transition-all relative">
-              <Bell className="w-5 h-5" />
-              <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-error rounded-full ring-2 ring-white" />
-            </button>
+            <NotificationInbox />
           </div>
         </header>
 
@@ -1367,6 +1542,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
           {activeTab === 'Menu'       && renderMenu()}
           {activeTab === 'Inventory'  && renderInventory()}
           {activeTab === 'Reports'    && renderReports()}
+          {activeTab === 'Wallet'     && renderWallet()}
         </div>
       </main>
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Smartphone, Banknote, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Smartphone, Banknote, ChevronRight, CheckCircle2, Loader2, Wallet } from 'lucide-react';
 import { UserProfile, CartItem } from '../../types';
 import { createOrder, listenToOrder, getOrderingEnabled } from '../../services/firestore-db';
 import { doc, serverTimestamp } from 'firebase/firestore';
 import { joeSounds } from '../../utils/audio';
 import { sonicVoice } from '../../services/voice-engine';
+import { deductWalletForOrder, listenToWalletSummary } from '../../services/wallet';
 
 /** Generate a local order ID instantly (same format as firestore-db.ts) */
 const genLocalOrderId = () => 'order_' + Math.random().toString(36).substr(2, 9);
@@ -21,10 +22,12 @@ const UPI_PN = 'JOE Cafeteria';
 const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'WAITING' | 'SUCCESS'>('IDLE');
-  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'CASH'>('UPI');
+  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'CASH' | 'WALLET'>('UPI');
   const [orderId, setOrderId] = useState<string | null>(null);
   const [orderingDisabled, setOrderingDisabled] = useState(false);
   const [activeAttemptKey] = useState(() => `idemp_${profile?.uid || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('joe_cart');
@@ -34,6 +37,12 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   useEffect(() => {
     getOrderingEnabled().then(e => setOrderingDisabled(!e)).catch(() => setOrderingDisabled(false));
   }, []);
+
+  // Real-time wallet balance for authenticated students
+  useEffect(() => {
+    if (!profile?.uid || profile.role === 'GUEST') return;
+    return listenToWalletSummary(profile.uid, (s) => setWalletBalance(s.walletBalance));
+  }, [profile?.uid, profile?.role]);
 
   // Restore orphaned session
   useEffect(() => {
@@ -63,11 +72,61 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
   }, [orderId, selectedMethod, onSuccess]);
 
   const total = cart.reduce((acc, it) => acc + it.price * it.quantity, 0);
+  const isWalletSufficient = walletBalance >= total;
+  const isGuestUser = !profile?.uid || profile.role === 'GUEST';
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (state === 'PROCESSING') return;
+    setWalletError(null);
 
-    // ⚡ OPTIMISTIC UI — generate order ID locally, navigate INSTANTLY
+    // ─── WALLET PAYMENT ────────────────────────────────────────────────────────
+    if (selectedMethod === 'WALLET') {
+      if (!profile?.uid) { setWalletError('Please sign in to use wallet'); return; }
+      if (!isWalletSufficient) { setWalletError(`Insufficient balance. Available: ₹${walletBalance}`); return; }
+
+      setState('PROCESSING');
+      const optimisticOrderId = genLocalOrderId();
+      try {
+        // 1. Deduct wallet atomically (throws if balance insufficient)
+        await deductWalletForOrder(profile.uid, total, optimisticOrderId);
+
+        // 2. Build order payload (paymentStatus: SUCCESS — already paid from wallet)
+        const orderPayload = {
+          id: optimisticOrderId,
+          userId: profile.uid,
+          userName: profile.name || 'Student',
+          items: cart,
+          totalAmount: total,
+          paymentType: 'WALLET' as any,
+          paymentStatus: 'SUCCESS',
+          queueStatus: 'NOT_IN_QUEUE',
+          orderStatus: 'PENDING',
+          qrStatus: 'ACTIVE',
+          cafeteriaId: 'MAIN_CAFE',
+          idempotencyKey: activeAttemptKey,
+          createdAt: Date.now(),
+        };
+
+        localStorage.removeItem('joe_cart');
+        sessionStorage.setItem('joe_optimistic_order', JSON.stringify(orderPayload));
+
+        joeSounds.stopAll();
+        joeSounds.playPaymentConfirmed();
+
+        // 3. Commit to Firestore in background — UI already moved on
+        createOrder(orderPayload as any).catch((e) => {
+          console.warn('[WALLET-ORDER] Background order write failed:', e);
+        });
+
+        onSuccess(optimisticOrderId);
+      } catch (err: any) {
+        setState('IDLE');
+        setWalletError(err.message || 'Wallet payment failed. Please try again.');
+      }
+      return;
+    }
+
+    // ─── UPI / CASH (unchanged original logic) ─────────────────────────────────
     const guestId = profile?.uid || (() => {
       const s = sessionStorage.getItem('joe_guest_id') || `guest_${Math.random().toString(36).substr(2, 12)}`;
       sessionStorage.setItem('joe_guest_id', s); return s;
@@ -272,7 +331,7 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
         {/* Payment Method */}
         <div className="bg-white rounded-[2rem] p-6 border border-black/5 shadow-sm">
           <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">Payment Method</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 mb-3">
 
             <button
               onClick={() => setSelectedMethod('UPI')}
@@ -311,6 +370,43 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
             </button>
 
           </div>
+
+          {/* JOE Wallet option — full-width row */}
+          {!isGuestUser && (
+            <button
+              onClick={() => setSelectedMethod('WALLET')}
+              disabled={!isWalletSufficient}
+              className={`w-full flex items-center justify-between p-5 rounded-[1.5rem] border-2 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${
+                selectedMethod === 'WALLET'
+                  ? 'border-emerald-500 bg-emerald-50'
+                  : 'border-gray-100 bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedMethod === 'WALLET' ? 'bg-emerald-500' : 'bg-gray-200'}`}>
+                  <Wallet className={`w-6 h-6 ${selectedMethod === 'WALLET' ? 'text-white' : 'text-gray-500'}`} />
+                </div>
+                <div className="text-left">
+                  <p className={`text-sm font-black ${selectedMethod === 'WALLET' ? 'text-emerald-700' : 'text-gray-700'}`}>JOE Wallet</p>
+                  <p className="text-[9px] font-bold mt-0.5">
+                    {isWalletSufficient ? (
+                      <span className="text-emerald-600">Balance: ₹{walletBalance} — Sufficient</span>
+                    ) : (
+                      <span className="text-red-500">Balance: ₹{walletBalance} — Insufficient</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              {selectedMethod === 'WALLET' && <div className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
+            </button>
+          )}
+
+          {/* Wallet error */}
+          {walletError && (
+            <div className="mt-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
+              <p className="text-xs font-bold text-red-600">{walletError}</p>
+            </div>
+          )}
         </div>
 
         {orderingDisabled && (
@@ -327,14 +423,14 @@ const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess })
           <span className="text-3xl font-black text-gray-900">₹{total}</span>
         </div>
         <button
-          disabled={orderingDisabled}
+          disabled={orderingDisabled || state === 'PROCESSING'}
           onClick={handlePayment}
           className="w-full h-16 bg-gray-900 text-white rounded-[1.5rem] font-black flex items-center justify-between px-8 shadow-xl active:scale-95 transition-all disabled:opacity-40"
         >
           <span className="text-sm uppercase tracking-widest">
-            {selectedMethod === 'CASH' ? 'Place Order' : 'Pay with UPI'}
+            {state === 'PROCESSING' ? 'Processing...' : selectedMethod === 'CASH' ? 'Place Order' : selectedMethod === 'WALLET' ? 'Pay with Wallet' : 'Pay with UPI'}
           </span>
-          <ChevronRight className="w-5 h-5" />
+          {state === 'PROCESSING' ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronRight className="w-5 h-5" />}
         </button>
       </div>
     </div>
