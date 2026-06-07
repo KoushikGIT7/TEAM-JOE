@@ -19,6 +19,11 @@ import {
 
 import { listenToWalletSummary, WALLET_LOW_BALANCE_THRESHOLD } from '../../services/wallet';
 import { WalletSummary } from '../../types';
+import { 
+  getPushSubscriptionState, 
+  setPushSubscriptionState, 
+  addSubscriptionChangeListener 
+} from '../../services/onesignal';
 
 interface HomeViewProps {
   profile: UserProfile | null;
@@ -38,7 +43,7 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const [loading, setLoading] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
-  const [isNotifGranted, setIsNotifGranted] = useState(Notification.permission === 'granted');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [walletSummary, setWalletSummary] = useState<WalletSummary>({ walletBalance: 0, totalRecharged: 0, totalSpent: 0 });
   const { stockByItemId, isOutOfStock } = useInventory();
 
@@ -51,10 +56,29 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
   const isLowBalance = walletSummary.walletBalance < WALLET_LOW_BALANCE_THRESHOLD;
 
   useEffect(() => {
-    const handleNotifUpdate = () => setIsNotifGranted(true);
-    window.addEventListener('joe_notif_granted', handleNotifUpdate);
-    return () => window.removeEventListener('joe_notif_granted', handleNotifUpdate);
-  }, []);
+    setNotificationsEnabled(getPushSubscriptionState());
+    addSubscriptionChangeListener((optedIn) => {
+      setNotificationsEnabled(optedIn);
+    });
+  }, [isDrawerOpen]);
+
+  const handleToggleNotifications = async () => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+      alert("⚠️ Notification permission is blocked in your browser settings. Please click the site settings/lock icon in your browser address bar next to localhost, change Notifications to 'Allow', and try again!");
+      return;
+    }
+    const nextState = !notificationsEnabled;
+    await setPushSubscriptionState(nextState);
+    
+    setNotificationsEnabled(getPushSubscriptionState());
+    
+    // Poll to sync state if service worker registration takes a moment
+    for (const delay of [500, 1000, 2000, 4000]) {
+      setTimeout(() => {
+        setNotificationsEnabled(getPushSubscriptionState());
+      }, delay);
+    }
+  };
 
   useEffect(() => {
     getMenuOnce().then(items => { setMenu(items); setLoading(false); }).catch(() => setLoading(false));
@@ -180,6 +204,28 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
           >
             <Receipt className="w-4 h-4" /> My Order History
           </button>
+          {/* Notification Toggle Button */}
+          <button
+            onClick={handleToggleNotifications}
+            className={`w-full py-4 rounded-3xl font-black text-xs uppercase flex items-center justify-between px-5 active:scale-95 transition-all border shadow-sm ${
+              notificationsEnabled 
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-100 hover:bg-emerald-100/70' 
+                : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-slate-100/50'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Bell className={`w-4 h-4 ${notificationsEnabled ? 'text-emerald-600 animate-bounce' : 'text-slate-400'}`} />
+              <span>Notifications</span>
+            </div>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              notificationsEnabled 
+                ? 'bg-emerald-200 text-emerald-900' 
+                : 'bg-slate-200 text-slate-500'
+            }`}>
+              {notificationsEnabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
           <div className="pt-2 border-t border-slate-50">
             <button onClick={onLogout} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 active:scale-95 transition-all">
               <LogOut className="w-4 h-4" /> Logout

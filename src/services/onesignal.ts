@@ -144,3 +144,40 @@ export const trackAnalyticsEvent = async (eventName: string, data: Record<string
     console.error(`❌ [ANALYTICS] Failed to write metrics for "${eventName}":`, error);
   }
 };
+
+export const getPushSubscriptionState = (): boolean => {
+  try {
+    return OneSignal.User.PushSubscription.optedIn ?? false;
+  } catch (e) {
+    console.error("🔔 [OneSignal] Get opt-in state error:", e);
+    return false;
+  }
+};
+
+export const setPushSubscriptionState = async (enable: boolean) => {
+  try {
+    if (enable) {
+      if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+        await OneSignal.Notifications.requestPermission();
+      } else {
+        await OneSignal.User.PushSubscription.optIn();
+      }
+    } else {
+      await OneSignal.User.PushSubscription.optOut();
+    }
+  } catch (e) {
+    console.error("🔔 [OneSignal] Set opt-in state error:", e);
+  }
+};
+
+export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => void) => {
+  try {
+    OneSignal.User.PushSubscription.addEventListener("change", (e: any) => {
+      if (e && e.current) {
+        callback(e.current.optedIn);
+      }
+    });
+  } catch (e) {
+    console.error("🔔 [OneSignal] Event listener registration error:", e);
+  }
+};
