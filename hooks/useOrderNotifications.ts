@@ -197,6 +197,17 @@ export const useOrderNotifications = (userId: string | null) => {
                             console.error('Streak update error:', e);
                         }
                     }
+
+                    const dKeyCompleteAll = `${orderId}-FULL-COMPLETE-AUDIO`;
+                    if (!sessionDedupeRef.current.has(dKeyCompleteAll)) {
+                        sessionDedupeRef.current.add(dKeyCompleteAll);
+                        
+                        // 🛡️ DO NOT kill the scan audio if the user just scanned!
+                        if (!isNowScanned) {
+                            joeSounds.stopAll();
+                            joeSounds.playFoodReady();
+                        }
+                    }
                 }
 
                 activeListenerRef.current[orderId] = { status: currentStatus, flow: currentFlow };
