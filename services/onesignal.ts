@@ -7,6 +7,10 @@ let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 let changeListeners: ((optedIn: boolean) => void)[] = [];
 
+// State caching to prevent redundant API operations causing 409 Conflicts
+let lastLoggedId: string | null = null;
+let lastSyncedTagsJson: string | null = null;
+
 /**
  * 🔔 Safe Client-Side OneSignal Initialization
  * Prevents multiple concurrent/duplicate SDK calls.
@@ -59,27 +63,42 @@ export const initializeOneSignal = async (): Promise<void> => {
  */
 export const loginUser = async (uid: string, profile: UserProfile): Promise<void> => {
   if (typeof window === 'undefined') return;
+
+  // Build user tags for targeting segmentation
+  const tags: Record<string, string> = {
+    role: (profile.role || 'student').toLowerCase(),
+    name: profile.name,
+    wallet_enabled: String(profile.walletBalance !== undefined),
+    regular_customer: String((profile.totalSpent && profile.totalSpent > 0) || false),
+  };
+
+  if (profile.walletBalance !== undefined) {
+    tags.wallet_user = 'true';
+    tags.low_balance_user = String(profile.walletBalance < 30);
+  }
+
+  const tagsJson = JSON.stringify(tags);
+
+  // Avoid redundant login/tag synchronization calls if they haven't changed
+  if (lastLoggedId === uid && lastSyncedTagsJson === tagsJson) {
+    return;
+  }
+
   await initializeOneSignal();
 
   try {
-    console.log(`👤 [ONESIGNAL] Logging in external_id: ${uid}`);
-    await OneSignal.login(uid);
-
-    // Build user tags for targeting segmentation
-    const tags: Record<string, string> = {
-      role: (profile.role || 'student').toLowerCase(),
-      name: profile.name,
-      wallet_enabled: String(profile.walletBalance !== undefined),
-      regular_customer: String((profile.totalSpent && profile.totalSpent > 0) || false),
-    };
-
-    if (profile.walletBalance !== undefined) {
-      tags.wallet_user = 'true';
-      tags.low_balance_user = String(profile.walletBalance < 30);
+    if (lastLoggedId !== uid) {
+      console.log(`👤 [ONESIGNAL] Logging in external_id: ${uid}`);
+      await OneSignal.login(uid);
+      lastLoggedId = uid;
     }
 
-    await OneSignal.User.addTags(tags);
-    console.log('🏷️ [ONESIGNAL] Tags synchronized:', tags);
+    if (lastSyncedTagsJson !== tagsJson) {
+      console.log('🏷️ [ONESIGNAL] Synchronizing tags:', tags);
+      await OneSignal.User.addTags(tags);
+      lastSyncedTagsJson = tagsJson;
+      console.log('🏷️ [ONESIGNAL] Tags synchronized successfully.');
+    }
   } catch (error) {
     console.error('❌ [ONESIGNAL] Failed to identify user:', error);
   }
@@ -94,6 +113,8 @@ export const logoutUser = async (): Promise<void> => {
   try {
     console.log('🚪 [ONESIGNAL] Logging out and clearing user aliases...');
     await OneSignal.logout();
+    lastLoggedId = null;
+    lastSyncedTagsJson = null;
   } catch (error) {
     console.error('❌ [ONESIGNAL] Logout error:', error);
   }
