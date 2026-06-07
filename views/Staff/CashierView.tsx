@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
    LogOut, CheckCircle, Clock, Banknote, RefreshCw, Search, LayoutDashboard,
    FileText, BarChart3, Settings, X, AlertCircle, TrendingUp, DollarSign,
    Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon,
-   Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid, Zap, AlertTriangle
+   Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid, Zap, AlertTriangle,
+   Wallet
 } from 'lucide-react';
-import { UserProfile, Order } from '../../types';
+import { UserProfile, Order, WalletRechargeRequest } from '../../types';
 import {
    listenToPendingCashOrders, confirmCashPayment, rejectCashPayment,
    listenToAllOrders, listenToMenu, registerBankDeposit, flushMissedPickups
@@ -21,13 +22,14 @@ import { fetchReport, exportReport, ExportFormat } from '../../services/reportin
 import SmartImage from '../../components/Common/SmartImage';
 import { preloadImage } from '../../utils/image-optimizer';
 import AuditDownloadButton from '../../components/AuditDownloadButton';
+import { listenToAllRechargeRequests, approveRechargeRequest, rejectRechargeRequest } from '../../services/wallet';
 
 interface CashierViewProps {
    profile: UserProfile;
    onLogout: () => void;
 }
 
-type CashierTab = 'PENDING' | 'ORDERS' | 'INSIGHT' | 'SUMMARY' | 'SETTINGS';
+type CashierTab = 'PENDING' | 'ORDERS' | 'INSIGHT' | 'SUMMARY' | 'SETTINGS' | 'RECHARGES';
 
 const COLORS = ['#10B981', '#F59E0B', '#6366F1', '#EC4899'];
 
@@ -42,9 +44,23 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    const [search, setSearch] = useState('');
    const [loading, setLoading] = useState(true);
 
+   // ─── Wallet Recharges State ───
+   const [walletRequests, setWalletRequests] = useState<WalletRechargeRequest[]>([]);
+   const [walletActionLoading, setWalletActionLoading] = useState<string | null>(null);
+   const [walletRejectNote, setWalletRejectNote] = useState<Record<string, string>>({});
+   const [walletScreenshotModal, setWalletScreenshotModal] = useState<string | null>(null);
+
    const [reportStart, setReportStart] = useState<string>(() => new Date().toISOString().split('T')[0]);
    const [reportEnd, setReportEnd] = useState<string>(() => new Date().toISOString().split('T')[0]);
    const [reportLoading, setReportLoading] = useState(false);
+   const [reportQuery, setReportQuery] = useState({ days: 0, label: 'Today' });
+   const [activeFilter, setActiveFilter] = useState<'ALL' | 'CASH' | 'ONLINE'>('ALL');
+   const [showDepositModal, setShowDepositModal] = useState(false);
+   const [depositAmount, setDepositAmount] = useState('');
+   const [depositRef, setDepositRef] = useState('');
+   const [depositUploading, setDepositUploading] = useState(false);
+
+   const audioRef = useRef<HTMLAudioElement | null>(null);
 
    // 🛡️ SAFETY: Force-clear loading after 3s max
    useEffect(() => {
@@ -73,10 +89,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       };
    }, []);
 
-   const audioRef = React.useRef<HTMLAudioElement | null>(null);
-
-   const notifiedUtrs = React.useRef<Set<string>>(new Set());
    useEffect(() => {
+      // 🔊 Initialize sound effects inline
+      audioRef.current = new Audio(joeSounds.CHIME);
+      audioRef.current.load();
+
       if ('Notification' in window && Notification.permission === 'default') {
          Notification.requestPermission();
       }
@@ -91,7 +108,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   new Notification(`💵 ${data.length} Cash Request${data.length > 1 ? 's' : ''} Pending`, {
                      body: `Tap to review.`,
                      icon: '/JeoLogoFinal.png',
-                  });
+                   });
                }
             }
             lastLen = data.length;
@@ -102,6 +119,10 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
          listenToAllOrders((data) => {
             setAllOrders(data);
             setLoading(false); // Backup loading clear
+            offlineDetector.recordPing();
+         }),
+         listenToAllRechargeRequests((data) => {
+            setWalletRequests(data.filter(r => r.status === 'pending'));
             offlineDetector.recordPing();
          }),
       ];
@@ -741,6 +762,157 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       </div>
    );
 
+   const renderDesktopRecharges = () => (
+      <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
+         <div className="bg-emerald-600 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-emerald-900/10 flex items-center justify-between overflow-hidden relative">
+            <div className="relative z-10">
+               <h2 className="text-3xl font-black uppercase italic tracking-tight">Wallet Recharges</h2>
+               <p className="text-emerald-100 font-bold opacity-80 mt-1">Verify manual cash deposit screenshots to approve wallet balances</p>
+            </div>
+            <div className="relative z-10 bg-white/20 backdrop-blur-xl px-10 py-6 rounded-3xl border border-white/20 flex items-center gap-6">
+               <Wallet className="w-10 h-10" />
+               <div>
+                  <p className="text-[10px] font-black opacity-50 uppercase tracking-widest">Pending</p>
+                  <p className="text-5xl font-black leading-none">{walletRequests.length}</p>
+               </div>
+            </div>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16" />
+         </div>
+
+         {walletRequests.length === 0 ? (
+            <div className="py-32 text-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
+               <ShieldCheck className="w-20 h-20 text-slate-100 mb-6" />
+               <p className="text-2xl font-black text-slate-900">Queue Fully Processed</p>
+               <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">All student recharge requests have been cleared</p>
+            </div>
+         ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               {walletRequests.map(req => (
+                  <div key={req.id} className="bg-white rounded-[2rem] border-4 border-slate-100 p-6 shadow-xl relative group flex flex-col">
+                     <div className="flex justify-between items-start mb-6">
+                        <div className="flex items-center gap-4">
+                           <button onClick={() => setWalletScreenshotModal(req.screenshotUrl)} className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 hover:scale-105 transition-all">
+                              <img src={req.screenshotUrl} alt="Screenshot" className="w-full h-full object-cover" />
+                           </button>
+                           <div>
+                              <span className="text-[10px] font-black bg-slate-900 text-white px-3 py-1 rounded-full uppercase tracking-widest mb-2 inline-block">Wallet</span>
+                              <h4 className="text-xl font-black text-slate-900 leading-none">{req.studentName}</h4>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">{formatTime(req.createdAt)}</p>
+                           </div>
+                        </div>
+                        <p className="text-3xl font-black text-emerald-600 italic">₹{req.amount}</p>
+                     </div>
+                     <input
+                        placeholder="Rejection note (optional)"
+                        value={walletRejectNote[req.id] || ''}
+                        onChange={e => setWalletRejectNote(prev => ({ ...prev, [req.id]: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 mb-4 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                     />
+                     <div className="flex gap-2 mt-auto">
+                        <button
+                           onClick={async () => {
+                              setWalletActionLoading(req.id + '_approve');
+                              try { await approveRechargeRequest(req.id, profile.name); } 
+                              catch (err: any) { alert(err.message); } 
+                              finally { setWalletActionLoading(null); }
+                           }}
+                           disabled={!!walletActionLoading}
+                           className="flex-[2] h-14 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
+                        >
+                           {walletActionLoading === req.id + '_approve' ? <RefreshCw className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />} Approve
+                        </button>
+                        <button
+                           onClick={async () => {
+                              setWalletActionLoading(req.id + '_reject');
+                              try { await rejectRechargeRequest(req.id, profile.name, walletRejectNote[req.id] || ''); } 
+                              catch (err: any) { alert(err.message); } 
+                              finally { setWalletActionLoading(null); }
+                           }}
+                           disabled={!!walletActionLoading}
+                           className="w-14 h-14 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 flex items-center justify-center hover:bg-rose-100 transition-all active:scale-95"
+                        >
+                           {walletActionLoading === req.id + '_reject' ? <RefreshCw className="w-5 h-5 animate-spin" /> : <X className="w-5 h-5" />}
+                        </button>
+                     </div>
+                  </div>
+               ))}
+            </div>
+         )}
+      </div>
+   );
+
+   const renderMobileRecharges = () => (
+      <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+         <div className="flex items-center justify-between mb-4 px-1">
+            <h2 className="text-base font-black uppercase italic text-slate-900 flex items-center gap-2">
+               <Wallet className="w-4 h-4 text-emerald-600" /> Wallet Recharges
+            </h2>
+            <span className="bg-emerald-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-emerald-500/20">
+               {walletRequests.length} Pending
+            </span>
+         </div>
+
+         {walletRequests.length === 0 ? (
+            <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+               <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+               <p className="text-sm font-black text-slate-905">All Clear</p>
+               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 leading-none">No pending wallet requests</p>
+            </div>
+         ) : (
+            <div className="space-y-3">
+               {walletRequests.map(req => (
+                  <div key={req.id} className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-sm flex flex-col">
+                     <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3 min-w-0 pr-2">
+                           <button onClick={() => setWalletScreenshotModal(req.screenshotUrl)} className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                              <img src={req.screenshotUrl} alt="Screenshot" className="w-full h-full object-cover" />
+                           </button>
+                           <div className="min-w-0">
+                              <h3 className="text-[13px] font-black text-slate-900 truncate leading-tight">{req.studentName}</h3>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatTime(req.createdAt)}</p>
+                           </div>
+                        </div>
+                        <p className="text-lg font-black text-emerald-600 leading-none shrink-0">₹{req.amount}</p>
+                     </div>
+                     <input
+                        placeholder="Rejection note (optional)"
+                        value={walletRejectNote[req.id] || ''}
+                        onChange={e => setWalletRejectNote(prev => ({ ...prev, [req.id]: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 mb-3 text-[10px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                     />
+                     <div className="flex gap-2">
+                        <button
+                           onClick={async () => {
+                              setWalletActionLoading(req.id + '_approve');
+                              try { await approveRechargeRequest(req.id, profile.name); } 
+                              catch (err: any) { alert(err.message); } 
+                              finally { setWalletActionLoading(null); }
+                           }}
+                           disabled={!!walletActionLoading}
+                           className="flex-1 h-10 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95"
+                        >
+                           {walletActionLoading === req.id + '_approve' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Approve
+                        </button>
+                        <button
+                           onClick={async () => {
+                              setWalletActionLoading(req.id + '_reject');
+                              try { await rejectRechargeRequest(req.id, profile.name, walletRejectNote[req.id] || ''); } 
+                              catch (err: any) { alert(err.message); } 
+                              finally { setWalletActionLoading(null); }
+                           }}
+                           disabled={!!walletActionLoading}
+                           className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 flex items-center justify-center active:scale-95"
+                        >
+                           {walletActionLoading === req.id + '_reject' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                        </button>
+                     </div>
+                  </div>
+               ))}
+            </div>
+         )}
+      </div>
+   );
+
    const renderDesktopSummary = () => (
       <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
          <div className="bg-white rounded-[3rem] p-12 border border-slate-100 shadow-2xl relative overflow-hidden">
@@ -826,6 +998,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    const renderMobileControl = () => {
       switch (activeTab) {
          case 'PENDING': return renderMobileRequests();
+         case 'RECHARGES': return renderMobileRecharges();
          case 'ORDERS': return renderMobileHistory();
          case 'INSIGHT': return renderMobileDashboard();
          case 'SUMMARY': return (
@@ -882,6 +1055,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                   {[
                      { id: 'INSIGHT', label: 'Monitor Deck', icon: LayoutDashboard },
                      { id: 'PENDING', label: 'Inbound Queue', icon: Banknote },
+                     { id: 'RECHARGES', label: 'Wallet Recharges', icon: Wallet },
                      { id: 'ORDERS', label: 'Master Ledger', icon: FileText },
                      { id: 'SUMMARY', label: 'Settlement', icon: Calculator }
                   ].map(tab => (
@@ -912,7 +1086,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                      <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">
                         {activeTab === 'INSIGHT' ? 'DIAGNOSTIC STRATAGEM' :
                            activeTab === 'PENDING' ? 'QUEUE VERIFICATION' :
-                              activeTab === 'ORDERS' ? 'CRYPTOGRAPHIC LEDGER' : 'SETTLEMENT PROTOCOL'}
+                              activeTab === 'RECHARGES' ? 'WALLET RECHARGE PORTAL' :
+                                 activeTab === 'ORDERS' ? 'CRYPTOGRAPHIC LEDGER' : 'SETTLEMENT PROTOCOL'}
                      </h1>
                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.5em] mt-1 leading-none">Authorization Level 4 • Station 202</p>
                   </div>
@@ -923,8 +1098,9 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                <div className="p-16 max-w-7xl mx-auto w-full flex-1">
                   {activeTab === 'INSIGHT' ? renderDesktopDashboard() :
                      activeTab === 'PENDING' ? renderDesktopRequests() :
-                        activeTab === 'ORDERS' ? renderDesktopHistory() :
-                           renderDesktopSummary()}
+                        activeTab === 'RECHARGES' ? renderDesktopRecharges() :
+                           activeTab === 'ORDERS' ? renderDesktopHistory() :
+                              renderDesktopSummary()}
                </div>
             </main>
          </div>
@@ -940,6 +1116,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             <nav className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-2xl border-t border-slate-100 px-6 py-6 flex items-center justify-between z-40 pb-safe shadow-[0_-15px_40px_rgba(0,0,0,0.08)]">
                {[
                   { id: 'PENDING', icon: AlertCircle, label: 'Queue' },
+                  { id: 'RECHARGES', icon: Wallet, label: 'Recharges' },
                   { id: 'ORDERS', icon: Receipt, label: 'Ledger' },
                   { id: 'INSIGHT', icon: LayoutDashboard, label: 'Insight' },
                   { id: 'SUMMARY', icon: LayoutGrid, label: 'Admin' }
@@ -962,6 +1139,16 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
                <div className="text-center space-y-3 px-10">
                   <h3 className="text-white font-black uppercase tracking-[0.8em] text-xs italic leading-none">Initializing Stratagem</h3>
                   <p className="text-emerald-500/50 font-black text-[10px] uppercase tracking-widest animate-pulse leading-none">Syncing Decentralized Terminal Engine...</p>
+               </div>
+            </div>
+         )}
+
+         {/* 🖼️ WALLET SCREENSHOT MODAL */}
+         {walletScreenshotModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm" onClick={() => setWalletScreenshotModal(null)}>
+               <div className="bg-white rounded-3xl overflow-hidden max-w-md w-full shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setWalletScreenshotModal(null)} className="absolute top-4 right-4 p-2 bg-slate-900/50 backdrop-blur-md text-white rounded-full"><X className="w-5 h-5" /></button>
+                  <img src={walletScreenshotModal} alt="Payment screenshot" className="w-full object-contain max-h-[80vh]" />
                </div>
             </div>
          )}

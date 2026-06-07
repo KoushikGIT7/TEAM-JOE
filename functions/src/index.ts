@@ -5,6 +5,7 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
+
 type NotificationEvent =
   | "PAYMENT_SUCCESS"
   | "PAYMENT_REJECTED"

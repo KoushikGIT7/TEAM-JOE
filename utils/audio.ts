@@ -8,6 +8,7 @@
  * ============================================================
  */
 class SoundService {
+  public CHIME: string | undefined = undefined;
   private ctx: AudioContext | null = null;
 
   private activeOscillators: OscillatorNode[] = [];

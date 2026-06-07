@@ -9,6 +9,9 @@ import { UserProfile } from './types';
 import { Bell, X } from 'lucide-react';
 import { joeSounds } from './utils/audio';
 import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
+import { initializeOneSignal, loginUser, logoutUser } from './services/onesignal';
+import OneSignalPermissionModal from './components/OneSignalPermissionModal';
+import { triggerOneSignalWebhook } from './services/onesignal-webhook';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -41,6 +44,7 @@ type ViewState =
 
 const App: React.FC = () => {
   const { user: authUser, profile: authProfile, loading: authLoading } = useAuth();
+  const [showOneSignalPrompt, setShowOneSignalPrompt] = useState(false);
   
   const [guestProfile, setGuestProfile] = useState<UserProfile | null>(() => {
     try {
@@ -70,6 +74,51 @@ const App: React.FC = () => {
       window.removeEventListener('touchstart', unlock);
     };
   }, []);
+
+  // 🔔 OneSignal Web Push SDK Setup
+  useEffect(() => {
+    initializeOneSignal();
+  }, []);
+
+  // Sync user identification & tags to OneSignal dynamically
+  useEffect(() => {
+    if (profile) {
+      loginUser(profile.uid, profile);
+    } else {
+      logoutUser();
+    }
+  }, [profile]);
+
+  // Wallet Recharge Approved trigger for Push consent modal
+  useEffect(() => {
+    const handleRecharge = () => {
+      const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+      if (!promptStatus) {
+        setTimeout(() => setShowOneSignalPrompt(true), 1500);
+      }
+    };
+    window.addEventListener('joe_wallet_recharged', handleRecharge);
+    return () => window.removeEventListener('joe_wallet_recharged', handleRecharge);
+  }, []);
+
+  // Low Balance Push Notification Trigger
+  useEffect(() => {
+    if (profile && (profile.role === 'STUDENT' || profile.role === 'GUEST') && profile.walletBalance !== undefined && profile.walletBalance < 30) {
+      const lastSentStr = localStorage.getItem(`joe_low_balance_push_${profile.uid}`);
+      const lastSent = lastSentStr ? parseInt(lastSentStr, 10) : 0;
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      
+      if (now - lastSent > twentyFourHours) {
+        triggerOneSignalWebhook(
+          profile.uid,
+          "⚠️ Low Balance Warning",
+          `Your wallet balance is ₹${profile.walletBalance}. Recharge soon!`
+        );
+        localStorage.setItem(`joe_low_balance_push_${profile.uid}`, now.toString());
+      }
+    }
+  }, [profile?.walletBalance, profile?.uid]);
 
   // Restore Guest identity from Long-term Storage
   useEffect(() => {
@@ -155,6 +204,12 @@ const App: React.FC = () => {
     try {
       const { profile: newProfile } = await signInWithGoogle();
       setView(getViewForRole(newProfile.role));
+      
+      // Trigger OneSignal push consent modal after successful login
+      const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+      if (!promptStatus) {
+        setTimeout(() => setShowOneSignalPrompt(true), 2000);
+      }
     } catch (error: any) {
       console.error('❌ Google sign-in error:', error);
     } finally {
@@ -275,6 +330,11 @@ const App: React.FC = () => {
                         onSuccess={(id) => {
                           setActiveOrderId(id);
                           setStudentSubView('QR');
+                          // Trigger OneSignal push consent modal after successful order
+                          const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+                          if (!promptStatus) {
+                            setTimeout(() => setShowOneSignalPrompt(true), 2000);
+                          }
                         }}
                       />
                     </React.Suspense>
@@ -366,6 +426,9 @@ const App: React.FC = () => {
         {showCompliance === 'refund' && <RefundPolicy onBack={() => setShowCompliance(null)} />}
         {showCompliance === 'terms' && <TermsAndConditions onBack={() => setShowCompliance(null)} />}
         {showCompliance === 'contact' && <ContactUs onBack={() => setShowCompliance(null)} />}
+
+        {/* OneSignal Consent Prompt Modal */}
+        <OneSignalPermissionModal isOpen={showOneSignalPrompt} onClose={() => setShowOneSignalPrompt(false)} />
       </GlobalErrorBoundary>
     </div>
   );

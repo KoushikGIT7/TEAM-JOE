@@ -170,7 +170,8 @@ service cloud.firestore {
 
     // ─── USERS ────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId || isAdmin();
+      allow read: if (isAuthenticated() && request.auth.uid == userId) || isStaff();
+      allow write: if (isAuthenticated() && request.auth.uid == userId) || isAdmin() || isCashier();
     }
 
     // ─── LOGS ─────────────────────────────────────────────────────────────────

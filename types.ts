@@ -153,6 +153,7 @@ export interface SystemSettings {
   /** Orders per minute (for queue wait estimate). Default 10. */
   servingRatePerMin?: number;
   /** QR validity in minutes. Default 30. */
+  menuVersion?: any;
   qrExpiryMinutes?: number;
   /** Max volume per arrival slot across all items. Default 200. */
   maxItemsPerSlot?: number;

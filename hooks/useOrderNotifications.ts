@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { Order, PrepBatch } from '../types';
 import { joeSounds } from '../utils/audio';
 import { sonicVoice } from '../services/voice-engine';
+import { triggerOneSignalWebhook } from '../services/onesignal-webhook';
 
 /**
  * Hook to listen for updates across ALL active orders for the student.
@@ -26,7 +27,7 @@ export const useOrderNotifications = (userId: string | null) => {
         const q = query(
             collection(db, 'orders'),
             where('userId', '==', userId),
-            where('orderStatus', 'in', ['PENDING', 'PAID', 'REJECTED']),
+            where('orderStatus', 'in', ['PENDING', 'PAID', 'REJECTED', 'COMPLETED']),
             orderBy('createdAt', 'desc'),
             limit(5)
         );
@@ -68,6 +69,11 @@ export const useOrderNotifications = (userId: string | null) => {
                         '⚠️ Order Issue',
                         `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
                     );
+                    triggerOneSignalWebhook(
+                        userId,
+                        '⚠️ Order Issue',
+                        `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
+                    );
                     await markNotified(orderId);
                 }
 
@@ -82,6 +88,11 @@ export const useOrderNotifications = (userId: string | null) => {
                             joeSounds.playFoodReady(); 
                             sonicVoice.announceMealReady();
                             triggerLocalNotification(
+                                '🍽️ Order Ready!',
+                                `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                            );
+                            triggerOneSignalWebhook(
+                                userId,
                                 '🍽️ Order Ready!',
                                 `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
                             );
@@ -130,6 +141,11 @@ export const useOrderNotifications = (userId: string | null) => {
                                         '🍽️ Order Ready!',
                                         `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
                                     );
+                                    triggerOneSignalWebhook(
+                                        userId,
+                                        '🍽️ Order Ready!',
+                                        `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                                    );
                                     await markNotified(orderId);
                                 }
                             }
@@ -139,6 +155,29 @@ export const useOrderNotifications = (userId: string | null) => {
                             delete waveTimersRef.current[orderId];
                         }
                     }, delay);
+                }
+
+                // 3. STREAK REWARD: When order becomes COMPLETED
+                if ((!prev || prev.status !== 'COMPLETED') && currentStatus === 'COMPLETED' && !data.streakCounted) {
+                    try {
+                        const userRef = doc(db, 'users', userId);
+                        const userSnap = await getDoc(userRef);
+                        if (userSnap.exists()) {
+                            const newCount = (userSnap.data().completedOrdersCount || 0) + 1;
+                            await updateDoc(userRef, { completedOrdersCount: newCount });
+                            await updateDoc(doc(db, 'orders', orderId), { streakCounted: true });
+                            
+                            if (newCount > 0 && newCount % 5 === 0) {
+                                triggerOneSignalWebhook(
+                                    userId,
+                                    "🎉 5-Order Streak!",
+                                    `You've completed ${newCount} orders. You're a JOE regular!`
+                                );
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Streak update error:', e);
+                    }
                 }
 
                 activeListenerRef.current[orderId] = { status: currentStatus, flow: currentFlow };

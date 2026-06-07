@@ -38,6 +38,7 @@ import {
   WalletSummary,
   RechargeStatus,
 } from '../types';
+import { triggerOneSignalWebhook } from './onesignal-webhook';
 
 // ─── COLLECTION NAMES ────────────────────────────────────────────────────────
 const USERS_COL = 'users';
@@ -255,6 +256,8 @@ export const approveRechargeRequest = async (
   approvedBy: string
 ): Promise<void> => {
   const requestRef = doc(db, RECHARGE_COL, requestId);
+  let approvedUid = '';
+  let approvedAmount = 0;
 
   await runTransaction(db, async (tx) => {
     const requestSnap = await tx.get(requestRef);
@@ -266,6 +269,9 @@ export const approveRechargeRequest = async (
     }
 
     const { uid, amount } = requestData;
+    approvedUid = uid;
+    approvedAmount = amount;
+    
     const userRef = doc(db, USERS_COL, uid);
     const userSnap = await tx.get(userRef);
 
@@ -305,6 +311,11 @@ export const approveRechargeRequest = async (
   });
 
   console.log(`[WALLET] Recharge approved: ${requestId} by ${approvedBy}`);
+  triggerOneSignalWebhook(
+    approvedUid,
+    "💳 Wallet Recharged!",
+    `Your recharge of ₹${approvedAmount} has been approved.`
+  );
 };
 
 // ─── WRITE: REJECT RECHARGE (Cashier/Admin only) ─────────────────────────────
