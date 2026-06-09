@@ -273,11 +273,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     if (gotReady) {
       setFlashState('GREEN');
       if ('vibrate' in navigator) navigator.vibrate([50, 50, 150]);
-      if ('speechSynthesis' in window && !isFullyServed) {
-         const msg = new SpeechSynthesisUtterance("Food is ready! Head to the counter.");
-         msg.rate = 1.3;
-         window.speechSynthesis.speak(msg);
-      }
+      // Male voice removed as requested
       setTimeout(() => setFlashState(null), 2500);
     }
     prevItemsRef.current = items;

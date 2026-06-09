@@ -9,7 +9,8 @@ import {
   runTransaction,
   serverTimestamp,
   increment,
-  onSnapshot
+  onSnapshot,
+  updateDoc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { PrepBatch, Order } from '../types';
@@ -108,4 +109,64 @@ export const instantBeverageServe = async (orderId: string, itemId: string, staf
    // Beverages often bypass READY state and go straight to SERVED
    // Reuse our production-hardened serveItem function
    await serveItem(orderId, itemId, staffId);
+};
+
+/**
+ * 🚀 [DYNAMIC-ITEMS]
+ * Moves exactly `count` items across the oldest pending orders to READY state.
+ * Preserves the QR unlock and Notification workflows without over-releasing.
+ */
+export const markPartialItemsReady = async (itemName: string, count: number, pendingOrders: Order[]): Promise<void> => {
+  if (count <= 0 || pendingOrders.length === 0) return;
+
+  // Sort by oldest first to ensure fairness (respecting reQueued penalties)
+  const sortedOrders = [...pendingOrders].sort((a, b) => {
+    // We need to find the target item to get its specific reQueuedAt time
+    const aItem = a.items.find(i => i.name === itemName);
+    const bItem = b.items.find(i => i.name === itemName);
+    const aTime = (aItem as any)?.reQueuedAt ? (typeof (aItem as any).reQueuedAt === 'number' ? (aItem as any).reQueuedAt : (aItem as any).reQueuedAt.toMillis?.() || Date.now()) : a.createdAt;
+    const bTime = (bItem as any)?.reQueuedAt ? (typeof (bItem as any).reQueuedAt === 'number' ? (bItem as any).reQueuedAt : (bItem as any).reQueuedAt.toMillis?.() || Date.now()) : b.createdAt;
+    return aTime - bTime;
+  });
+  
+  // Take exactly 'count' orders
+  const ordersToUpdate = sortedOrders.slice(0, count);
+  const now = Date.now();
+
+  const promises = ordersToUpdate.map(async (order) => {
+    // Only update the target item within the order
+    let updatedItemCount = 0;
+    const updatedItems = order.items.map(item => {
+      // If we found the item, and it's not already READY/SERVED, mark it READY
+      if (item.name === itemName && item.status !== 'SERVED' && item.status !== 'READY') {
+        updatedItemCount++;
+        return { ...item, status: 'READY' as any };
+      }
+      return item;
+    });
+
+    if (updatedItemCount === 0) return; // Failsafe
+
+    const orderRef = doc(db, 'orders', order.id);
+    
+    // We update serveFlowStatus to READY so it appears in the collection tab
+    // We also init/update pickupWindow to trigger the QR flow
+    const pickupWindow = order.pickupWindow?.status === 'COLLECTING' 
+      ? order.pickupWindow 
+      : {
+          startTime: now,
+          endTime: now + 300000, // 5 minutes strict
+          durationMs: 300000,
+          status: 'COLLECTING'
+        };
+
+    await updateDoc(orderRef, {
+      items: updatedItems,
+      serveFlowStatus: 'READY',
+      pickupWindow: pickupWindow,
+      updatedAt: serverTimestamp()
+    });
+  });
+
+  await Promise.all(promises);
 };

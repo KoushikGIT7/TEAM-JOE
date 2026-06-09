@@ -1477,6 +1477,36 @@ export const listenToAllOrders = (callback: (orders: Order[]) => void): (() => v
   );
 };
 
+export const listenToActiveSupervisorOrders = (callback: (orders: Order[]) => void): (() => void) => {
+  const q = query(
+    collection(db, "orders"),
+    where("serveFlowStatus", "in", ['PENDING', 'NEW', 'PAID', 'QUEUED', 'PREPARING', 'READY', 'ALMOST_READY', 'SERVED_PARTIAL'])
+  );
+
+  const fallbackQ = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100));
+
+  return safeListener(
+    'asst-supervisor-orders',
+    q,
+    (snapshot) => {
+       const docs = snapshot.docs.map(doc => firestoreToOrder(doc.id, doc.data()));
+       // Sort newest first initially, the View will re-sort by priority
+       return docs.sort((a, b) => b.createdAt - a.createdAt);
+    },
+    () => [],
+    callback,
+    fallbackQ
+  );
+};
+
+export const listenToTodayServedCount = (callback: (count: number) => void): (() => void) => {
+  const today = new Date().toISOString().split('T')[0];
+  const statsRef = doc(db, 'dailyStats', today);
+  return onSnapshot(statsRef, (docSnap) => {
+    callback(docSnap.exists() ? docSnap.data().totalOrders || 0 : 0);
+  });
+};
+
 
 /** Paginated recent orders (e.g. for kitchen dashboard). Limit 50. */
 export const listenToRecentOrders = (callback: (orders: Order[]) => void, limitCount: number = 50): (() => void) => {
@@ -2360,6 +2390,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string, au
 
             const updateData: any = {
                 orderStatus: finalOrderState,
+                serveFlowStatus: stillHasDynamic ? 'SERVED_PARTIAL' : 'SERVED',
                 qrStatus: stillHasDynamic ? 'ACTIVE' : 'DESTROYED',
                 qrState: stillHasDynamic ? 'SCANNED' : 'SERVED',
                 scannedAt: now,
@@ -4023,7 +4054,7 @@ export const flushMissedPickups = async (nodeId?: string): Promise<number> => {
            if (remQty > 0 && (it.status === 'READY' || it.status === 'COLLECTING' || it.status === 'MISSED' || it.status === 'READY_SERVED')) {
              // 🛡️ [PRINCIPAL-FIX] Only revert items to PENDING if they actually need cooking!
              const canRequeue = !isStaticItem(it);
-             return { ...it, status: canRequeue ? 'PENDING' : it.status, remainingQty: remQty };
+             return { ...it, status: canRequeue ? 'PENDING' : it.status, remainingQty: remQty, reQueuedAt: Date.now() };
            }
            return it;
         });

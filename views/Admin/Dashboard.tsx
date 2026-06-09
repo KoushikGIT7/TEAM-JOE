@@ -653,12 +653,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                         </div>
                       </td>
                       <td className="px-8 py-5">
-                        <select value={userRole} onChange={e => { try { updateUserRole(u.uid, e.target.value as any); offlineDetector.recordPing(); } catch { alert('Failed to update role.'); }}}
+                        <select value={userRole} onChange={async e => { 
+                          const newRole = e.target.value as any;
+                          try { 
+                            await updateUserRole(u.uid, newRole); 
+                            setUsers(prev => prev.map(user => user.uid === u.uid ? { ...user, role: newRole } : user));
+                            offlineDetector.recordPing(); 
+                          } catch { 
+                            alert('Failed to update role.'); 
+                          }}}
                           className={`text-xs font-black uppercase px-3 py-2 rounded-xl bg-white border border-black/5 focus:ring-primary outline-none ${userRole==='STUDENT'?'text-blue-500':userRole==='ADMIN'?'text-primary':userRole==='GUEST'?'text-slate-400':'text-textMain'}`}>
                           <option value="STUDENT">Student</option>
                           <option value="GUEST">Guest</option>
                           <option value="CASHIER">Cashier</option>
                           <option value="SERVER">Server</option>
+                          <option value="ASSISTANT_SUPERVISOR">Asst Supervisor</option>
                           <option value="ADMIN">Admin</option>
                         </select>
                       </td>
@@ -705,13 +714,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                   </div>
                   <select
                     value={userRole}
-                    onChange={e => { try { updateUserRole(u.uid, e.target.value as any); offlineDetector.recordPing(); } catch { alert('Failed.'); }}}
+                    onChange={async e => { 
+                      const newRole = e.target.value as any;
+                      try { 
+                        await updateUserRole(u.uid, newRole); 
+                        setUsers(prev => prev.map(user => user.uid === u.uid ? { ...user, role: newRole } : user));
+                        offlineDetector.recordPing(); 
+                      } catch { 
+                        alert('Failed.'); 
+                      }}}
                     className="w-full text-xs font-black uppercase px-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20 outline-none"
                   >
                     <option value="STUDENT">Student</option>
                     <option value="GUEST">Guest</option>
                     <option value="CASHIER">Cashier</option>
                     <option value="SERVER">Server</option>
+                    <option value="ASSISTANT_SUPERVISOR">Asst Supervisor</option>
                     <option value="ADMIN">Admin</option>
                   </select>
                 </div>

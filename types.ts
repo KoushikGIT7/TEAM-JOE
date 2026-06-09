@@ -1,6 +1,7 @@
 export const PICKUP_TIMEOUT_MS = 200000; // ⏱️ [SENTINEL-TIMING] 3 Minutes + 20s Buffer (180s + 20s)
 export const ROLES = {
   ADMIN: 'ADMIN',
+  ASSISTANT_SUPERVISOR: 'ASSISTANT_SUPERVISOR',
   CASHIER: 'CASHIER',
   SERVER: 'SERVER',
   COOK: 'COOK',
@@ -31,6 +32,8 @@ export interface MenuItem {
   active: boolean;
   /** Zero-wait: FAST_ITEM = instant serve; PREPARATION_ITEM = kitchen + pickup window. Default from category if absent. */
   orderType?: OrderType;
+  /** Kitchen routing classification */
+  itemType?: 'batch' | 'dynamic';
 }
 
 export interface CartItem extends MenuItem {

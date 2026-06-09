@@ -147,14 +147,9 @@ const HomeView: React.FC<HomeViewProps> = ({ profile, onProceed, onViewOrders, o
         }
       } else {
         let newQty = newCart[item.id].quantity + delta;
-        const isDosa = item.name.toLowerCase().includes('dosa');
-        if (isDosa && newQty > 1) {
-            alert("Maximum 1 Dosa allowed per scan.");
-            newQty = 1;
-        }
-        if ((item.category === 'Lunch' || item.name.toLowerCase().includes('meal')) && newQty > 1) {
-            alert("Items in this category are limited to 1 per scan.");
-            newQty = 1;
+        if (newQty > 3) {
+            alert("Maximum 3 plates allowed per item per order.");
+            newQty = 3;
         }
         const maxAllowed = stockByItemId[item.id]?.available ?? 999;
         if (newQty > maxAllowed) newQty = maxAllowed;

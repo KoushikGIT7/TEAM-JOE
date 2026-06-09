@@ -85,7 +85,6 @@ export const useOrderNotifications = (userId: string | null) => {
                         const dedupeKey = `${orderId}-READY`;
                         if (!sessionDedupeRef.current.has(dedupeKey)) {
                             sessionDedupeRef.current.add(dedupeKey);
-                            joeSounds.playFoodReady(); 
                             sonicVoice.announceMealReady();
                             triggerLocalNotification(
                                 '🍽️ Order Ready!',
@@ -135,7 +134,6 @@ export const useOrderNotifications = (userId: string | null) => {
                                 const dKey = `${orderId}-READY`;
                                 if (!sessionDedupeRef.current.has(dKey)) {
                                     sessionDedupeRef.current.add(dKey);
-                                    joeSounds.playFoodReady(); 
                                     sonicVoice.announceMealReady();
                                     triggerLocalNotification(
                                         '🍽️ Order Ready!',
@@ -205,7 +203,7 @@ export const useOrderNotifications = (userId: string | null) => {
                         // 🛡️ DO NOT kill the scan audio if the user just scanned!
                         if (!isNowScanned) {
                             joeSounds.stopAll();
-                            joeSounds.playFoodReady();
+                            // joeSounds.playFoodReady(); removed as requested
                         }
                     }
                 }

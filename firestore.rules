@@ -20,10 +20,10 @@ service cloud.firestore {
     // Staff: email prefix fast-track OR Firestore role
     function isStaff() {
       let email = ('email' in request.auth.token) ? request.auth.token.email.lower() : '';
-      let staffEmail = email != '' && email.matches('^(admin|server|cashier|cook)@.*');
+      let staffEmail = email != '' && email.matches('^(admin|server|cashier|cook|assistant)@.*');
       return isAuthenticated() && (
         staffEmail ||
-        (hasRoleDoc() && getUserRole() in ['admin', 'server', 'cashier', 'cook', 'manager'])
+        (hasRoleDoc() && getUserRole() in ['admin', 'server', 'cashier', 'cook', 'manager', 'assistant_supervisor'])
       );
     }
 

@@ -45,14 +45,12 @@ class VoiceEngine {
     console.log(`🎙️ [VOICE] Broadcasting: "${text}"`);
   }
 
-  /** 🍔 Meal Ready Broadcast */
   public announceMealReady() {
-    this.speak(`Meal ready! Counter.`, 'HIGH');
+    // Muted: this.speak(`Meal ready! Counter.`, 'HIGH');
   }
 
-  /** ✅ Order Completed Broadcast */
   public announceOrderComplete() {
-    this.speak(`Order done. Thanks!`, 'NORMAL');
+    // Muted: this.speak(`Order done. Thanks!`, 'NORMAL');
   }
 }
 

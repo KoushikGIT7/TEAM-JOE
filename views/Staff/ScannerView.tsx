@@ -61,7 +61,8 @@ import { joeSounds } from '../../utils/audio';
     setTerminalState('SUCCESS');
 
     try {
-      const { result } = await processAtomicIntake(data.trim(), profile.uid);
+      // Pass true for autoServeReady so READY items are instantly marked SERVED and deducted
+      const { result } = await processAtomicIntake(data.trim(), profile.uid, true);
       
       // [PHASED-AUDIT] Type-Cast for string comparison as result might be an extended enum
       const res = result as string;

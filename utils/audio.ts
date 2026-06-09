@@ -22,8 +22,8 @@ class SoundService {
       this.ctx = new AC();
       
       // 🚀 PRELOAD: Fetch background buffers immediately so playback has 0ms latency
-      this.loadAudioBuffer('/sounds/server_success.mp3').then(b => this.serverSuccessBuffer = b);
-      this.loadAudioBuffer('/sounds/student_scan_success_v2.mp3').then(b => this.studentSuccessBuffer = b);
+      this.loadAudioBuffer('/sounds/deep_gravelly_success.mp3').then(b => this.serverSuccessBuffer = b);
+      this.loadAudioBuffer('/sounds/deep_gravelly_success.mp3').then(b => this.studentSuccessBuffer = b);
     }
     if (this.ctx?.state === 'suspended') {
       await this.ctx.resume();
@@ -157,12 +157,12 @@ class SoundService {
       await this.init();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
-      // Triumphant two-note "ding-dong"
-      this.tone(880.00, now,        0.15, 0.20, 'sine');  // A5 — punch
-      this.tone(1174.66, now + 0.18, 0.65, 0.16, 'sine'); // D6 — bright ring-out
+      // Triumphant two-note "ding-dong" (Removed as requested)
+      // this.tone(880.00, now,        0.15, 0.20, 'sine');  // A5 — punch
+      // this.tone(1174.66, now + 0.18, 0.65, 0.16, 'sine'); // D6 — bright ring-out
       // Harmonic shimmer underneath
-      this.tone(587.33, now,        0.80, 0.07, 'sine');  // D5 — soft body
-      setTimeout(() => this.say('Ready', 1.0, 1.2, 0.9), 200);
+      // this.tone(587.33, now,        0.80, 0.07, 'sine');  // D5 — soft body
+      // setTimeout(() => this.say('Ready', 1.0, 1.2, 0.9), 200);
     } catch (e) {
       console.warn('[JOE Audio] Food ready sound blocked:', e);
     }
@@ -212,9 +212,9 @@ class SoundService {
       await this.init();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
-      this.tone(523.25, now,        0.10, 0.14, 'sine');
-      this.tone(659.25, now + 0.10, 0.18, 0.14, 'sine');
-      this.tone(783.99, now + 0.22, 0.40, 0.12, 'sine');
+      // this.tone(523.25, now,        0.10, 0.14, 'sine');
+      // this.tone(659.25, now + 0.10, 0.18, 0.14, 'sine');
+      // this.tone(783.99, now + 0.22, 0.40, 0.12, 'sine');
     } catch (e) {
       console.warn('[JOE Audio] Success sound blocked:', e);
     }
@@ -259,7 +259,7 @@ class SoundService {
       if (typeof window === 'undefined') return;
       await this.init();
       if (!this.serverSuccessBuffer) {
-        this.serverSuccessBuffer = await this.loadAudioBuffer('/sounds/server_success.mp3');
+        this.serverSuccessBuffer = await this.loadAudioBuffer('/sounds/deep_gravelly_success.mp3');
       }
       const played = this.playBuffer(this.serverSuccessBuffer);
       if (!played) this.playSuccess(); // Fallback
@@ -274,7 +274,7 @@ class SoundService {
       if (typeof window === 'undefined') return;
       await this.init();
       if (!this.studentSuccessBuffer) {
-        this.studentSuccessBuffer = await this.loadAudioBuffer('/sounds/student_scan_success_v2.mp3');
+        this.studentSuccessBuffer = await this.loadAudioBuffer('/sounds/deep_gravelly_success.mp3');
       }
       const played = this.playBuffer(this.studentSuccessBuffer);
       if (!played) this.playFoodReady(); // Fallback

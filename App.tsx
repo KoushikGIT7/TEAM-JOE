@@ -19,6 +19,7 @@ import ServingCounterView from './views/Staff/ServingCounterView';
 import AdminDashboard from './views/Admin/Dashboard';
 import CookView from './views/Staff/CookView';
 import LoginView from './views/Auth/LoginView';
+import AssistantSupervisorView from './views/Staff/AssistantSupervisorView';
 
 import FoodLoader from './components/Common/FoodLoader';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
@@ -39,7 +40,8 @@ type ViewState =
   | 'SERVING_COUNTER'
   | 'KITCHEN'
   | 'STAFF_LOGIN'
-  | 'STUDENT_HOME';
+  | 'STUDENT_HOME'
+  | 'ASSISTANT_SUPERVISOR_DASHBOARD';
 
 const App: React.FC = () => {
   const { user: authUser, profile: authProfile, loading: authLoading } = useAuth();
@@ -147,6 +149,7 @@ const App: React.FC = () => {
   const getViewForRole = (r: UserProfile['role']): ViewState => {
     switch (r) {
       case 'ADMIN': return 'ADMIN';
+      case 'ASSISTANT_SUPERVISOR': return 'ASSISTANT_SUPERVISOR_DASHBOARD';
       case 'CASHIER': return 'CASHIER';
       case 'SERVER': return 'SERVING_COUNTER';
       case 'COOK': return 'KITCHEN';
@@ -280,12 +283,13 @@ const App: React.FC = () => {
             onOpenKitchen={() => setView('KITCHEN')}
           />
         );
+      case 'ASSISTANT_SUPERVISOR_DASHBOARD':
+        return <AssistantSupervisorView profile={profile!} onLogout={handleLogout} />;
       case 'KITCHEN':
         return (
           <CookView
             profile={profile!}
             onLogout={handleLogout}
-            onBack={() => setView('ADMIN')}
           />
         );
       case 'SERVING_COUNTER':
