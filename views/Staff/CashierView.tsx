@@ -18,6 +18,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { fetchReport } from '../../services/reporting';
 import AuditDownloadButton from '../../components/AuditDownloadButton';
 import { listenToAllRechargeRequests, approveRechargeRequest, rejectRechargeRequest } from '../../services/wallet';
+import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
 
 interface CashierViewProps {
    profile: UserProfile;
@@ -550,48 +551,69 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       loadReportData();
    }, [allOrders, activeTab, reportStart, reportEnd]);
 
-   const handleConfirm = (orderId: string) => {
-      if (!offlineDetector.isOnline()) {
-         alert("Waiting for connection...");
-         return;
-      }
-      setConfirming(orderId);
-      setOptimisticClearedIds(prev => new Set(prev).add(orderId));
-      joeSounds.playPaymentConfirmed();
-      sonicVoice.announceOrderComplete();
-      
-      confirmCashPayment(orderId, profile.uid)
-         .catch((err: any) => {
-            setOptimisticClearedIds(prev => {
-               const next = new Set(prev);
-               next.delete(orderId);
-               return next;
-            });
-            alert(err.message || 'Failed to approve. Reverting...');
-         })
-         .finally(() => {
-            setConfirming(null);
-         });
-      offlineDetector.recordPing();
-   };
+   const handleConfirm = async (orderId: string) => {
+       if (!offlineDetector.isOnline()) {
+          alert("Waiting for connection...");
+          return;
+       }
+       setConfirming(orderId);
+       setOptimisticClearedIds(prev => new Set(prev).add(orderId));
+       joeSounds.playPaymentConfirmed();
+       sonicVoice.announceOrderComplete();
+       
+       const targetOrder = pendingOrders.find(o => o.id === orderId);
+       
+       try {
+          await confirmCashPayment(orderId, profile.uid);
+          if (targetOrder) {
+             const shortToken = targetOrder.tokenNumber || orderId.slice(-4).toUpperCase();
+             triggerOneSignalWebhook(
+                targetOrder.userId,
+                '✅ Payment Confirmed — QR Unlocked!',
+                `Your cash order #${shortToken} is confirmed. Show your QR code at the counter.`,
+                `/student/orders`
+             ).catch(e => console.warn("OneSignal failed:", e));
+          }
+       } catch (err: any) {
+          setOptimisticClearedIds(prev => {
+             const next = new Set(prev);
+             next.delete(orderId);
+             return next;
+          });
+          alert(err.message || 'Failed to approve. Reverting...');
+       } finally {
+          setConfirming(null);
+       }
+       offlineDetector.recordPing();
+    };
 
-   const handleReject = async (orderId: string) => {
-      if (!offlineDetector.isOnline()) {
-         alert("Waiting for connection...");
-         return;
-      }
-      if (!confirm('Reject request?')) return;
-      setRejecting(orderId);
-      try {
-         await rejectCashPayment(orderId, profile.uid);
-         joeSounds.playRejected();
-         offlineDetector.recordPing();
-      } catch (err: any) {
-         alert(err.message || 'Failed to reject');
-      } finally {
-         setRejecting(null);
-      }
-   };
+    const handleReject = async (orderId: string) => {
+       if (!offlineDetector.isOnline()) {
+          alert("Waiting for connection...");
+          return;
+       }
+       if (!confirm('Reject request?')) return;
+       setRejecting(orderId);
+       const targetOrder = pendingOrders.find(o => o.id === orderId);
+       try {
+          await rejectCashPayment(orderId, profile.uid);
+          joeSounds.playRejected();
+          if (targetOrder) {
+             const shortToken = targetOrder.tokenNumber || orderId.slice(-4).toUpperCase();
+             triggerOneSignalWebhook(
+                targetOrder.userId,
+                '❌ Payment Rejected',
+                `Your order #${shortToken} has been rejected. Please contact the cashier.`,
+                `/student/orders`
+             ).catch(e => console.warn("OneSignal failed:", e));
+          }
+          offlineDetector.recordPing();
+       } catch (err: any) {
+          alert(err.message || 'Failed to reject');
+       } finally {
+          setRejecting(null);
+       }
+    };
 
    const formatTime = (ts?: number) => {
       if (!ts) return '--:--';

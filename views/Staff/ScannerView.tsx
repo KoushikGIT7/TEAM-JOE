@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { getScanLogs, processAtomicIntake } from '../../services/firestore-db';
+import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
 import QRScanner from '../../components/QRScanner';
 import Logo from '../../components/Logo';
 import { joeSounds } from '../../utils/audio';
@@ -56,7 +57,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setTerminalState('SUCCESS');
 
     try {
-      const { result } = await processAtomicIntake(data.trim(), profile.uid, true);
+      const { result, order } = await processAtomicIntake(data.trim(), profile.uid, true);
       
       const res = result as string;
       
@@ -68,8 +69,26 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
         triggerStrobe('ERROR', 'NOT READY', 'Meal still in preparation');
       } else if (res === 'CONSUMED') {
         triggerStrobe('SUCCESS', 'VERIFIED ✅', 'RELEASE MEAL NOW');
+        if (order && order.userId) {
+          const shortToken = order.tokenNumber || order.id.slice(-4).toUpperCase();
+          triggerOneSignalWebhook(
+            order.userId,
+            '🎉 Enjoy your meal!',
+            `Your order #${shortToken} has been successfully collected. Bon appétit!`,
+            `/student/orders`
+          ).catch(e => console.warn("OneSignal failed:", e));
+        }
       } else if (res === 'MANIFESTED') {
         triggerStrobe('SUCCESS', 'PARTIAL RELEASE ✅', 'ITEMS LOADED ON SCREEN');
+        if (order && order.userId) {
+          const shortToken = order.tokenNumber || order.id.slice(-4).toUpperCase();
+          triggerOneSignalWebhook(
+            order.userId,
+            '✅ Partial Handover Complete!',
+            `Part of your order #${shortToken} has been collected.`,
+            `/student/orders`
+          ).catch(e => console.warn("OneSignal failed:", e));
+        }
       }
       
       refreshLogs();

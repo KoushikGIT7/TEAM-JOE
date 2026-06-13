@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { LogOut, ShieldCheck, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { validateQRForServing } from '../../services/firestore-db';
+import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
 import QRScanner from '../../components/QRScanner';
 import { joeSounds } from '../../utils/audio';
 import { doc, getDoc } from 'firebase/firestore';
@@ -60,6 +61,25 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       const { order, result } = await validateQRForServing(token, profile.uid, true); // true = autoServeReady
 
       if (result === 'CONSUMED' || result === 'MANIFESTED' || result === 'ALREADY_MANIFESTED') {
+        if (order && order.userId) {
+          const shortToken = order.tokenNumber || order.id.slice(-4).toUpperCase();
+          if (result === 'CONSUMED') {
+             triggerOneSignalWebhook(
+                order.userId,
+                '🎉 Enjoy your meal!',
+                `Your order #${shortToken} has been successfully collected. Bon appétit!`,
+                `/student/orders`
+             ).catch(e => console.warn("OneSignal failed:", e));
+          } else if (result === 'MANIFESTED') {
+             triggerOneSignalWebhook(
+                order.userId,
+                '✅ Partial Handover Complete!',
+                `Part of your order #${shortToken} has been collected.`,
+                `/student/orders`
+             ).catch(e => console.warn("OneSignal failed:", e));
+          }
+        }
+
         const justServed = order.items?.filter((i: any) =>
           i.status === 'SERVED' && (result === 'CONSUMED' || (Date.now() - (i.servedAt || 0) < 5000))
         ).map((i: any) => i.name) || [];
