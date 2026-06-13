@@ -104,7 +104,20 @@ export const useOrderNotifications = (userId: string | null) => {
                         const dedupeKey = `${orderId}-READY`;
                         if (!sessionDedupeRef.current.has(dedupeKey)) {
                             sessionDedupeRef.current.add(dedupeKey);
-                            sonicVoice.announceMealReady();
+                            
+                            // Play chime & vocal alert on student device
+                            joeSounds.playPaymentConfirmed().catch(() => {});
+                            const shortToken = data.tokenNumber || orderId.slice(-4).toUpperCase();
+                            const firstItem = data.items?.[0]?.name || 'food';
+                            const speakEN = `Token ${shortToken}, your order is ready at the counter.`;
+                            const utter = new SpeechSynthesisUtterance(speakEN);
+                            utter.lang = 'en-IN';
+                            utter.rate = 0.85;
+                            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                                window.speechSynthesis.cancel();
+                                window.speechSynthesis.speak(utter);
+                            }
+
                             triggerOneSignalWebhook(
                                 userId,
                                 '🍽️ Order Ready for Pickup!',
@@ -147,7 +160,20 @@ export const useOrderNotifications = (userId: string | null) => {
                                 const dKey = `${orderId}-READY`;
                                 if (!sessionDedupeRef.current.has(dKey)) {
                                     sessionDedupeRef.current.add(dKey);
-                                    sonicVoice.announceMealReady();
+                                    
+                                    // Play chime & vocal alert on student device
+                                    joeSounds.playPaymentConfirmed().catch(() => {});
+                                    const shortToken = freshData.tokenNumber || orderId.slice(-4).toUpperCase();
+                                    const firstItem = freshData.items?.[0]?.name || 'food';
+                                    const speakEN = `Token ${shortToken}, your order is ready at the counter.`;
+                                    const utter = new SpeechSynthesisUtterance(speakEN);
+                                    utter.lang = 'en-IN';
+                                    utter.rate = 0.85;
+                                    if (typeof window !== 'undefined' && window.speechSynthesis) {
+                                        window.speechSynthesis.cancel();
+                                        window.speechSynthesis.speak(utter);
+                                    }
+
                                     triggerOneSignalWebhook(
                                         userId,
                                         '🍽️ Order Ready for Pickup!',

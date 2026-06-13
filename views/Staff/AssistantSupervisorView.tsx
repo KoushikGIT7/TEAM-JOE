@@ -213,7 +213,6 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
     setLoadingAction(actionKey);
     try {
       if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
-      await joeSounds.playPaymentConfirmed();
 
       const orderRef = doc(db, 'orders', orderId);
       const snap = await getDoc(orderRef);
@@ -252,7 +251,7 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
         updatedAt: serverTimestamp()
       }).catch(err => console.error("Subcollection sync failed:", err));
 
-      // Trigger Push Notification & Voice Announce
+      // Trigger Push Notification to Student Account (OneSignal)
       try {
         const shortToken = token;
         await triggerOneSignalWebhook(
@@ -263,15 +262,6 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
             : `Token #${shortToken}: Your hot ${item.name} is ready. Please collect at the counter.`,
           `/student/orders`
         );
-
-        // Vocal Call out via TTS
-        const speakEN = `Token ${shortToken}, your ${item.name} is ready.`;
-        const speakTE = `టోకెన్ ${shortToken}, మీ ${item.name} సిద్ధంగా ఉంది. దయచేసి తీసుకోండి.`;
-        const utter = new SpeechSynthesisUtterance(lang === 'TE' ? speakTE : speakEN);
-        utter.lang = lang === 'TE' ? 'te-IN' : 'en-IN';
-        utter.rate = 0.85;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utter);
       } catch (pushErr) {
         console.warn("Push notify error:", pushErr);
       }
