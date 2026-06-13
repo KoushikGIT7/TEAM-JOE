@@ -10,13 +10,44 @@
 class SoundService {
   public CHIME: string | undefined = undefined;
   private ctx: AudioContext | null = null;
-
   private activeOscillators: OscillatorNode[] = [];
+  
+  private isMuted = false;
+  private listeners: Array<() => void> = [];
+
+  public subscribe(cb: () => void) {
+    this.listeners.push(cb);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== cb);
+    };
+  }
+
+  private notify() {
+    this.listeners.forEach(cb => {
+      try { cb(); } catch (_) {}
+    });
+  }
+
+  public getMutedState(): 'Connected' | 'Muted' | 'Silent' {
+    if (this.isMuted) return 'Muted';
+    if (!this.ctx) return 'Silent';
+    if (this.ctx.state === 'suspended') return 'Silent';
+    return 'Connected';
+  }
+
+  public toggleMute() {
+    this.isMuted = !this.isMuted;
+    if (this.isMuted) {
+      this.stopAll();
+    }
+    this.notify();
+  }
 
   // ─────────────────────────────────────────────────────────
   // INIT — Wake up the AudioContext (must be after user gesture)
   // ─────────────────────────────────────────────────────────
   public async init() {
+    if (this.isMuted) return;
     if (!this.ctx && typeof window !== 'undefined') {
       const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AC();
@@ -24,9 +55,11 @@ class SoundService {
       // 🚀 PRELOAD: Fetch background buffers immediately so playback has 0ms latency
       this.loadAudioBuffer('/sounds/deep_gravelly_success.mp3').then(b => this.serverSuccessBuffer = b);
       this.loadAudioBuffer('/sounds/deep_gravelly_success.mp3').then(b => this.studentSuccessBuffer = b);
+      this.notify();
     }
     if (this.ctx?.state === 'suspended') {
       await this.ctx.resume();
+      this.notify();
     }
   }
 
@@ -37,6 +70,7 @@ class SoundService {
       try { osc.stop(); osc.disconnect(); } catch (_) {}
     });
     this.activeOscillators = [];
+    this.notify();
   }
 
   // ─────────────────────────────────────────────────────────
@@ -50,7 +84,7 @@ class SoundService {
     type: OscillatorType = 'sine',
     fadein = 0.02
   ) {
-    if (!this.ctx) return;
+    if (this.isMuted || !this.ctx) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
@@ -75,7 +109,7 @@ class SoundService {
   // SAY — Clean TTS with studio-quality settings
   // ─────────────────────────────────────────────────────────
   private say(text: string, rate = 0.85, pitch = 1.1, volume = 1.0) {
-    if (!window.speechSynthesis) return;
+    if (this.isMuted || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.rate = rate;
@@ -89,13 +123,14 @@ class SoundService {
   //    Sound: Warm "JOE" voice + rising C-E-G crystal chime
   // ═══════════════════════════════════════════════════════
   public async playAlert() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
       // Rising crystal chime (C5 → E5 → G5)
       setTimeout(() => {
-        if (!this.ctx) return;
+        if (!this.ctx || this.isMuted) return;
         const t = this.ctx.currentTime;
         this.tone(523.25, t,        0.18, 0.15, 'sine'); // C5
         this.tone(659.25, t + 0.16, 0.22, 0.15, 'sine'); // E5
@@ -112,9 +147,10 @@ class SoundService {
   //    Sound: Soft double-tap + warm ascending phrase
   // ═══════════════════════════════════════════════════════
   public async playOrderPlaced() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
       // Soft double tap feel
       this.tone(440.00, now,        0.08, 0.12, 'sine');  // A4
@@ -132,9 +168,10 @@ class SoundService {
   //    Sound: Google-Pay-style bright success chord
   // ═══════════════════════════════════════════════════════
   public async playPaymentConfirmed() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
       // Bright C major arpeggio — instantly recognisable "success"
       this.tone(523.25, now,        0.12, 0.16, 'sine');  // C5
@@ -153,16 +190,11 @@ class SoundService {
   //    Sound: Celebratory up-sweep — feels like "Ding!"
   // ═══════════════════════════════════════════════════════
   public async playFoodReady() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
-      // Triumphant two-note "ding-dong" (Removed as requested)
-      // this.tone(880.00, now,        0.15, 0.20, 'sine');  // A5 — punch
-      // this.tone(1174.66, now + 0.18, 0.65, 0.16, 'sine'); // D6 — bright ring-out
-      // Harmonic shimmer underneath
-      // this.tone(587.33, now,        0.80, 0.07, 'sine');  // D5 — soft body
-      // setTimeout(() => this.say('Ready', 1.0, 1.2, 0.9), 200);
     } catch (e) {
       console.warn('[JOE Audio] Food ready sound blocked:', e);
     }
@@ -173,9 +205,10 @@ class SoundService {
   //    Sound: Soft descend — professional, not alarming
   // ═══════════════════════════════════════════════════════
   public async playRejected() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
       // Gentle descending — not a harsh buzzer
       this.tone(440.00, now,        0.25, 0.12, 'sine');  // A4
@@ -191,9 +224,10 @@ class SoundService {
   //    Sound: Double low buzz — impossible to ignore
   // ═══════════════════════════════════════════════════════
   public async playErrorBuzzer() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
       // Harsh low double-buzz
       this.tone(150, now,        0.2, 0.3, 'square');
@@ -208,13 +242,11 @@ class SoundService {
   // 6. SUCCESS — Generic positive confirmation
   // ═══════════════════════════════════════════════════════
   public async playSuccess() {
+    if (this.isMuted) return;
     try {
       await this.init();
-      if (!this.ctx) return;
+      if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
-      // this.tone(523.25, now,        0.10, 0.14, 'sine');
-      // this.tone(659.25, now + 0.10, 0.18, 0.14, 'sine');
-      // this.tone(783.99, now + 0.22, 0.40, 0.12, 'sine');
     } catch (e) {
       console.warn('[JOE Audio] Success sound blocked:', e);
     }
@@ -227,6 +259,7 @@ class SoundService {
 
   private async loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
     try {
+      if (this.isMuted) return null;
       await this.init();
       if (!this.ctx) return null;
       const response = await fetch(url);
@@ -239,7 +272,7 @@ class SoundService {
   }
 
   private playBuffer(buffer: AudioBuffer | null) {
-    if (!this.ctx || !buffer) return false;
+    if (this.isMuted || !this.ctx || !buffer) return false;
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.ctx.destination);
@@ -255,6 +288,7 @@ class SoundService {
   }
 
   public async playServerScanSuccess() {
+    if (this.isMuted) return;
     try {
       if (typeof window === 'undefined') return;
       await this.init();
@@ -270,6 +304,7 @@ class SoundService {
   }
 
   public async playStudentScanComplete() {
+    if (this.isMuted) return;
     try {
       if (typeof window === 'undefined') return;
       await this.init();

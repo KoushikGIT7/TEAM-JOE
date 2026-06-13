@@ -817,7 +817,12 @@ export const getInventoryMetaOnce = async (force: boolean = false): Promise<Inve
     cachedInventoryMeta = items;
     lastMetaFetch = Date.now();
     return items;
-  } catch (error) {
+  } catch (error: any) {
+    // After sign-out the security rules deny reads — this is expected. Suppress
+    // the noisy console error and return cached data (or empty) silently.
+    if (error?.code === "permission-denied") {
+      return cachedInventoryMeta;
+    }
     console.error("Error fetching inventory_meta once:", error);
     return cachedInventoryMeta;
   }
@@ -1502,9 +1507,16 @@ export const listenToActiveSupervisorOrders = (callback: (orders: Order[]) => vo
 export const listenToTodayServedCount = (callback: (count: number) => void): (() => void) => {
   const today = new Date().toISOString().split('T')[0];
   const statsRef = doc(db, 'dailyStats', today);
-  return onSnapshot(statsRef, (docSnap) => {
-    callback(docSnap.exists() ? docSnap.data().totalOrders || 0 : 0);
-  });
+  return onSnapshot(
+    statsRef,
+    (docSnap) => {
+      callback(docSnap.exists() ? docSnap.data().totalOrders || 0 : 0);
+    },
+    (error) => {
+      console.warn(`[firestore-db:todayServedCount] Listener error: ${error.message}`);
+      callback(0);
+    }
+  );
 };
 
 
@@ -1862,6 +1874,36 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
     }
 
     await runTransaction(db, async (transaction) => {
+       const userDocRef = doc(db, "users", orderData.userId);
+       const userSnap = await transaction.get(userDocRef);
+
+       let updatedUserData = {};
+       if (userSnap.exists() && orderData.isEscrowed === true) {
+          const userData = userSnap.data();
+          const orderedPoints = orderData.orderedPoints || 0;
+          const orderedXp = orderData.orderedXp || 0;
+
+          const currentXp = userData.xp || 0;
+          const currentLevel = userData.level || 1;
+          const currentPoints = userData.points || 0;
+          const currentEscrow = userData.escrowPoints || 0;
+          const currentMagicBox = userData.magicBoxProgress || 1;
+
+          const nextXp = currentXp + orderedXp;
+          const levelUp = nextXp >= 1000;
+          const nextLevel = levelUp ? currentLevel + 1 : currentLevel;
+          const remainingXp = levelUp ? nextXp - 1000 : nextXp;
+          const nextMagicBoxProgress = Math.min(3, currentMagicBox + 1);
+
+          updatedUserData = {
+             points: currentPoints + orderedPoints,
+             escrowPoints: Math.max(0, currentEscrow - orderedPoints),
+             xp: remainingXp,
+             level: nextLevel,
+             magicBoxProgress: nextMagicBoxProgress
+          };
+       }
+
        transaction.update(orderRef, {
           paymentStatus: 'VERIFIED',
           queueStatus: 'IN_QUEUE',
@@ -1874,10 +1916,13 @@ export const confirmCashPayment = async (orderId: string, _cashierUid: string): 
           confirmedBy: _cashierUid,
           confirmedAt: serverTimestamp(),
           paidAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          isEscrowed: false
        });
 
-
+       if (Object.keys(updatedUserData).length > 0) {
+          transaction.update(userDocRef, updatedUserData);
+       }
 
        // Now we use the specific docId we found earlier to lock the record atomically
        if (depositDocId) {
@@ -1942,12 +1987,24 @@ export const rejectCashPayment = async (orderId: string, _cashierUid: string): P
   }
   try {
     const orderRef = doc(db, "orders", orderId);
+    const orderSnap = await getDoc(orderRef);
+    if (orderSnap.exists()) {
+      const orderData = orderSnap.data();
+      if (orderData.isEscrowed === true && orderData.orderedPoints > 0) {
+        const userRef = doc(db, "users", orderData.userId);
+        await updateDoc(userRef, {
+          escrowPoints: increment(-orderData.orderedPoints)
+        });
+      }
+    }
+
     await updateDoc(orderRef, {
       paymentStatus: 'REJECTED',
       orderStatus: 'REJECTED',
       rejectionReason: 'PAYMENT_FAILED',
       rejectedAt: serverTimestamp(),
       rejectedBy: _cashierUid,
+      isEscrowed: false,
       qrStatus: 'REJECTED',
       updatedAt: serverTimestamp()
     });
@@ -2286,26 +2343,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string, au
                 throw new Error("ALREADY_CONSUMED_OR_INVALID");
             }
 
-            if (orderDoc.qrState === 'SCANNED') {
-                // Return gracefully so the UI can reopen the manifest without error
-                const refinedItems = (orderDoc.items || []).map((it: any) => ({
-                    itemId: it.id,
-                    orderId: orderDoc.id,
-                    name: it.name,
-                    status: it.status,
-                    quantity: it.quantity,
-                    category: it.category,
-                    orderType: it.orderType,
-                    imageUrl: it.imageUrl
-                }));
-                const finalResult = { 
-                    order: { ...orderDoc, items: refinedItems }, 
-                    result: 'ALREADY_MANIFESTED' as const,
-                    targetItemId
-                };
-                QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
-                return finalResult;
-            }
+
 
             if (orderDoc.paymentStatus !== 'SUCCESS' && orderDoc.paymentStatus !== 'VERIFIED') {
                 return { order: orderDoc, result: 'AWAITING_PAYMENT' as const };
@@ -2357,13 +2395,18 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string, au
             }
 
             // AUTO-SERVE LOGIC: 
-            // If autoServeReady is true, we mark FAST_ITEMS and READY items as SERVED instantly.
+            // If autoServeReady is true, we mark FAST_ITEMS, READY items, and the specifically targeted scanned item as SERVED instantly.
+            let hasChanges = false;
             const updatedItems = orderDoc.items.map((it: any) => {
                 const isStatic = isStaticItem(it);
                 const isAlreadyReady = it.status === 'READY';
                 const isFast = isStatic && (it.status === 'PENDING' || !it.status);
+                const isTargetedScan = targetItemId !== 'all' && it.id === targetItemId;
                 
-                if (autoServeReady && (isAlreadyReady || isFast)) {
+                if (autoServeReady && (isAlreadyReady || isFast || isTargetedScan)) {
+                    if (it.status !== 'SERVED') {
+                        hasChanges = true;
+                    }
                     // ATOMIC SERVE
                     return {
                         ...it,
@@ -2374,6 +2417,9 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string, au
                         servedBy: staffId
                     };
                 } else if (isFast) {
+                    if (it.status !== 'READY') {
+                        hasChanges = true;
+                    }
                     it.status = 'READY'; // Just mark as READY if not auto-serving
                 }
 
@@ -2384,6 +2430,27 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string, au
                 }
                 return cleanItem;
             });
+
+            if (!hasChanges && orderDoc.qrState === 'SCANNED') {
+                // Return gracefully so the UI can reopen the manifest without error
+                const refinedItems = (orderDoc.items || []).map((it: any) => ({
+                    itemId: it.id,
+                    orderId: orderDoc.id,
+                    name: it.name,
+                    status: it.status,
+                    quantity: it.quantity,
+                    category: it.category,
+                    orderType: it.orderType,
+                    imageUrl: it.imageUrl
+                }));
+                const finalResult = { 
+                    order: { ...orderDoc, items: refinedItems }, 
+                    result: 'ALREADY_MANIFESTED' as const,
+                    targetItemId
+                };
+                QR_VALIDATION_CACHE[qrPayload] = { time: now, result: finalResult };
+                return finalResult;
+            }
 
             const stillHasDynamic = updatedItems.some((it: any) => it.status !== 'SERVED' && it.status !== 'ABANDONED');
             const finalOrderState: OrderStatus = stillHasDynamic ? 'IN_PROGRESS' : 'COMPLETED';
@@ -3586,9 +3653,15 @@ export const migrateReservedToPending = async (): Promise<void> => {
 };
 
 export const listenToPrepMetrics = (callback: (metrics: { avgPrepTimeMs: number }) => void) => {
-  return onSnapshot(doc(db, 'system_status', 'metrics'), (snap) => {
-    if (snap.exists()) callback(snap.data() as any);
-  });
+  return onSnapshot(
+    doc(db, 'system_status', 'metrics'),
+    (snap) => {
+      if (snap.exists()) callback(snap.data() as any);
+    },
+    (error) => {
+      console.warn(`[firestore-db:prepMetrics] Listener error: ${error.message}`);
+    }
+  );
 };
 
 export const listenToBatches = (callback: (batches: PrepBatch[]) => void): (() => void) => {
@@ -4228,3 +4301,31 @@ export const rejectItem = async (orderId: string, itemId: string, staffId: strin
         });
     });
 };
+
+/**
+ * 📢 Updates order status to inform the kitchen and releases hold on its prep batches.
+ */
+export const informKitchenForOrder = async (orderId: string): Promise<void> => {
+  const orderRef = doc(db, 'orders', orderId);
+  await updateDoc(orderRef, {
+    kitchenInformed: true,
+    kitchenInformedAt: Date.now(),
+    updatedAt: serverTimestamp()
+  });
+
+  // Query all prepBatches on HOLD for this order and change them to QUEUED
+  const q = query(
+    collection(db, 'prepBatches'),
+    where('orderIds', 'array-contains', orderId),
+    where('status', '==', 'HOLD')
+  );
+  const snap = await getDocs(q);
+  const batchUpdates = snap.docs.map(bDoc => 
+    updateDoc(doc(db, 'prepBatches', bDoc.id), {
+      status: 'QUEUED',
+      updatedAt: serverTimestamp()
+    })
+  );
+  await Promise.all(batchUpdates);
+};
+

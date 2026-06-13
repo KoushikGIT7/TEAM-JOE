@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Cyber-Epicurean Colors (Custom definitions) */
+  --color-surface-lowest: #060e20;
+  --color-surface-low: #131b2e;
+  --color-surface-mid: #171f33;
+  --color-surface-high: #222a3d;
+  --color-surface-highest: #2d3449;
+  --color-brand-purple: #b76dff;
+  --color-brand-purple-light: #ddb7ff;
+  --color-brand-purple-dark: #490080;
+  --color-brand-green: #4ae176;
+  --color-brand-green-dark: #003915;
+  --color-on-surface: #ffffff;
+  --color-on-surface-variant: #cbd5e1;
+}
+
+@layer utilities {
+  .glass-stroke {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .glass-bg {
+    background: rgba(23, 31, 51, 0.4);
+    backdrop-filter: blur(20px);
+  }
+  .neon-shadow-purple {
+    box-shadow: 0 0 15px rgba(221, 183, 255, 0.15);
+  }
+  .neon-shadow-green {
+    box-shadow: 0 0 15px rgba(74, 225, 118, 0.25);
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

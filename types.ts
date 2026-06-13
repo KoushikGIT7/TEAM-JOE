@@ -11,6 +11,9 @@ export const ROLES = {
 
 export type UserRole = keyof typeof ROLES;
 
+export type StaffRole = 'CASHIER' | 'COOK' | 'SUPERVISOR' | 'SERVER' | 'ADMIN' | 'ASSISTANT_SUPERVISOR';
+export type PortalMode = 'STUDENT' | 'STAFF' | 'ADMIN' | 'DEVELOPER' | 'MONITOR';
+
 export interface UserProfile {
   uid: string;
   name: string;
@@ -20,6 +23,20 @@ export interface UserProfile {
   active: boolean;
   createdAt: number;
   lastActive?: number;
+  walletBalance?: number; // Secure prepaid balance
+  totalSpent?: number;    // Cumulative spent amount
+  totalRecharged?: number; // Cumulative recharge amount
+  points?: number;        // Loyalty points
+  xp?: number;            // Experience points
+  level?: number;         // Foodie level
+  magicBoxProgress?: number; // Loot chest progress
+  quests?: Quest[];       // Active quest tracking list
+  redeemedRewards?: RedeemedReward[]; // Claimed rewards history
+  escrowPoints?: number;   // Escrow pending points
+  customTitle?: string;    // Custom title bought by points
+  customFrameColor?: string; // Custom frame border color class
+  customAvatarDecoration?: string; // Emoji avatar decoration icon
+  frequency?: number;        // User order frequency
 }
 
 export interface MenuItem {
@@ -48,7 +65,7 @@ export type OrderStatus = 'PENDING' | 'PAID' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPL
 export type QRStatus = 'ACTIVE' | 'SCANNED' | 'IN_PROGRESS' | 'USED' | 'EXPIRED' | 'PENDING_PAYMENT' | 'REJECTED' | 'DESTROYED' | 'MISSED' | 'ABANDONED';
 export type QRState = 'ACTIVE' | 'SCANNED' | 'IN_PROGRESS' | 'USED' | 'SERVED' | 'DESTROYED' | 'REJECTED' | 'MISSED' | 'ABANDONED';
 export type OrderType = 'FAST_ITEM' | 'PREPARATION_ITEM';
-export type ServeFlowStatus = 'PENDING' | 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'SERVED_PARTIAL' | 'READY_SERVED' | 'SERVED' | 'MISSED' | 'EXPIRED' | 'ABANDONED' | 'MISSED_PREVIOUS';
+export type ServeFlowStatus = 'PENDING' | 'PAID' | 'NEW' | 'QUEUED' | 'PREPARING' | 'ALMOST_READY' | 'READY' | 'SERVED_PARTIAL' | 'READY_SERVED' | 'SERVED' | 'MISSED' | 'EXPIRED' | 'ABANDONED' | 'MISSED_PREVIOUS' | 'CONSUMED' | 'MANIFESTED';
 
 /** Kitchen workflow: PLACED → COOKING → READY → SERVED */
 export type KitchenStatus = 'PLACED' | 'COOKING' | 'READY' | 'SERVED';
@@ -64,6 +81,7 @@ export interface Order {
   queueStatus: 'NOT_IN_QUEUE' | 'IN_QUEUE';
   orderStatus: OrderStatus;
   qrStatus: QRStatus;
+  tokenNumber?: string;
   rejectionReason?: string;
   cashRequestedAt?: any;
   utrLast4?: string;
@@ -134,6 +152,12 @@ export interface Order {
   /** When the student was successfully alerted (deduplication) */
   notifiedAt?: number;
   updatedAt?: number;
+  streakCounted?: boolean;
+  isEscrowed?: boolean;
+  orderedPoints?: number;
+  orderedXp?: number;
+  kitchenInformed?: boolean;
+  kitchenInformedAt?: number;
 }
 
 export interface QRData {
@@ -144,15 +168,15 @@ export interface QRData {
 }
 
 export interface SystemSettings {
-  isMaintenanceMode: boolean;
-  acceptingOrders: boolean;
+  isMaintenanceMode?: boolean;
+  acceptingOrders?: boolean;
   /** Fail-safe: when false, students cannot create orders */
   orderingEnabled?: boolean;
-  announcement: string;
-  taxRate: number;
-  minOrderValue: number;
-  peakHourThreshold: number;
-  autoSettlementEnabled: boolean;
+  announcement?: string;
+  taxRate?: number;
+  minOrderValue?: number;
+  peakHourThreshold?: number;
+  autoSettlementEnabled?: boolean;
   /** Orders per minute (for queue wait estimate). Default 10. */
   servingRatePerMin?: number;
   /** QR validity in minutes. Default 30. */
@@ -162,6 +186,17 @@ export interface SystemSettings {
   maxItemsPerSlot?: number;
   /** Kitchen Panic Button Delay (in minutes) */
   globalDelayMins?: number;
+
+  // New UI Config compatibility fields
+  systemEnabled?: boolean;
+  upiId?: string;
+  upiQrCode?: string;
+  lowBalanceThreshold?: number;
+  pilotNotification?: string;
+  maintenanceMode?: boolean;
+  orderFlowAccepting?: boolean;
+  orderingFailSafe?: boolean;
+  autoDailySettlement?: boolean;
 }
 
 export interface OverrideLog {
@@ -303,6 +338,7 @@ export interface WalletRechargeRequest {
   reviewedBy?: string;
   reviewedAt?: number;
   rejectionNote?: string;
+  utrNumber?: string;
 }
 
 /**
@@ -329,4 +365,52 @@ export interface WalletSummary {
   walletBalance: number;
   totalRecharged: number;
   totalSpent: number;
+}
+
+// --- Gamification & Loyalty Types ---
+export interface LeaderboardUser {
+  rank?: number;
+  name: string;
+  avatar: string;
+  points: number;
+  level: number;
+  isCurrentUser?: boolean;
+  frequency: number;
+  title: string;
+  frameColor?: string;
+  avatarDecoration?: string;
+}
+
+export interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  points: number;
+  progress: number;
+  target: number;
+  type: 'ACTIVE' | 'ARCHIVED';
+  endsIn?: string;
+  badge?: string;
+  badgeColor?: string;
+  completedAt?: string;
+}
+
+export interface RewardItem {
+  id: string;
+  name: string;
+  description: string;
+  pointsCost: number;
+  image: string;
+  badge?: string;
+  category: 'DRINKS' | 'MEALS' | 'EXCLUSIVE';
+}
+
+export interface RedeemedReward {
+  id: string;
+  rewardId: string;
+  name: string;
+  pointsCost: number;
+  timestamp: string;
+  code: string;
+  status: 'ACTIVE' | 'USED';
 }

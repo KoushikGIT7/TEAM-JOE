@@ -166,6 +166,20 @@ export const markPartialItemsReady = async (itemName: string, count: number, pen
       pickupWindow: pickupWindow,
       updatedAt: serverTimestamp()
     });
+
+    // 🚀 [QR-UNLOCK-FIX]: Sync subcollection instantly so the student's live listener
+    // doesn't override the main document's status with an outdated 'PREPARING' status.
+    const itemPromises = updatedItems.map(item => {
+      if (item.name === itemName && item.status === 'READY') {
+        const itemRef = doc(db, 'orders', order.id, 'items', item.id);
+        return updateDoc(itemRef, {
+          status: 'READY',
+          updatedAt: serverTimestamp()
+        }).catch(err => console.error("Failed to sync subcollection item:", err));
+      }
+      return Promise.resolve();
+    });
+    await Promise.all(itemPromises);
   });
 
   await Promise.all(promises);

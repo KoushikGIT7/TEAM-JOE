@@ -10,10 +10,18 @@ import { triggerOneSignalWebhook } from '../services/onesignal-webhook';
  * Hook to listen for updates across ALL active orders for the student.
  * 100% Firebase-only notification delivery for Spark Plan.
  * Includes wave-based delivery and persistent deduplication.
+ *
+ * EVENTS COVERED:
+ *   1. REJECTED          — order / payment rejected by cashier
+ *   2. CASH_CONFIRMED    — cashier approved cash order (QR now unlocked)
+ *   3. READY             — kitchen marks serveFlowStatus=READY (wave-batched)
+ *   4. QR_SCANNED        — server scans QR (serveFlowStatus=CONSUMED/MANIFESTED)
+ *   5. COMPLETED         — order fully served
+ *   6. STREAK_REWARD     — every 5 completed orders
  */
 export const useOrderNotifications = (userId: string | null) => {
     // track local state to avoid spam within the same session
-    const activeListenerRef = useRef<Record<string, { status: string; flow: string }>>({});
+    const activeListenerRef = useRef<Record<string, { status: string; flow: string; payStatus: string }>>({});
     // sessionDedupeRef tracks which combinations have already been announced to prevent repeats in current lifecycle
     const sessionDedupeRef = useRef<Set<string>>(new Set());
     // track orders currently waiting for their "wave" delay
@@ -22,62 +30,73 @@ export const useOrderNotifications = (userId: string | null) => {
     useEffect(() => {
         if (!userId) return;
 
-        console.log('🔔 Monitoring updates for student:', userId);
-        
+        console.log('🔔 [OrderNotify] Monitoring push events for student:', userId);
+
+        // Fix: include ACTIVE status — many orders spend most of their life here
         const q = query(
             collection(db, 'orders'),
             where('userId', '==', userId),
-            where('orderStatus', 'in', ['PENDING', 'PAID', 'REJECTED', 'COMPLETED']),
+            where('orderStatus', 'in', ['PENDING', 'PAID', 'ACTIVE', 'PROCESSING', 'REJECTED', 'COMPLETED']),
             orderBy('createdAt', 'desc'),
             limit(5)
         );
 
-        const unsub = onSnapshot(q, (snapshot) => {
-            snapshot.docChanges().forEach(async (change) => {
+        const unsub = onSnapshot(
+            q,
+            (snapshot) => {
+                snapshot.docChanges().forEach(async (change) => {
                 const data = change.doc.data() as Order;
                 const orderId = change.doc.id;
                 const currentFlow = data.serveFlowStatus || 'NEW';
                 const currentStatus = data.orderStatus || 'PENDING';
-                
+                const currentPayStatus = data.paymentStatus || 'PENDING';
+
                 const prev = activeListenerRef.current[orderId];
 
                 /**
                  * markNotified: Attempt to stamp notifiedAt on the order for
                  * persistent deduplication across devices/sessions.
-                 *
-                 * Guest orders have no Firebase Auth context, so their
-                 * updateDoc calls would fail with permission-denied. We skip
-                 * silently — in-memory (waveTimersRef) deduplication covers
-                 * the current session. No noisy log for expected guest failures.
                  */
                 const markNotified = async (id: string): Promise<void> => {
                     try {
                         await updateDoc(doc(db, 'orders', id), { notifiedAt: Date.now() });
                     } catch (err: any) {
-                        // permission-denied here means the rule didn't match — investigate.
-                        // Do NOT log expected guest denials (already handled above).
                         if (err?.code !== 'permission-denied') {
                             console.warn('Could not update notifiedAt:', err);
                         }
                     }
                 };
 
-                // 1. REJECTED: Immediate notification (no waves)
+                // ─── EVENT 1: REJECTED ────────────────────────────────────────
                 if ((!prev || prev.status !== 'REJECTED') && currentStatus === 'REJECTED' && !data.notifiedAt) {
-                    joeSounds.playRejected(); // ❌ Gentle descending tone — professional, not harsh
-                    triggerLocalNotification(
-                        '⚠️ Order Issue',
-                        `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
-                    );
+                    joeSounds.playRejected();
                     triggerOneSignalWebhook(
                         userId,
-                        '⚠️ Order Issue',
+                        '⚠️ Order Rejected',
                         `Order #${orderId.slice(-4).toUpperCase()} was rejected. Please contact the cashier.`
                     );
                     await markNotified(orderId);
                 }
 
-                // 2. READY: Wave-based delivery for Kitchen items, Immediate for Fast items
+                // ─── EVENT 2: CASH ORDER CONFIRMED BY CASHIER ─────────────────
+                // paymentStatus transitions to VERIFIED → QR is now active
+                const wasUnverified = !prev || (prev.payStatus !== 'VERIFIED' && prev.payStatus !== 'SUCCESS');
+                const isNowVerified = currentPayStatus === 'VERIFIED' || currentPayStatus === 'SUCCESS';
+                const isCashOrder = data.paymentType === 'CASH';
+                const cashConfirmDedupeKey = `${orderId}-CASH-CONFIRMED`;
+
+                if (wasUnverified && isNowVerified && isCashOrder && !sessionDedupeRef.current.has(cashConfirmDedupeKey)) {
+                    sessionDedupeRef.current.add(cashConfirmDedupeKey);
+                    joeSounds.playPaymentConfirmed?.() ?? undefined;
+                    triggerOneSignalWebhook(
+                        userId,
+                        '✅ Cash Confirmed — QR Unlocked!',
+                        `Your order #${orderId.slice(-4).toUpperCase()} is confirmed. Show your QR code at the counter.`
+                    );
+                    // No markNotified here — we don't want to block the READY event
+                }
+
+                // ─── EVENT 3: FULL ORDER READY (Wave-batched) ─────────────────
                 if (currentFlow === 'READY' && !data.notifiedAt && !waveTimersRef.current[orderId]) {
                     const isFastItem = data.orderType === 'FAST_ITEM';
 
@@ -86,24 +105,20 @@ export const useOrderNotifications = (userId: string | null) => {
                         if (!sessionDedupeRef.current.has(dedupeKey)) {
                             sessionDedupeRef.current.add(dedupeKey);
                             sonicVoice.announceMealReady();
-                            triggerLocalNotification(
-                                '🍽️ Order Ready!',
-                                `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
-                            );
                             triggerOneSignalWebhook(
                                 userId,
-                                '🍽️ Order Ready!',
-                                `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                                '🍽️ Order Ready for Pickup!',
+                                `Order #${orderId.slice(-4).toUpperCase()} is ready at the counter. Come collect it now!`
                             );
                             await markNotified(orderId);
                         }
+                        activeListenerRef.current[orderId] = { status: currentStatus, flow: currentFlow, payStatus: currentPayStatus };
                         return;
                     }
 
                     waveTimersRef.current[orderId] = true;
-                    
+
                     let delay = 0;
-                    // batchIds is an array — use first batch for wave position calculation
                     const firstBatchId = Array.isArray(data.batchIds) ? data.batchIds[0] : undefined;
                     if (firstBatchId) {
                         try {
@@ -112,11 +127,10 @@ export const useOrderNotifications = (userId: string | null) => {
                                 const bData = bSnap.data() as PrepBatch;
                                 const idx = (bData.orderIds || []).indexOf(orderId);
                                 if (idx >= 0) {
-                                    // Wave grouping: 10 people per wave, 1 minute gap
                                     const wave = Math.floor(idx / 10);
                                     delay = wave * 60000;
                                     if (delay > 0) {
-                                        console.log(`⏳ Order #${orderId.slice(-4)} scheduled for wave ${wave} (Delay: ${delay}ms)`);
+                                        console.log(`⏳ Order #${orderId.slice(-4)} wave ${wave} (Delay: ${delay}ms)`);
                                     }
                                 }
                             }
@@ -126,7 +140,6 @@ export const useOrderNotifications = (userId: string | null) => {
                     }
 
                     setTimeout(async () => {
-                        // Re-verify order is still READY and not yet notified
                         try {
                             const freshSnap = await getDoc(doc(db, 'orders', orderId));
                             const freshData = freshSnap.data() as Order;
@@ -135,14 +148,10 @@ export const useOrderNotifications = (userId: string | null) => {
                                 if (!sessionDedupeRef.current.has(dKey)) {
                                     sessionDedupeRef.current.add(dKey);
                                     sonicVoice.announceMealReady();
-                                    triggerLocalNotification(
-                                        '🍽️ Order Ready!',
-                                        `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
-                                    );
                                     triggerOneSignalWebhook(
                                         userId,
-                                        '🍽️ Order Ready!',
-                                        `Order #${orderId.slice(-4).toUpperCase()} is ready for pickup.`
+                                        '🍽️ Order Ready for Pickup!',
+                                        `Order #${orderId.slice(-4).toUpperCase()} is ready at the counter. Come collect it now!`
                                     );
                                     await markNotified(orderId);
                                 }
@@ -155,23 +164,27 @@ export const useOrderNotifications = (userId: string | null) => {
                     }, delay);
                 }
 
-                // 3. STUDENT SCAN COMPLETE AUDIO: When order is scanned by server
+                // ─── EVENT 4: QR SCANNED — Server handed over the order ────────
                 const isNowScanned = currentFlow === 'CONSUMED' || currentFlow === 'MANIFESTED';
                 const wasScanned = prev && (prev.flow === 'CONSUMED' || prev.flow === 'MANIFESTED');
 
                 if (isNowScanned && !wasScanned) {
-                    // 🔔 NEW: Only play the custom student success MP3 if this is a live transition (prev exists)
                     if (prev) {
                         const dKeyComplete = `${orderId}-SCANNED-AUDIO`;
                         if (!sessionDedupeRef.current.has(dKeyComplete)) {
                             sessionDedupeRef.current.add(dKeyComplete);
                             joeSounds.stopAll();
                             joeSounds.playStudentScanComplete();
+                            triggerOneSignalWebhook(
+                                userId,
+                                '🎉 Enjoy your meal!',
+                                `Order #${orderId.slice(-4).toUpperCase()} has been handed over. Bon appétit!`
+                            );
                         }
                     }
                 }
 
-                // 4. STREAK REWARD: When order becomes completely COMPLETED
+                // ─── EVENT 5 + 6: ORDER COMPLETED + STREAK REWARD ─────────────
                 if ((!prev || prev.status !== 'COMPLETED') && currentStatus === 'COMPLETED') {
 
                     if (!data.streakCounted) {
@@ -182,12 +195,12 @@ export const useOrderNotifications = (userId: string | null) => {
                                 const newCount = (userSnap.data().completedOrdersCount || 0) + 1;
                                 await updateDoc(userRef, { completedOrdersCount: newCount });
                                 await updateDoc(doc(db, 'orders', orderId), { streakCounted: true });
-                                
+
                                 if (newCount > 0 && newCount % 5 === 0) {
                                     triggerOneSignalWebhook(
                                         userId,
-                                        "🎉 5-Order Streak!",
-                                        `You've completed ${newCount} orders. You're a JOE regular!`
+                                        '🏆 5-Order Streak!',
+                                        `You've completed ${newCount} orders at JOE Cafeteria. You're a regular!`
                                     );
                                 }
                             }
@@ -199,25 +212,19 @@ export const useOrderNotifications = (userId: string | null) => {
                     const dKeyCompleteAll = `${orderId}-FULL-COMPLETE-AUDIO`;
                     if (!sessionDedupeRef.current.has(dKeyCompleteAll)) {
                         sessionDedupeRef.current.add(dKeyCompleteAll);
-                        
-                        // 🛡️ DO NOT kill the scan audio if the user just scanned!
                         if (!isNowScanned) {
                             joeSounds.stopAll();
-                            // joeSounds.playFoodReady(); removed as requested
                         }
                     }
                 }
 
-                activeListenerRef.current[orderId] = { status: currentStatus, flow: currentFlow };
+                activeListenerRef.current[orderId] = { status: currentStatus, flow: currentFlow, payStatus: currentPayStatus };
             });
+        }, (error: any) => {
+            if (error?.code === 'permission-denied') return;
+            console.warn(`[useOrderNotifications] Listener error: ${error.message}`);
         });
 
         return unsub;
     }, [userId]);
-};
-
-const triggerLocalNotification = (title: string, body: string) => {
-    // Disabled native browser notifications for students because OneSignal 
-    // handles push notifications universally. This prevents duplicate prompts 
-    // and duplicate popup messages.
 };

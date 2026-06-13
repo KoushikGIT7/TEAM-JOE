@@ -28,7 +28,7 @@ export const initializeOneSignal = async (): Promise<void> => {
           allowLocalhostAsSecureOrigin: true,
           // Point to combined worker so only one root SW is registered
           serviceWorkerPath: 'firebase-messaging-sw.js',
-          notifyButton: { enable: false }
+          notifyButton: { enable: false } as any
         });
         isInitialized = true;
         console.log('✅ [ONESIGNAL] Web SDK Initialized successfully.');
@@ -155,39 +155,68 @@ export const setPushSubscriptionState = async (enable: boolean): Promise<void> =
   await initializeOneSignal();
   try {
     if (enable) {
-      if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
-        await OneSignal.Notifications.requestPermission();
-      } else {
+      const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+      if (permission === 'granted') {
+        // Browser already approved — just opt back into OneSignal
         await OneSignal.User.PushSubscription.optIn();
+      } else if (permission === 'denied') {
+        // Hard-blocked — nothing we can do from JS, guide user to browser settings
+        console.warn('[OneSignal] Notifications are blocked in browser. User must unblock manually.');
+      } else {
+        // 'default' — ask the browser permission dialog
+        await OneSignal.Notifications.requestPermission();
+        // After granting, also explicitly opt in
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          await OneSignal.User.PushSubscription.optIn();
+        }
       }
     } else {
       await OneSignal.User.PushSubscription.optOut();
     }
   } catch (e) {
-    console.error("🔔 [OneSignal] Set opt-in state error:", e);
+    console.error('🔔 [OneSignal] Set opt-in state error:', e);
   }
 };
 
 /**
- * 🔄 Register callback for subscription changes
+ * 🔄 Register callback for subscription changes — returns an unsubscribe function
  */
-export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => void): void => {
-  if (typeof window === 'undefined') return;
-  
-  if (isInitialized) {
+export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => void): (() => void) => {
+  if (typeof window === 'undefined') return () => {};
+
+  let internalHandler: ((e: any) => void) | null = null;
+
+  const registerNow = () => {
+    internalHandler = (e: any) => {
+      if (e && e.current) callback(e.current.optedIn);
+    };
     try {
-      OneSignal.User.PushSubscription.addEventListener("change", (e: any) => {
-        if (e && e.current) {
-          callback(e.current.optedIn);
-        }
-      });
+      OneSignal.User.PushSubscription.addEventListener('change', internalHandler);
     } catch (e) {
-      console.error("🔔 [OneSignal] Event listener registration error:", e);
+      console.error('🔔 [OneSignal] Event listener registration error:', e);
     }
+  };
+
+  if (isInitialized) {
+    registerNow();
   } else {
-    // Queue the listener to be registered when initialization is complete
-    changeListeners.push(callback);
+    // Queue: will be registered once init completes
+    const wrappedCb = (optedIn: boolean) => {
+      callback(optedIn);
+      registerNow();
+    };
+    changeListeners.push(wrappedCb);
   }
+
+  // Return cleanup so React useEffect can unsubscribe
+  return () => {
+    if (internalHandler) {
+      try {
+        OneSignal.User.PushSubscription.removeEventListener('change', internalHandler as any);
+      } catch (_) {}
+      internalHandler = null;
+    }
+  };
 };
 
 /**

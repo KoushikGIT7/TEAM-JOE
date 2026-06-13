@@ -87,6 +87,7 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
       }
 
       return {
+        ...data,
         uid: data.uid || uid,
         name: data.name || 'Student member',
         email: data.email || '',
@@ -323,6 +324,7 @@ export const onAuthStateChange = (
           }
 
           const profile: UserProfile = {
+            ...data,
             uid: data.uid || firebaseUser.uid,
             name: data.name || firebaseUser.displayName || (currentRole === 'GUEST' ? 'Guest User' : 'Staff Member'),
             email: email,

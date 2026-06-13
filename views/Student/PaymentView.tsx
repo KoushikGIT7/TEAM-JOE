@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Smartphone, Banknote, ChevronRight, CheckCircle2, Loader2, Wallet } from 'lucide-react';
-import { UserProfile, CartItem } from '../../types';
-import { createOrder, listenToOrder, getOrderingEnabled } from '../../services/firestore-db';
-import { doc, serverTimestamp } from 'firebase/firestore';
-import { joeSounds } from '../../utils/audio';
-import { sonicVoice } from '../../services/voice-engine';
-import { deductWalletForOrder, listenToWalletSummary } from '../../services/wallet';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-/** Generate a local order ID instantly (same format as firestore-db.ts) */
-const genLocalOrderId = () => 'order_' + Math.random().toString(36).substr(2, 9);
+import React, { useState, useEffect } from 'react';
+import { useApp } from '../../contexts/AppContext';
+import { 
+  ArrowLeft, CreditCard, ShieldCheck, ShoppingBag, 
+  Wallet, AlertTriangle, CheckCircle2, RotateCw, 
+  Trophy, Sparkles, Star, Percent, Award
+} from 'lucide-react';
+import { UserProfile } from '../../types';
 
 interface PaymentViewProps {
   profile: UserProfile | null;
@@ -16,501 +18,392 @@ interface PaymentViewProps {
   onSuccess: (orderId: string) => void;
 }
 
-const UPI_PA = 'fcgtub@oksbi';
-const UPI_PN = 'JOE Cafeteria';
+export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
+  const {
+    cart,
+    menuItems,
+    getCartTotal,
+    walletBalance,
+    placeOrder,
+    isGuest,
+    orders
+  } = useApp();
 
-const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuccess }) => {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [state, setState] = useState<'IDLE' | 'PROCESSING' | 'WAITING' | 'SUCCESS'>('IDLE');
-  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'CASH' | 'WALLET'>('WALLET');
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [orderingDisabled, setOrderingDisabled] = useState(false);
-  const [activeAttemptKey] = useState(() => `idemp_${profile?.uid || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [walletError, setWalletError] = useState<string | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<'WALLET' | 'CASH'>('WALLET');
+  const [processingState, setProcessingState] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [processingSubText, setProcessingSubText] = useState('');
+  const [createdOrderId, setCreatedOrderId] = useState('');
 
+  // Settle default method for guest to CASH since they don't have wallet balance
   useEffect(() => {
-    const saved = localStorage.getItem('joe_cart');
-    if (saved) { try { setCart(JSON.parse(saved)); } catch {} }
-  }, []);
+    if (isGuest) {
+      setSelectedMethod('CASH');
+    } else {
+      setSelectedMethod('WALLET');
+    }
+  }, [isGuest]);
 
-  useEffect(() => {
-    getOrderingEnabled().then(e => setOrderingDisabled(!e)).catch(() => setOrderingDisabled(false));
-  }, []);
+  // -------------------------------------------------------------
+  // JOE POINTS & TIER-BASED DISCOUNT SYSTEM LOGIC
+  // Calculates order frequency, active membership tier, and 50% Deca-Drive reward.
+  // -------------------------------------------------------------
+  const currentFrequency = orders.length;
 
-  // Real-time wallet balance for authenticated students
-  useEffect(() => {
-    if (!profile?.uid || profile.role === 'GUEST') return;
-    return listenToWalletSummary(profile.uid, (s) => setWalletBalance(s.walletBalance));
-  }, [profile?.uid, profile?.role]);
+  let tierName = 'Bronze Foodie';
+  let tierDiscountPercent = 0;
+  let pointsMultiplier = 1.0;
+  let tierColor = 'text-amber-500 border-amber-500/20 bg-amber-500/5';
 
-  // Restore orphaned session
-  useEffect(() => {
-    const savedId = localStorage.getItem('activeOrderId');
-    if (savedId && !orderId) { setOrderId(savedId); setState('WAITING'); }
-  }, [orderId]);
+  if (currentFrequency >= 10) {
+    tierName = 'Gold Gastronomer';
+    tierDiscountPercent = 10;
+    pointsMultiplier = 1.5;
+    tierColor = 'text-yellow-400 border-yellow-400/20 bg-yellow-400/5';
+  } else if (currentFrequency >= 4) {
+    tierName = 'Silver Gourmand';
+    tierDiscountPercent = 5;
+    pointsMultiplier = 1.2;
+    tierColor = 'text-slate-300 border-slate-300/20 bg-slate-300/5';
+  }
 
-  // Listen for cashier approval — CASH only
-  useEffect(() => {
-    if (!orderId || selectedMethod !== 'CASH') return;
-    let navigated = false;
-    const unsub = listenToOrder(orderId, (order) => {
-      if (!order) return;
-      if (order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') {
-        localStorage.removeItem('activeOrderId');
-        joeSounds.playPaymentConfirmed();
-        sonicVoice.announceOrderComplete();
-        if (!navigated) { navigated = true; onSuccess(orderId); }
-      }
-      if ((order.paymentStatus === 'REJECTED' || order.orderStatus === 'REJECTED') && !navigated) {
-        localStorage.removeItem('activeOrderId');
-        setOrderId(null);
-        setState('IDLE');
-      }
-    });
-    return unsub;
-  }, [orderId, selectedMethod, onSuccess]);
+  // 50% Deca-Drive Milestone check: e.g. every 10th order is 50% off (limit-capped)
+  const nextOrderNumber = currentFrequency + 1;
+  const isMilestoneOrder = nextOrderNumber % 10 === 0;
+  const ordersToNextMilestone = 10 - (currentFrequency % 10);
 
-  const total = cart.reduce((acc, it) => acc + it.price * it.quantity, 0);
-  const isWalletSufficient = walletBalance >= total;
-  const isGuestUser = !profile?.uid || profile.role === 'GUEST';
+  let activeDiscountPercent = tierDiscountPercent;
+  let isMilestoneApplied = false;
+  let discountDetail = `${tierName} tier discount`;
 
-  const handlePayment = async () => {
-    if (state === 'PROCESSING') return;
-    setWalletError(null);
+  if (isMilestoneOrder) {
+    activeDiscountPercent = 50;
+    isMilestoneApplied = true;
+    discountDetail = 'Deca-Drive Milestone 50% Off';
+  }
 
-    // ─── WALLET PAYMENT ────────────────────────────────────────────────────────
-    if (selectedMethod === 'WALLET') {
-      if (!profile?.uid) { setWalletError('Please sign in to use wallet'); return; }
-      if (!isWalletSufficient) { setWalletError('Insufficient JOE Coins. Recharge wallet to continue.'); return; }
+  const subtotal = getCartTotal();
+  
+  // Calculate discount and cap Deca-Drive milestones to preserve profitability for the owner
+  let discountAmount = parseFloat(((subtotal * activeDiscountPercent) / 100).toFixed(2));
+  if (isMilestoneApplied && discountAmount > 10) {
+    discountAmount = 10.00; // Cap saving at ₹10.00 max to keep the kitchen highly profitable
+    discountDetail = 'Deca-Drive Milestone 50% Off (Profitability Capped at ₹10)';
+  } else if (discountAmount > 0) {
+    discountDetail = `${tierName} Flat ${tierDiscountPercent}% Off`;
+  }
 
-      setState('PROCESSING');
-      await new Promise(r => setTimeout(r, 1800)); // Premium gateway delay
+  const finalTotal = parseFloat(Math.max(0, subtotal - discountAmount).toFixed(2));
+  const estimatedPoints = Math.round(finalTotal * 10 * pointsMultiplier);
+  const isInsufficient = walletBalance < finalTotal;
 
-      const optimisticOrderId = genLocalOrderId();
-      try {
-        // 1. Deduct wallet atomically (throws if balance insufficient)
-        const { transactionId } = await deductWalletForOrder(profile.uid, total, optimisticOrderId);
+  // Compile cart details
+  const cartSummary = cart.map(c => {
+    const item = menuItems.find(m => m.id === c.id)!;
+    return {
+      ...item,
+      quantity: c.quantity,
+      itemTotal: (item?.price || 0) * c.quantity
+    };
+  });
 
-        // 2. Build order payload (paymentStatus: SUCCESS — already paid from wallet)
-        const orderPayload = {
-          id: optimisticOrderId,
-          userId: profile.uid,
-          userName: profile.name || 'Student',
-          items: cart,
-          totalAmount: total,
-          paymentType: 'WALLET' as any,
-          paymentStatus: 'SUCCESS',
-          queueStatus: 'NOT_IN_QUEUE',
-          orderStatus: 'PENDING',
-          qrStatus: 'ACTIVE',
-          cafeteriaId: 'MAIN_CAFE',
-          idempotencyKey: activeAttemptKey,
-          walletTransactionId: transactionId,
-          createdAt: Date.now(),
-        };
-
-        localStorage.removeItem('joe_cart');
-        sessionStorage.setItem('joe_optimistic_order', JSON.stringify(orderPayload));
-
-        joeSounds.stopAll();
-        joeSounds.playPaymentConfirmed();
-
-        // 3. Commit to Firestore in background — UI already moved on
-        createOrder(orderPayload as any).catch((e) => {
-          console.warn('[WALLET-ORDER] Background order write failed:', e);
-        });
-
-        setState('SUCCESS');
-        await new Promise(r => setTimeout(r, 1200)); // Show success checkmark briefly
-        onSuccess(optimisticOrderId);
-      } catch (err: any) {
-        setState('IDLE');
-        setWalletError(err.message || 'Wallet payment failed. Please try again.');
-      }
+  const handleCheckoutSubmit = async () => {
+    if (selectedMethod === 'WALLET' && isInsufficient) {
+      setErrorMessage('Your wallet contains insufficient funds. Please top up your Prepaid account via the Cashier Desk.');
       return;
     }
 
-    // ─── UPI / CASH (unchanged original logic) ─────────────────────────────────
-    const guestId = profile?.uid || (() => {
-      const s = sessionStorage.getItem('joe_guest_id') || `guest_${Math.random().toString(36).substr(2, 12)}`;
-      sessionStorage.setItem('joe_guest_id', s); return s;
-    })();
+    setProcessingState('PROCESSING');
+    setProcessingSubText('Connecting secure cryptographic channel...');
 
-    const optimisticOrderId = genLocalOrderId();
-    localStorage.setItem('activeOrderId', optimisticOrderId);
-    localStorage.removeItem('joe_cart');
+    // Simulate standard transaction stages
+    await new Promise(r => setTimeout(r, 800));
+    setProcessingSubText('Authenticating Joe Points & Loyalty engine...');
 
-    if (selectedMethod === 'UPI') {
-      setState('PROCESSING');
-      await new Promise(r => setTimeout(r, 1500)); // Secure gateway delay
-      
-      // UPI: play sound + open UPI app + go to QR screen
-      joeSounds.stopAll();
-      joeSounds.playPaymentConfirmed();
-      try {
-        // Only trigger UPI deep link on mobile devices to prevent desktop console errors
-        if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-            const q = `?pa=${UPI_PA}&pn=${encodeURIComponent(UPI_PN)}&am=${total}&cu=INR`;
-            const a = document.createElement('a');
-            a.href = `upi://pay${q}`;
-            a.click();
-        }
-      } catch (_) {}
-      localStorage.removeItem('activeOrderId');
+    await new Promise(r => setTimeout(r, 800));
+    setProcessingSubText(`Confirming ${selectedMethod || 'WALLET'} authorization (₹${finalTotal.toFixed(2)})...`);
 
-      const optimisticOrderPayload = {
-        id: optimisticOrderId, // <-- FIXED: ensure Firestore uses the same ID UI is listening to
-        userId: guestId,
-        userName: profile?.name || 'Guest',
-        items: cart,
-        totalAmount: total,
-        paymentType: 'UPI',
-        paymentStatus: 'SUCCESS',
-        queueStatus: 'NOT_IN_QUEUE',
-        orderStatus: 'PENDING',
-        qrStatus: 'ACTIVE',
-        cafeteriaId: 'MAIN_CAFE',
-        idempotencyKey: activeAttemptKey,
-        createdAt: Date.now()
-      };
+    await new Promise(r => setTimeout(r, 1000));
 
-      // ⚡ INSTANT HYDRATION: Save to sessionStorage so QRView renders with 0ms delay
-      sessionStorage.setItem('joe_optimistic_order', JSON.stringify(optimisticOrderPayload));
-
-      // 🔥 Commit to Firestore in background — UI already moved on
-      createOrder(optimisticOrderPayload as any).catch(e => {
-          console.warn('[OPTIMISTIC] Background UPI order write failed:', e);
-          alert('Failed to process order on server: ' + (e.message || 'Unknown error'));
-      });
-      
-      setState('SUCCESS');
-      await new Promise(r => setTimeout(r, 1000));
-      onSuccess(optimisticOrderId);
-      return;
-    }
-
-    // CASH: show WAITING screen instantly, commit in background
-    setState('PROCESSING');
-    await new Promise(r => setTimeout(r, 1200));
-
-    joeSounds.stopAll();
-    joeSounds.playOrderPlaced();
-    setOrderId(optimisticOrderId);
-    setState('WAITING');
-
-    // 🔥 Background commit — WAITING screen is already visible
-    createOrder({
-      id: optimisticOrderId, // <-- FIXED: ensure Firestore uses the same ID UI is listening to
-      userId: guestId,
-      userName: profile?.name || 'Guest',
-      items: cart,
-      totalAmount: total,
-      paymentType: 'CASH',
-      paymentStatus: 'AWAITING_CONFIRMATION',
-      queueStatus: 'NOT_IN_QUEUE',
-      orderStatus: 'PENDING',
-      cashRequestedAt: serverTimestamp(),
-      qrStatus: 'PENDING_PAYMENT',
-      cafeteriaId: 'MAIN_CAFE',
-      idempotencyKey: activeAttemptKey,
-    } as any)
-      .then(confirmedId => {
-        // Swap to real Firestore ID once available (usually <2s, but UI already shown)
-        localStorage.setItem('activeOrderId', confirmedId);
-        setOrderId(confirmedId);
-      })
-      .catch(err => {
-        // Firestore failed — roll back to IDLE and show error
-        localStorage.removeItem('activeOrderId');
-        setOrderId(null);
-        setState('IDLE');
-        alert(err?.message || 'Order failed. Please try again.');
-      });
-  };
-
-  const handleCancel = async () => {
-    if (orderId) {
-      try {
-        const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore');
-        const { db } = await import('../../firebase');
-        await updateDoc(firestoreDoc(db, 'orders', orderId), { orderStatus: 'CANCELLED', paymentStatus: 'REJECTED' });
-      } catch {}
-    }
-    localStorage.removeItem('activeOrderId');
-    onBack();
-  };
-
-  // ── PROCESSING STATE ──────────────────────────────────────────────────────────
-  if (state === 'PROCESSING') {
-    return (
-      <div className="h-screen bg-slate-900 flex flex-col w-full max-w-md mx-auto p-8 overflow-hidden relative border-x border-slate-900">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-900/20 via-slate-900 to-slate-900" />
+    try {
+      const res = await placeOrder(selectedMethod, discountAmount, discountDetail);
+      if (res.success && res.orderId) {
+        setCreatedOrderId(res.orderId);
+        setProcessingState('SUCCESS');
         
-        <div className="flex-1 flex flex-col items-center justify-center gap-10 relative z-10 animate-in fade-in duration-500">
-          <div className="relative">
-             <div className="w-32 h-32 rounded-[3rem] bg-slate-800 flex items-center justify-center border border-slate-700 shadow-2xl relative overflow-hidden">
-                {selectedMethod === 'WALLET' ? <Wallet className="w-12 h-12 text-emerald-500 animate-pulse relative z-10" /> : 
-                 selectedMethod === 'UPI' ? <Smartphone className="w-12 h-12 text-blue-500 animate-pulse relative z-10" /> :
-                 <Banknote className="w-12 h-12 text-amber-500 animate-pulse relative z-10" />}
-                <div className={`absolute inset-0 -translate-y-full animate-[scan_2s_ease-in-out_infinite] ${selectedMethod === 'WALLET' ? 'bg-emerald-500/10' : selectedMethod === 'UPI' ? 'bg-blue-500/10' : 'bg-amber-500/10'}`} />
-             </div>
-             <div className="absolute inset-[-40px] border-2 border-slate-800 rounded-[4rem] animate-[spin_3s_linear_infinite]" />
-             <div className="absolute inset-[-60px] border-2 border-slate-800/50 rounded-[5rem] animate-[spin_4s_linear_infinite_reverse]" />
-          </div>
+        // Show success state briefly, then trigger onSuccess route
+        setTimeout(() => {
+          onSuccess(res.orderId!);
+        }, 1500);
+      } else {
+        setProcessingState('ERROR');
+        setErrorMessage(res.error || 'Connection dropped. Please try again.');
+      }
+    } catch (err: any) {
+      setProcessingState('ERROR');
+      setErrorMessage(err.message || 'Payment processing failed.');
+    }
+  };
 
-          <div className="text-center space-y-3">
-            <h2 className="text-2xl font-black text-white tracking-widest uppercase italic">Secure Gateway</h2>
-            <p className={`font-bold text-xs uppercase tracking-[0.2em] animate-pulse ${selectedMethod === 'WALLET' ? 'text-emerald-500' : selectedMethod === 'UPI' ? 'text-blue-500' : 'text-amber-500'}`}>
-              {selectedMethod === 'WALLET' ? 'Authenticating JOE Wallet...' : 
-               selectedMethod === 'UPI' ? 'Connecting to UPI...' : 
-               'Generating Cash Request...'}
-            </p>
-          </div>
-        </div>
-
-        <div className="relative z-10 flex flex-col items-center gap-3">
-           <div className="flex gap-2">
-              <div className="w-2 h-2 rounded-full bg-slate-700 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 rounded-full bg-slate-700 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-2 h-2 rounded-full bg-slate-700 animate-bounce" style={{ animationDelay: '300ms' }} />
-           </div>
-           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Processing Transaction</span>
-        </div>
-      </div>
-    );
-  }
-
-  // ── SUCCESS STATE ──────────────────────────────────────────────────────────
-  if (state === 'SUCCESS') {
+  if (processingState === 'PROCESSING') {
     return (
-      <div className="h-screen bg-emerald-600 flex flex-col w-full max-w-md mx-auto p-8 overflow-hidden relative border-x border-emerald-600">
-        <div className="flex-1 flex flex-col items-center justify-center gap-8 relative z-10 animate-in fade-in zoom-in duration-300">
-          <div className="w-40 h-40 bg-white rounded-[3.5rem] flex items-center justify-center shadow-2xl shadow-emerald-900/50">
-             <CheckCircle2 className="w-20 h-20 text-emerald-500" />
-          </div>
-          <div className="text-center">
-            <h2 className="text-4xl font-black text-white tracking-tighter mb-2">Payment Successful</h2>
-            <p className="text-emerald-100 font-bold uppercase tracking-widest text-xs">Generating QR Code...</p>
+      <div className="min-h-screen bg-surface-lowest flex flex-col items-center justify-center p-6 text-center select-none max-w-md mx-auto border-x border-white/5 shadow-2xl">
+        <div className="relative mb-6">
+          <div className="w-24 h-24 rounded-full border-4 border-white/5 border-t-brand-purple flex items-center justify-center animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Wallet className="w-8 h-8 text-brand-purple animate-pulse" />
           </div>
         </div>
+        <h2 className="font-display text-xl font-bold text-white tracking-tight animate-pulse">
+          Processing Gateway
+        </h2>
+        <p className="font-mono text-xs text-brand-purple-light mt-3">
+          {processingSubText}
+        </p>
       </div>
     );
   }
 
-  // ── WAITING STATE ──────────────────────────────────────────────────────────
-  if (state === 'WAITING') {
+  if (processingState === 'SUCCESS') {
     return (
-      <div className="h-screen bg-white flex flex-col w-full max-w-md mx-auto p-8 overflow-hidden border-x border-slate-50">
-        <div className="flex-1 flex flex-col items-center justify-center gap-8">
-
-          {/* Animated waiting badge */}
-          <div className="relative">
-            <div className="w-40 h-40 rounded-[3.5rem] bg-gray-50 border-4 border-gray-100 flex flex-col items-center justify-center shadow-2xl shadow-black/5">
-              {selectedMethod === 'UPI'
-                ? <Smartphone className="w-14 h-14 text-blue-500 mb-2" />
-                : <Banknote className="w-14 h-14 text-amber-500 mb-2" />
-              }
-              <span className="text-xs font-black text-gray-400 uppercase tracking-widest">
-                {selectedMethod === 'UPI' ? 'UPI' : 'CASH'}
-              </span>
-            </div>
-            <div className="absolute inset-0 border-4 border-blue-300 rounded-[3.5rem] animate-ping opacity-20" />
-          </div>
-
-          {/* Amount */}
-          <div className="bg-gray-900 text-white px-10 py-4 rounded-2xl">
-            <span className="text-4xl font-black italic">₹{total}</span>
-          </div>
-
-          {/* Status message */}
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">
-              {selectedMethod === 'UPI' ? 'Awaiting Cashier Confirmation' : 'Visit the Cash Counter'}
-            </h2>
-            <p className="text-gray-400 font-medium text-sm leading-relaxed max-w-[280px] mx-auto">
-              {selectedMethod === 'UPI'
-                ? 'Pay via UPI and wait for staff to confirm your payment.'
-                : 'Show your order reference to the cashier and pay cash.'}
-            </p>
-          </div>
-
-          {/* Order reference */}
-          {orderId && (
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl px-8 py-4 text-center">
-              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Order Reference</p>
-              <p className="text-2xl font-black text-gray-900 tracking-widest">#{orderId.slice(-6).toUpperCase()}</p>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 text-gray-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-xs font-black uppercase tracking-widest">Waiting for confirmation...</span>
-          </div>
+      <div className="min-h-screen bg-surface-lowest flex flex-col items-center justify-center p-6 text-center select-none animate-fade-in max-w-md mx-auto border-x border-white/5 shadow-2xl">
+        <div className="w-20 h-20 rounded-full bg-brand-green/10 border border-brand-green/30 flex items-center justify-center mb-6">
+          <CheckCircle2 className="w-12 h-12 text-brand-green" />
         </div>
-
-        <button
-          onClick={handleCancel}
-          className="w-full py-4 text-xs font-black uppercase tracking-widest text-gray-300 active:scale-95 transition-all"
-        >
-          Cancel Order
-        </button>
+        <h2 className="font-display text-2xl font-black text-white tracking-tight mb-2">
+          Payment Processed!
+        </h2>
+        <p className="font-sans text-xs text-on-surface-variant max-w-xs leading-relaxed mb-6">
+          Your wallet transaction is approved. Your receipt holds token cryptographics for live counter tracking.
+        </p>
       </div>
     );
   }
 
-  // ── CHECKOUT (IDLE / PROCESSING) ───────────────────────────────────────────
   return (
-    <div className="h-screen bg-[#F8FAFC] flex flex-col w-full max-w-md mx-auto border-x border-slate-50 relative">
-
-      {/* Header */}
-      <header className="px-5 py-5 bg-white flex items-center gap-4 border-b border-black/5">
-        <button onClick={onBack} className="p-2.5 bg-gray-50 rounded-2xl border border-gray-100 active:scale-95 transition-all">
-          <ChevronLeft className="w-5 h-5 text-gray-500" />
+    <div className="min-h-screen bg-surface-lowest pb-24 text-on-surface max-w-md mx-auto border-x border-white/5 shadow-2xl">
+      {/* App Bar Header */}
+      <header className="sticky top-0 z-50 flex items-center gap-3 px-5 h-16 w-full bg-surface-lowest/80 backdrop-blur-xl border-b border-white/5">
+        <button
+          onClick={onBack}
+          className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:scale-95 transition-transform shrink-0 cursor-pointer"
+        >
+          <ArrowLeft className="w-5 h-5 text-brand-purple" />
         </button>
-        <h2 className="text-xl font-black text-gray-900">Checkout</h2>
+        <h1 className="font-display text-lg font-black text-white leading-none">
+          Review & Pay
+        </h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-5 pb-40">
+      <div className="px-5 mt-4 space-y-6">
+        {/* Selected Items summary panel with Loyalty tracker */}
+        <section className="glass-bg glass-stroke rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2">
+            <div className="flex items-center gap-1.5">
+              <ShoppingBag className="w-4 h-4 text-brand-purple" />
+              <h3 className="font-display font-bold text-xs text-white uppercase tracking-wider">
+                Basket Summary
+              </h3>
+            </div>
+            {/* Active Tier Chip */}
+            <div className={`px-2 py-0.5 rounded-md border text-[9px] font-mono font-bold tracking-wider uppercase ${tierColor}`}>
+              {tierName}
+            </div>
+          </div>
 
-        {/* Cart Summary */}
-        <div className="bg-white rounded-[2rem] p-6 border border-black/5 shadow-sm">
-          <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">Your Order</h3>
-          <div className="space-y-3">
-            {cart.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
-                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+          <div className="space-y-3 divide-y divide-white/5 max-h-48 overflow-y-auto pr-1">
+            {cartSummary.map((item, idx) => (
+              <div key={idx} className="flex gap-3 justify-between items-center pt-2 first:pt-0">
+                <div className="flex gap-3 items-center">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-white/5">
+                    <img className="w-full h-full object-cover" alt={item.name} src={item.imageUrl} />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-gray-900">{item.name}</p>
-                    <p className="text-[10px] font-bold text-gray-400">×{item.quantity} · ₹{item.price} each</p>
+                    <h4 className="font-display font-bold text-xs text-white">{item.name}</h4>
+                    <p className="font-mono text-[10px] text-on-surface-variant">
+                      ₹{item.price} x {item.quantity}
+                    </p>
                   </div>
                 </div>
-                <p className="text-sm font-black text-gray-900">₹{item.price * item.quantity}</p>
+                <span className="font-mono text-xs font-bold text-brand-purple-light">
+                  ₹{item.itemTotal?.toFixed(2)}
+                </span>
               </div>
             ))}
           </div>
-          <div className="mt-4 pt-4 border-t border-gray-50 flex justify-between">
-            <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Total</span>
-            <span className="text-xl font-black text-gray-900">₹{total}</span>
-          </div>
-        </div>
 
-        {/* Payment Method */}
-        <div className="bg-white rounded-[2rem] p-6 border border-black/5 shadow-sm">
-          <h3 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">Payment Method</h3>
-          
-          {/* BANNER: Pilot Launch Constraint */}
-          <div className="mb-4 bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center justify-center">
-             <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest text-center">
-               Digital wallet payments only during pilot launch.
-             </p>
-          </div>
+          {/* JOE POINTS & LOYALTY PROGRESS WIDGET */}
+          <div className="bg-[#171f33]/60 rounded-xl p-3 border border-white/5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-zinc-400 font-bold tracking-wide flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5 text-yellow-400" />
+                LOYALTY TRACKER
+              </span>
+              <span className="text-[9px] font-mono text-brand-green font-bold">
+                FREQUENCY: {currentFrequency} ORDER{currentFrequency !== 1 ? 'S' : ''}
+              </span>
+            </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
+            {/* Current Multiplier Indicator */}
+            <div className="flex items-center justify-between text-[11px] font-sans">
+              <span className="text-zinc-300">Point multiplier rate:</span>
+              <span className="font-mono font-bold text-[#b76dff]">
+                {pointsMultiplier.toFixed(1)}x ({10 * pointsMultiplier} Pts/₹)
+              </span>
+            </div>
 
-            <button
-              disabled
-              onClick={() => setSelectedMethod('UPI')}
-              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all opacity-50 cursor-not-allowed ${
-                selectedMethod === 'UPI'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-100 bg-gray-50'
-              }`}
-            >
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedMethod === 'UPI' ? 'bg-blue-500' : 'bg-gray-200'}`}>
-                <Smartphone className={`w-6 h-6 ${selectedMethod === 'UPI' ? 'text-white' : 'text-gray-500'}`} />
+            {/* Deca-Drive Milestone 50% Progress or unlocked banner */}
+            {isMilestoneOrder ? (
+              <div className="bg-brand-green/10 border border-brand-green/20 p-2 rounded-lg text-center animate-pulse">
+                <p className="text-[10px] font-mono text-brand-green font-black tracking-widest uppercase">
+                  🎉 DECA-DRIVE UNLOCKED 🎉
+                </p>
+                <p className="text-[9px] text-zinc-300 font-sans mt-0.5">
+                  Your 10th order milestone entitles you to a huge <strong className="text-white">50% discount</strong> (Capped at ₹10 max)!
+                </p>
               </div>
-              <div className="text-center">
-                <p className={`text-sm font-black ${selectedMethod === 'UPI' ? 'text-blue-600' : 'text-gray-700'}`}>UPI Pay</p>
-                <p className="text-[9px] font-bold text-gray-400 mt-0.5">(Coming Soon)</p>
+            ) : (
+              <div className="space-y-1 pt-1">
+                <div className="flex justify-between items-center text-[9px] font-mono text-zinc-500 font-bold uppercase">
+                  <span>Progress to 50% Off Milestone</span>
+                  <span>{10 - ordersToNextMilestone}/10 orders</span>
+                </div>
+                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-brand-purple to-brand-green transition-all duration-500"
+                    style={{ width: `${((10 - ordersToNextMilestone) / 10) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[9px] text-zinc-400 font-sans text-right">
+                  Only <strong className="text-brand-purple-light font-bold">{ordersToNextMilestone} more order{ordersToNextMilestone > 1 ? 's' : ''}</strong> left to unlock 50% discount!
+                </p>
               </div>
-              {selectedMethod === 'UPI' && <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
-            </button>
+            )}
+          </div>
 
-            <button
-              disabled
+          {/* Checkout pricing math rows */}
+          <div className="pt-3 border-t border-white/10 space-y-1.5 text-xs">
+            <div className="flex justify-between items-center text-[#94a3b8]">
+              <span>Cart Subtotal:</span>
+              <span className="font-mono text-white">₹{subtotal.toFixed(2)}</span>
+            </div>
+
+            {discountAmount > 0 && (
+              <div className="flex justify-between items-center text-brand-green bg-brand-green/5 p-1.5 rounded-lg border border-brand-green/10 font-mono text-[11px]">
+                <span className="flex items-center gap-1">
+                  <Percent className="w-3.5 h-3.5" />
+                  Discount ({discountDetail}):
+                </span>
+                <span>-₹{discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center text-brand-purple-light bg-brand-purple/5 p-1.5 rounded-lg border border-brand-purple/10 font-mono text-[11px]">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                Points projection ({pointsMultiplier.toFixed(1)}x):
+              </span>
+              <span>+{estimatedPoints} Joe Points</span>
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex justify-between items-center">
+              <span className="font-sans text-xs font-bold text-[#e2e8f0]">Grand Total:</span>
+              <span className="font-mono text-md font-black text-white">
+                ₹{finalTotal.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* Method payment choices */}
+        <section className="space-y-3">
+          <h3 className="font-display font-extrabold text-sm text-white">Choose Payment Method</h3>
+
+          <div className="grid grid-cols-1 gap-2.5">
+            {/* Wallet Selector Card — only available for registered students */}
+            {!isGuest && (
+              <div
+                onClick={() => setSelectedMethod('WALLET')}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                  selectedMethod === 'WALLET'
+                    ? isInsufficient
+                      ? 'border-red-500/50 bg-red-500/5'
+                      : 'border-brand-purple bg-brand-purple/5'
+                    : 'glass-stroke glass-bg hover:bg-white/5'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    isInsufficient ? 'bg-red-500/10 text-red-400' : 'bg-brand-purple/10 text-brand-purple'
+                  }`}>
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-display font-bold text-xs text-white">JOE Digital Wallet</h4>
+                    <p className="font-mono text-[10px] text-zinc-400">
+                      Current Balance: <strong className={isInsufficient ? 'text-red-400 font-black' : 'text-brand-green font-black'}>
+                        ₹{walletBalance.toFixed(2)}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+
+                {isInsufficient ? (
+                  <span className="bg-red-500/20 text-red-400 text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase">
+                    INSUFFICIENT
+                  </span>
+                ) : (
+                  <span className="bg-brand-green/20 text-brand-green text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase">
+                    ACTIVE
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Cash Selector Card */}
+            <div
               onClick={() => setSelectedMethod('CASH')}
-              className={`flex flex-col items-center gap-3 p-5 rounded-[1.5rem] border-2 transition-all opacity-50 cursor-not-allowed ${
+              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                 selectedMethod === 'CASH'
-                  ? 'border-amber-500 bg-amber-50'
-                  : 'border-gray-100 bg-gray-50'
-              }`}
-            >
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedMethod === 'CASH' ? 'bg-amber-500' : 'bg-gray-200'}`}>
-                <Banknote className={`w-6 h-6 ${selectedMethod === 'CASH' ? 'text-white' : 'text-gray-500'}`} />
-              </div>
-              <div className="text-center">
-                <p className={`text-sm font-black ${selectedMethod === 'CASH' ? 'text-amber-600' : 'text-gray-700'}`}>Cash</p>
-                <p className="text-[9px] font-bold text-gray-400 mt-0.5">(Coming Soon)</p>
-              </div>
-              {selectedMethod === 'CASH' && <div className="w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
-            </button>
-
-          </div>
-
-          {/* JOE Wallet option — full-width row */}
-          {!isGuestUser && (
-            <button
-              onClick={() => setSelectedMethod('WALLET')}
-              disabled={!isWalletSufficient}
-              className={`w-full flex items-center justify-between p-5 rounded-[1.5rem] border-2 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${
-                selectedMethod === 'WALLET'
-                  ? 'border-emerald-500 bg-emerald-50'
-                  : 'border-gray-100 bg-gray-50'
+                  ? 'border-brand-purple bg-brand-purple/5'
+                  : 'glass-stroke glass-bg hover:bg-white/5'
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedMethod === 'WALLET' ? 'bg-emerald-500' : 'bg-gray-200'}`}>
-                  <Wallet className={`w-6 h-6 ${selectedMethod === 'WALLET' ? 'text-white' : 'text-gray-500'}`} />
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                  <RotateCw className="w-5 h-5" />
                 </div>
-                <div className="text-left">
-                  <p className={`text-sm font-black ${selectedMethod === 'WALLET' ? 'text-emerald-700' : 'text-gray-700'}`}>JOE Wallet</p>
-                  <p className="text-[9px] font-bold mt-0.5">
-                    {isWalletSufficient ? (
-                      <span className="text-emerald-600">Balance: ₹{walletBalance} — Sufficient</span>
-                    ) : (
-                      <span className="text-red-500">Balance: ₹{walletBalance} — Insufficient</span>
-                    )}
-                  </p>
+                <div>
+                  <h4 className="font-display font-bold text-xs text-white">Pay Cash At Cafeteria Counter</h4>
+                  <p className="font-sans text-[10px] text-zinc-400">Authorize and generate token; pay physically later</p>
                 </div>
               </div>
-              {selectedMethod === 'WALLET' && <div className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
-            </button>
-          )}
-
-          {/* Wallet error */}
-          {walletError && (
-            <div className="mt-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
-              <p className="text-xs font-bold text-red-600">{walletError}</p>
+              <span className="text-[8px] font-mono font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full uppercase">
+                COUNTER CASH
+              </span>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
 
-        {orderingDisabled && (
-          <div className="bg-red-50 border border-red-100 rounded-2xl p-4 text-center">
-            <p className="text-xs font-black text-red-500 uppercase tracking-widest">Ordering is currently disabled</p>
+        {/* Error indicators */}
+        {errorMessage && (
+          <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex gap-2 items-start shrink-0 select-none">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-1">
+              <span className="font-sans text-xs text-red-200 leading-normal">{errorMessage}</span>
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Fixed footer */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md p-5 bg-white/95 backdrop-blur-xl border-t border-black/5 z-20">
-        <div className="flex justify-between items-center mb-4 px-1">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payable</span>
-          <span className="text-3xl font-black text-gray-900">₹{total}</span>
-        </div>
+        {/* Main Processing Actions */}
         <button
-          disabled={orderingDisabled || state === 'PROCESSING'}
-          onClick={handlePayment}
-          className="w-full h-16 bg-gray-900 text-white rounded-[1.5rem] font-black flex items-center justify-between px-8 shadow-xl active:scale-95 transition-all disabled:opacity-40"
+          onClick={handleCheckoutSubmit}
+          disabled={(isInsufficient && selectedMethod === 'WALLET') || ((processingState as string) === 'PROCESSING')}
+          type="button"
+          className="w-full h-14 rounded-full bg-gradient-to-r from-brand-purple to-brand-purple-dark text-white font-mono text-xs tracking-wider font-bold shadow-lg disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
         >
-          <span className="text-sm uppercase tracking-widest">
-            {state === 'PROCESSING' ? 'Processing...' : selectedMethod === 'CASH' ? 'Place Order' : selectedMethod === 'WALLET' ? 'Pay with Wallet' : 'Pay with UPI'}
-          </span>
-          {state === 'PROCESSING' ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronRight className="w-5 h-5" />}
+          <ShieldCheck className="w-4.5 h-4.5" />
+          AUTHORIZE PAYMENT (₹{finalTotal.toFixed(2)})
         </button>
       </div>
     </div>

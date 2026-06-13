@@ -6,7 +6,8 @@ import {
   Firestore, 
   persistentLocalCache,
   persistentMultipleTabManager,
-  getFirestore 
+  getFirestore,
+  terminate
 } from "firebase/firestore";
 import { getMessaging, Messaging } from "firebase/messaging";
 
@@ -44,6 +45,20 @@ try {
 }
 
 console.log("🔥 [FIRESTORE] Active with AutoDetectLongPolling");
+
+// Vite Hot Module Replacement (HMR) Cleanup
+// Shuts down the Firestore instance cleanly before reloading the module to prevent 
+// "assertion failed" conflicts and IndexedDB locks.
+if ((import.meta as any).hot) {
+  (import.meta as any).hot.dispose(async () => {
+    try {
+      console.log("🔥 [FIRESTORE] HMR Cleanup: Terminating Firestore instance");
+      await terminate(db);
+    } catch (e) {
+      console.error("🔥 [FIRESTORE] HMR Terminate error:", e);
+    }
+  });
+}
 
 export { db };
 

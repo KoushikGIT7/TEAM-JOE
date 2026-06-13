@@ -1,0 +1,6 @@
+{
+  "name": "JOE Smart Cafeteria",
+  "description": "An automated and high-fidelity smart cafeteria ecosystem containing student portal with instant wallet or QR code collections, cashier recharge validations, live kitchen tracking cook terminal, assistant supervisor's console, and comprehensive analytics administrator tools.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

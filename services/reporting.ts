@@ -174,7 +174,7 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
   allOrdersInRange.forEach(o => {
      const status = String(o.paymentStatus || '').toUpperCase();
      const isPaid = status === 'SUCCESS' || status === 'VERIFIED';
-     if (isPaid && (role !== 'cashier' || o.paymentType === 'CASH')) {
+     if (isPaid && (role !== 'cashier' || o.paymentType !== 'CASH')) {
         uniqueSuccessMap.set(o.id, o);
      }
   });
@@ -187,7 +187,7 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
      const oStatus = String(o.orderStatus || '').toUpperCase();
      const isVoid = pStatus === 'REJECTED' || pStatus === 'FAILED' || oStatus === 'CANCELLED' || oStatus === 'REJECTED';
      
-     if (isVoid && (role !== 'cashier' || o.paymentType === 'CASH')) {
+     if (isVoid && (role !== 'cashier' || o.paymentType !== 'CASH')) {
         uniqueRejectedMap.set(o.id, o);
      }
   });

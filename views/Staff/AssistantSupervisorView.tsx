@@ -1,309 +1,491 @@
+/**
+ * AssistantSupervisorView — Kitchen Coordinator Dashboard
+ * Theme: Cyber-Bento & Street-Tech (v2026 AI Era)
+ * Role: Monitor dynamic items, notify ready (FCM + QR Unlock), display static counts.
+ */
+
 import React, { useState, useEffect, useMemo } from 'react';
+import { useApp } from '../../contexts/AppContext';
 import { listenToActiveSupervisorOrders } from '../../services/firestore-db';
-import { markPartialItemsReady } from '../../services/staff-v3';
-import { Order, UserProfile } from '../../types';
-import { LogOut, ChefHat, ChevronDown, ChevronUp, Clock, CheckCircle } from 'lucide-react';
+import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
+import { Order, UserProfile, CartItem } from '../../types';
+import { LogOut, Volume2, VolumeX, Clock, BellRing, RefreshCw, ChefHat } from 'lucide-react';
+import { joeSounds } from '../../utils/audio';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 interface Props {
   profile: UserProfile;
   onLogout: () => void;
 }
 
-interface StudentEntry {
-  name: string;
-  time: number;
-  qty: number;
-}
+type Lang = 'EN' | 'TE';
 
-interface AggregatedItem {
-  name: string;
-  type: 'batch' | 'dynamic';
-  pendingCount: number;
-  readyCount: number;
-  students: StudentEntry[];
-  oldestWaitMs: number;
-  pendingOrders: Order[]; 
-}
+const TRANSLATIONS = {
+  EN: {
+    title: "KUCafe Kitchen Coordinator",
+    live: "LIVE QUEUE",
+    logout: "Logout",
+    langLabel: "తెలుగు",
+    dynamicHeader: "🥞 Prepared Live (Dosa, Omelette, Breakfasts)",
+    staticHeader: "📦 Continuous Prep (Fried Rice, Coffee, packaged items)",
+    token: "Token",
+    timeAgo: "ago",
+    justNow: "Just now",
+    notifyBtn: "🔔 Notify Ready",
+    notifying: "Notifying...",
+    emptyDynamic: "No active Dosa / Omelette orders. Kitchen is clear!",
+    emptyStatic: "No static items in demand.",
+    tellKitchen: "📢 Tell Kitchen",
+    tip: "💡 Press 'Notify Ready' as soon as food is cooked. This automatically notifies the student and unlocks their collection QR code. Student scans it to complete handover."
+  },
+  TE: {
+    title: "KUCafe కిచెన్ కోఆర్డినేటర్",
+    live: "లైవ్ క్యూ",
+    langLabel: "English",
+    dynamicHeader: "🥞 లైవ్ తయారీ (దోశ, ఆమ్లెట్, టిఫిన్స్)",
+    staticHeader: "📦 నిరంతర తయారీ (ఫ్రైడ్ రైస్, కాఫీ, మొదలైనవి)",
+    token: "టోకెన్",
+    timeAgo: "క్రితం",
+    justNow: "ఇప్పుడే",
+    notifyBtn: "🔔 సిద్ధంగా ఉంది చెప్పండి",
+    notifying: "చెబుతున్నాము...",
+    emptyDynamic: "వేడి దోశ లేదా ఆమ్లెట్ ఆర్డర్లు ఏమీ లేవు. కిచెన్ ప్రశాంతంగా ఉంది!",
+    emptyStatic: "ఇతర వస్తువుల డిమాండ్ ఏమీ లేదు.",
+    tellKitchen: "📢 కిచెన్‌కి చెప్పండి",
+    tip: "💡 వంట పూర్తయిన తర్వాత 'సిద్ధంగా ఉంది చెప్పండి' నొక్కండి. ఇది విద్యార్థికి మెసేజ్ పంపి QR కోడ్ అన్‌లాక్ చేస్తుంది. విద్యార్థి స్కాన్ చేసినప్పుడు సర్వ్ అయినట్టు ఆటోమేటిక్‌గా అప్‌డేట్ అవుతుంది."
+  }
+};
 
-const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) => {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
-  const [isUpdating, setIsUpdating] = useState(false);
+export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) => {
+  const { menuItems } = useApp();
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [lang, setLang] = useState<Lang>('TE'); // Default to Telugu
+  const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [, setForceTick] = useState(0);
 
+  // Live Database Sync
   useEffect(() => {
-    const unsubOrders = listenToActiveSupervisorOrders((data) => {
-      setOrders(data);
+    const unsubscribe = listenToActiveSupervisorOrders((updatedOrders) => {
+      setActiveOrders(updatedOrders);
     });
-    return () => {
-      unsubOrders();
-    };
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, []);
 
-  const aggregatedDemand = useMemo(() => {
-    const map = new Map<string, AggregatedItem>();
-    
-    orders.forEach(o => {
-      if (o.paymentType !== 'CASH' && o.paymentStatus !== 'SUCCESS') return;
-      
-      o.items.forEach(item => {
-        if (item.status === 'SERVED') return;
+  // Time Ticker (every 10s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setForceTick(t => t + 1);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
-        const key = item.name;
-        if (!map.has(key)) {
-          // Dynamic items are explicitly itemType: 'dynamic' OR anything containing 'dosa'
-          const isDynamic = item.itemType === 'dynamic' || /dosa/i.test(item.name);
-          map.set(key, { 
-            name: key, 
-            type: isDynamic ? 'dynamic' : 'batch', 
-            pendingCount: 0, 
-            readyCount: 0,
-            students: [],
-            oldestWaitMs: 0,
-            pendingOrders: [] 
-          });
-        }
-        
-        const entry = map.get(key)!;
-        
-        if (item.status === 'READY') {
-           entry.readyCount += (item.quantity || 1);
+  // Audio Subscription
+  useEffect(() => {
+    return joeSounds.subscribe(() => {
+      setAudioStatus(joeSounds.getMutedState());
+    });
+  }, []);
+
+  // Emojis for breakfast items
+  const getEmoji = (name: string): string => {
+    const n = name.toLowerCase();
+    if (n.includes('dosa')) return '🥞';
+    if (n.includes('rice') || n.includes('biryani')) return '🍚';
+    if (n.includes('omelette') || n.includes('egg')) return '🍳';
+    if (n.includes('idli')) return '🍙';
+    if (n.includes('vada')) return '🍩';
+    if (n.includes('puri')) return '🫓';
+    if (n.includes('chapati') || n.includes('roti')) return '🫓';
+    if (n.includes('coffee') || n.includes('tea')) return '☕';
+    if (n.includes('coke') || n.includes('soda') || n.includes('drink') || n.includes('juice')) return '🥤';
+    return '🍽️';
+  };
+
+  // Helper to classify if item is dynamic (live breakfasts needing coordinator notify)
+  const isDynamicItem = (name: string, cat?: string) => {
+    const n = name.toLowerCase();
+    const c = cat?.toLowerCase() || '';
+    if (c === 'beverages') return false; // Beverages are static
+    return (
+      n.includes('dosa') ||
+      n.includes('omelette') ||
+      n.includes('egg') ||
+      n.includes('puri') ||
+      n.includes('vada') ||
+      n.includes('idli') ||
+      n.includes('roti') ||
+      n.includes('chapati')
+    );
+  };
+
+  // 1. FILTERED ACTIVE ORDERS (CASH or UPI success, not completed)
+  const processedOrders = useMemo(() => {
+    return activeOrders.filter(o => {
+      const paymentType = o.paymentType || 'WALLET';
+      const paymentStatus = o.paymentStatus;
+      if (paymentType !== 'CASH' && paymentStatus !== 'SUCCESS' && paymentStatus !== 'VERIFIED') return false;
+      if (o.orderStatus === 'SERVED' || o.orderStatus === 'COMPLETED' || o.orderStatus === 'CANCELLED') return false;
+      return true;
+    });
+  }, [activeOrders]);
+
+  // 2. PROCESS AND SMART SORT ITEMS
+  const aggregatedDemands = useMemo(() => {
+    const dynamics: Record<string, {
+      name: string;
+      itemId: string;
+      isDynamic: boolean;
+      students: { studentName: string; orderTime: string; orderId: string; userId: string; tokenNumber: string; createdAt: number; cartItem: CartItem }[];
+    }> = {};
+
+    const statics: Record<string, {
+      name: string;
+      itemId: string;
+      isDynamic: boolean;
+      count: number;
+    }> = {};
+
+    processedOrders.forEach(o => {
+      const orderTimeStr = new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      o.items.forEach(it => {
+        // Only count items that are NOT yet ready or served
+        if (it.status === 'READY' || it.status === 'SERVED' || it.status === 'COMPLETED' || (it.status as string) === 'CANCELLED') return;
+
+        const m = menuItems.find(item => item.id === it.id);
+        const dynamic = isDynamicItem(it.name, m?.category);
+
+        if (dynamic) {
+          if (!dynamics[it.name]) {
+            dynamics[it.name] = {
+              name: it.name,
+              itemId: it.id,
+              isDynamic: true,
+              students: []
+            };
+          }
+          for (let i = 0; i < it.quantity; i++) {
+            dynamics[it.name].students.push({
+              studentName: o.userName || 'Student',
+              orderTime: orderTimeStr,
+              orderId: o.id,
+              userId: o.userId,
+              tokenNumber: o.tokenNumber,
+              createdAt: o.createdAt,
+              cartItem: it
+            });
+          }
         } else {
-           entry.pendingCount += (item.quantity || 1);
-           
-           if (!entry.pendingOrders.some(po => po.id === o.id)) {
-             entry.pendingOrders.push(o);
-           }
-
-           const reQueuedAt = (item as any).reQueuedAt ? (typeof (item as any).reQueuedAt === 'number' ? (item as any).reQueuedAt : (item as any).reQueuedAt.toMillis?.() || Date.now()) : 0;
-           const orderTime = reQueuedAt > 0 ? reQueuedAt : (typeof o.createdAt === 'number' ? o.createdAt : Date.now());
-           entry.students.push({
-             name: o.userName || 'Student',
-             time: orderTime,
-             qty: item.quantity || 1
-           });
+          // Static item
+          if (!statics[it.name]) {
+            statics[it.name] = {
+              name: it.name,
+              itemId: it.id,
+              isDynamic: false,
+              count: 0
+            };
+          }
+          statics[it.name].count += it.quantity;
         }
       });
     });
 
-    const now = Date.now();
-    const sorted = Array.from(map.values()).map(entry => {
-      entry.students.sort((a, b) => a.time - b.time);
-      if (entry.students.length > 0) {
-        entry.oldestWaitMs = now - entry.students[0].time;
-      }
-      return entry;
+    // Sort dynamic students oldest first (FIFO)
+    Object.values(dynamics).forEach(d => {
+      d.students.sort((a, b) => a.createdAt - b.createdAt);
     });
 
-    return sorted;
-  }, [orders]);
+    // Sort lists: highest counts first
+    const sortedDynamics = Object.values(dynamics).sort((a, b) => b.students.length - a.students.length);
+    const sortedStatics = Object.values(statics).sort((a, b) => b.count - a.count);
 
-  // For the summary section, we want ALL items sorted by highest pending + ready
-  const allItemsSorted = useMemo(() => {
-    return [...aggregatedDemand].sort((a, b) => (b.pendingCount + b.readyCount) - (a.pendingCount + a.readyCount));
-  }, [aggregatedDemand]);
+    return {
+      dynamics: sortedDynamics,
+      statics: sortedStatics
+    };
+  }, [processedOrders, menuItems]);
 
-  // For the management section, we ONLY want dynamic items
-  const dynamicItems = useMemo(() => {
-    return aggregatedDemand
-      .filter(i => i.type === 'dynamic' && (i.pendingCount > 0 || i.readyCount > 0))
-      .sort((a, b) => b.pendingCount - a.pendingCount);
-  }, [aggregatedDemand]);
-
-  const toggleExpand = (itemName: string) => {
-    setExpandedItems(prev => ({ ...prev, [itemName]: !prev[itemName] }));
-  };
-
-  const formatTime = (ms: number) => {
-    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const getWaitMins = (ms: number) => Math.floor(ms / 60000);
-
-  const getWaitColor = (ms: number) => {
-    const mins = getWaitMins(ms);
-    if (mins < 5) return 'text-slate-200';
-    if (mins < 10) return 'text-orange-400 font-bold';
-    return 'text-red-500 font-black animate-pulse'; 
-  };
-
-  const handleMarkReady = async (itemName: string, count: number, pendingOrders: Order[]) => {
-    if (isUpdating || count <= 0) return;
-    setIsUpdating(true);
+  // 3. ACTION: Notify Student Ready (FCM/OneSignal Push + QR Unlock)
+  const handleNotifyReady = async (orderId: string, item: CartItem, userId: string, token: string) => {
+    const actionKey = `notify-${orderId}-${item.id}`;
+    if (loadingAction === actionKey) return;
+    setLoadingAction(actionKey);
     try {
-      await markPartialItemsReady(itemName, count, pendingOrders);
-    } catch (e) {
-      console.error(e);
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+      await joeSounds.playPaymentConfirmed();
+
+      const orderRef = doc(db, 'orders', orderId);
+      const snap = await getDoc(orderRef);
+      if (!snap.exists()) return;
+      const orderData = snap.data() as Order;
+
+      const now = Date.now();
+      const updatedItems = orderData.items.map(it => {
+        if (it.id === item.id) {
+          return { ...it, status: 'READY' as any };
+        }
+        return it;
+      });
+
+      const pickupWindow = orderData.pickupWindow?.status === 'COLLECTING'
+        ? orderData.pickupWindow
+        : {
+            startTime: now,
+            endTime: now + 300000, // 5 min pickup window
+            durationMs: 300000,
+            status: 'COLLECTING'
+          };
+
+      // Set item status to READY, update order serveFlowStatus & unlock QR code
+      await updateDoc(orderRef, {
+        items: updatedItems,
+        serveFlowStatus: 'READY',
+        pickupWindow: pickupWindow,
+        updatedAt: serverTimestamp()
+      });
+
+      // Sync specific subcollection item
+      const itemRef = doc(db, 'orders', orderId, 'items', item.id);
+      await updateDoc(itemRef, {
+        status: 'READY',
+        updatedAt: serverTimestamp()
+      }).catch(err => console.error("Subcollection sync failed:", err));
+
+      // Trigger Push Notification & Voice Announce
+      try {
+        const shortToken = token;
+        await triggerOneSignalWebhook(
+          userId,
+          lang === 'TE' ? "🥞 మీ ఆహారం సిద్ధంగా ఉంది!" : "🥞 Food Ready for Pickup!",
+          lang === 'TE'
+            ? `టోకెన్ #${shortToken}: మీ వేడి వేడి ${item.name} సిద్ధంగా ఉంది. దయచేసి కౌంటర్ వద్ద తీసుకోండి.`
+            : `Token #${shortToken}: Your hot ${item.name} is ready. Please collect at the counter.`,
+          `/student/orders`
+        );
+
+        // Vocal Call out via TTS
+        const speakEN = `Token ${shortToken}, your ${item.name} is ready.`;
+        const speakTE = `టోకెన్ ${shortToken}, మీ ${item.name} సిద్ధంగా ఉంది. దయచేసి తీసుకోండి.`;
+        const utter = new SpeechSynthesisUtterance(lang === 'TE' ? speakTE : speakEN);
+        utter.lang = lang === 'TE' ? 'te-IN' : 'en-IN';
+        utter.rate = 0.85;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      } catch (pushErr) {
+        console.warn("Push notify error:", pushErr);
+      }
+    } catch (err) {
+      console.error("Notify ready failed:", err);
+      alert(lang === 'TE' ? "నోటిఫై చేయడంలో సమస్య వచ్చింది." : "Failed to notify student.");
     } finally {
-      setIsUpdating(false);
+      setLoadingAction(null);
     }
   };
 
+  // Helper to tell kitchen verbally
+  const handleTellKitchen = (name: string, qty: number) => {
+    if ('vibrate' in navigator) navigator.vibrate(60);
+    const speechEN = `Cook ${qty} ${name}`;
+    const speechTE = `${qty} ${name} తయారు చేయండి`;
+    const utter = new SpeechSynthesisUtterance(lang === 'TE' ? speechTE : speechEN);
+    utter.lang = lang === 'TE' ? 'te-IN' : 'en-IN';
+    utter.rate = 0.85;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  };
+
+  const getTimeAgo = (createdAt: number) => {
+    const diff = Date.now() - createdAt;
+    const mins = Math.floor(diff / 60000);
+    if (mins <= 0) return lang === 'TE' ? TRANSLATIONS.TE.justNow : TRANSLATIONS.EN.justNow;
+    return `${mins} ${lang === 'TE' ? TRANSLATIONS.TE.timeAgo : TRANSLATIONS.EN.timeAgo}`;
+  };
+
   return (
-    <div className="min-h-[100dvh] bg-[#0f1115] text-white flex flex-col font-sans select-none overflow-hidden pb-12">
+    <div className="min-h-screen bg-[#060608] text-white pb-28 font-sans select-none overflow-x-hidden">
       
-      {/* --- STICKY HEADER --- */}
-      <header className="shrink-0 border-b border-white/5 bg-[#0f1115] z-50 p-4 flex justify-between items-center sticky top-0">
+      {/* 🔮 NEON GLOW 🔮 */}
+      <div className="absolute top-0 right-0 w-80 h-80 bg-purple-600/5 blur-[100px] rounded-full pointer-events-none" />
+
+      {/* ── STICKY BILINGUAL HEADER ── */}
+      <header className="bg-zinc-950/85 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center justify-between sticky top-0 z-50 max-w-xl mx-auto shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20">
-            <ChefHat className="w-7 h-7 text-indigo-400" />
-          </div>
+          <span className="text-3xl animate-bounce">🥞</span>
           <div>
-            <h1 className="text-lg font-black uppercase tracking-tight leading-none text-white/90">Live Kitchen Demand</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Active: {orders.length}</span>
-              <span className="w-1 h-1 bg-white/20 rounded-full" />
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live
+            <h1 className="text-lg font-black tracking-tight leading-none text-white uppercase">
+              {TRANSLATIONS[lang].title}
+            </h1>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+              <span className="text-[9px] text-emerald-400 font-black tracking-widest uppercase">
+                {TRANSLATIONS[lang].live}
               </span>
             </div>
           </div>
         </div>
-        <button onClick={onLogout} className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-colors">
-          <LogOut className="w-5 h-5" />
-        </button>
+
+        {/* Top Controls */}
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setLang(l => l === 'TE' ? 'EN' : 'TE')}
+            className="px-3.5 py-2 bg-white text-black font-black text-xs rounded-xl active:scale-95 transition-all shadow-md min-h-[40px] cursor-pointer"
+          >
+            {TRANSLATIONS[lang].langLabel}
+          </button>
+
+          <button 
+             onClick={async () => {
+                if (audioStatus === 'Silent') {
+                   await joeSounds.init();
+                } else {
+                   joeSounds.toggleMute();
+                }
+             }}
+             className={`p-2.5 rounded-xl border flex items-center justify-center transition active:scale-95 cursor-pointer min-h-[40px] ${
+                audioStatus === 'Connected' 
+                   ? 'bg-[#b76dff]/15 border-[#b76dff]/30 text-[#ddb7ff]' 
+                   : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+             }`}
+          >
+             {audioStatus === 'Connected' ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </button>
+
+          <button onClick={onLogout} className="p-2.5 bg-zinc-900 border border-white/5 hover:border-red-500/20 hover:text-red-400 rounded-xl text-zinc-400 transition active:scale-95 cursor-pointer min-h-[40px]">
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
-      <div className="flex-1 flex flex-col overflow-y-auto">
-        
-        {/* --- SECTION 1: KITCHEN DEMAND SUMMARY (READ ONLY) --- */}
-        <div className="px-4 pt-6 pb-2">
-          <div className="bg-[#1a1d24] border border-white/5 rounded-2xl p-5 shadow-2xl">
-            <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-4 text-orange-500 flex items-center gap-2 border-b border-white/5 pb-3">
-              🔥 TODAY'S DEMAND
-            </h2>
-            
-            {allItemsSorted.length === 0 ? (
-              <p className="text-slate-500 font-bold uppercase tracking-widest text-center py-4 text-xs">No Active Orders</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {allItemsSorted.map(item => (
-                  <div key={`summary-${item.name}`} className="flex justify-between items-center font-black bg-white/5 p-3 rounded-xl border border-white/5">
-                    <span className="text-lg tracking-tight text-white/90 truncate pr-2">{item.name}</span>
-                    <span className="text-2xl text-orange-400">{item.pendingCount + item.readyCount}</span>
-                  </div>
-                ))}
-                <div className="pt-4 mt-2 border-t border-white/5 flex justify-between items-center font-black text-lg text-indigo-400">
-                  <span className="uppercase tracking-widest text-sm">Total Items</span>
-                  <span className="text-2xl">
-                    {allItemsSorted.reduce((sum, item) => sum + item.pendingCount + item.readyCount, 0)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* ── MAIN WORKSPACE ── */}
+      <main className="max-w-xl mx-auto px-4 mt-6 space-y-8">
 
-        {/* --- SECTION 2: DYNAMIC ITEM MANAGEMENT --- */}
-        {dynamicItems.length > 0 && (
-          <div className="px-4 py-6">
-            <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-4 text-emerald-400 flex items-center gap-2 pt-2">
-              <CheckCircle className="w-5 h-5" /> Prepare On Demand
-            </h2>
-            
+        {/* Guidelines Tip */}
+        <p className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-wider bg-zinc-950/40 border border-white/5 px-4 py-3 rounded-2xl">
+          {TRANSLATIONS[lang].tip}
+        </p>
+
+        {/* ── SECTION 1: DYNAMIC ITEMS (BATCHED SIMILAR ITEMS FIRST) ── */}
+        <div className="space-y-4">
+          <h2 className="text-sm font-black text-[#ddb7ff] tracking-tight uppercase flex items-center gap-2 pl-1">
+            <span>🥞</span>
+            <span>{TRANSLATIONS[lang].dynamicHeader}</span>
+          </h2>
+
+          {aggregatedDemands.dynamics.length === 0 ? (
+            <div className="bg-zinc-900/10 border border-white/5 rounded-3xl p-12 text-center text-zinc-500">
+              <ChefHat className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
+              <p className="text-sm font-bold">
+                {TRANSLATIONS[lang].emptyDynamic}
+              </p>
+            </div>
+          ) : (
             <div className="space-y-4">
-              {dynamicItems.map(item => {
-                const isExpanded = expandedItems[item.name];
-                const waitColor = getWaitColor(item.oldestWaitMs);
-                const hasPending = item.pendingCount > 0;
+              {aggregatedDemands.dynamics.map((item) => (
+                <div 
+                  key={item.name}
+                  className="bg-[#111219]/65 border border-purple-500/25 rounded-[2rem] p-5 shadow-2xl relative overflow-hidden flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 blur-[40px] rounded-full pointer-events-none" />
 
-                return (
-                  <div key={`dyn-${item.name}`} className="bg-[#16201b] border border-emerald-500/20 rounded-2xl overflow-hidden shadow-lg shadow-emerald-900/10">
-                    <div className="p-5">
-                      <h3 className="text-3xl font-black uppercase tracking-tighter text-emerald-50 mb-1">{item.name}</h3>
-                      
-                      <div className="grid grid-cols-2 gap-4 mt-4">
-                        <div className="bg-black/30 p-3 rounded-xl border border-emerald-500/10 flex flex-col items-center justify-center">
-                          <span className="text-xs font-bold text-emerald-500/70 uppercase tracking-widest mb-1">Pending</span>
-                          <span className="text-4xl font-black text-emerald-100 leading-none">{item.pendingCount}</span>
-                        </div>
-                        <div className="bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 flex flex-col items-center justify-center">
-                          <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Ready</span>
-                          <span className="text-4xl font-black text-emerald-400 leading-none">{item.readyCount}</span>
-                        </div>
+                  {/* Item Header */}
+                  <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-4xl shrink-0">{getEmoji(item.name)}</span>
+                      <div>
+                        <h3 className="text-lg font-black text-white leading-tight uppercase italic">{item.name}</h3>
+                        <button 
+                          onClick={() => handleTellKitchen(item.name, item.students.length)}
+                          className="text-[9px] text-[#b76dff] font-extrabold uppercase mt-1 flex items-center gap-1 hover:underline cursor-pointer"
+                        >
+                          {TRANSLATIONS[lang].tellKitchen} ({item.students.length}x)
+                        </button>
                       </div>
-
-                      {hasPending && (
-                        <div className="flex justify-between items-center bg-black/30 p-3 rounded-xl mt-3 border border-emerald-500/10">
-                          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-emerald-500/50" /> Oldest Wait
-                          </span>
-                          <span className={`text-lg ${waitColor}`}>
-                            {getWaitMins(item.oldestWaitMs)} Mins
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Ready Controls */}
-                      {hasPending && (
-                        <div className="mt-4 pt-4 border-t border-emerald-500/10">
-                          <p className="text-[10px] font-bold text-emerald-500/70 uppercase tracking-widest mb-3 text-center">Mark Orders Ready</p>
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => handleMarkReady(item.name, 1, item.pendingOrders)}
-                              disabled={isUpdating}
-                              className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black font-black py-4 rounded-xl flex flex-col items-center justify-center transition-colors disabled:opacity-50 active:scale-95 shadow-lg shadow-emerald-500/20"
-                            >
-                              <span className="text-xl leading-none">+1</span>
-                            </button>
-                            <button 
-                              onClick={() => handleMarkReady(item.name, 5, item.pendingOrders)}
-                              disabled={isUpdating}
-                              className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black font-black py-4 rounded-xl flex flex-col items-center justify-center transition-colors disabled:opacity-50 active:scale-95 shadow-lg shadow-emerald-500/20"
-                            >
-                              <span className="text-xl leading-none">+5</span>
-                            </button>
-                            <button 
-                              onClick={() => handleMarkReady(item.name, item.pendingOrders.length, item.pendingOrders)}
-                              disabled={isUpdating}
-                              className="flex-[1.5] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-xl flex items-center justify-center transition-colors disabled:opacity-50 active:scale-95 shadow-lg shadow-emerald-600/20 text-sm uppercase tracking-wider"
-                            >
-                              All Ready
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
 
-                    {hasPending && (
-                      <>
-                        <button 
-                          onClick={() => toggleExpand(item.name)}
-                          className="w-full px-5 py-4 bg-emerald-500/5 border-t border-emerald-500/10 flex items-center justify-center text-sm font-black tracking-widest uppercase text-emerald-500/70 hover:text-emerald-400 transition-colors active:bg-emerald-500/10 gap-2"
-                        >
-                          {isExpanded ? (
-                            <><ChevronUp className="w-4 h-4" /> Hide Details</>
-                          ) : (
-                            <><ChevronDown className="w-4 h-4" /> View Details</>
-                          )}
-                        </button>
-
-                        {isExpanded && (
-                          <div className="bg-black/50 p-4 border-t border-emerald-500/10">
-                            <ul className="space-y-2">
-                              {item.students.map((student, idx) => (
-                                <li key={idx} className="flex justify-between items-center font-bold bg-emerald-500/5 p-3 rounded-lg border border-emerald-500/10">
-                                  <div className="flex flex-col">
-                                    <span className="text-emerald-50 text-base">{student.name}</span>
-                                    <span className="text-emerald-500/70 text-xs">{formatTime(student.time)}</span>
-                                  </div>
-                                  <span className="text-lg text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-md border border-emerald-500/20">
-                                    Qty {student.qty}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </>
-                    )}
+                    <div className="bg-purple-600 text-black px-4 py-2 rounded-2xl font-mono font-black text-2xl">
+                      {item.students.length}x
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-      </div>
+                  {/* List of Waiting Students (FIFO order) */}
+                  <div className="space-y-2.5">
+                    {item.students.map((st, sidx) => {
+                      const actionKey = `notify-${st.orderId}-${st.cartItem.id}`;
+                      const isBtnLoading = loadingAction === actionKey;
+                      const shortToken = st.tokenNumber;
+
+                      return (
+                        <div 
+                          key={sidx}
+                          className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.02] border border-white/5"
+                        >
+                          <div>
+                            <span className="text-sm text-zinc-200 font-black block leading-none mb-1">
+                              {st.studentName}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider flex items-center gap-1.5">
+                              <span>#{shortToken}</span>
+                              <span className="w-1 h-1 rounded-full bg-zinc-750" />
+                              <span>{getTimeAgo(st.createdAt)}</span>
+                            </span>
+                          </div>
+
+                          <button
+                            disabled={!!loadingAction}
+                            onClick={() => handleNotifyReady(st.orderId, st.cartItem, st.userId, shortToken)}
+                            className="h-12 px-4.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 active:scale-95 text-black font-black text-xs uppercase rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-500/10 cursor-pointer"
+                          >
+                            {isBtnLoading ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <BellRing className="w-3.5 h-3.5" />
+                            )}
+                            <span>{TRANSLATIONS[lang].notifyBtn}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── SECTION 2: STATIC ITEMS (COUNT SHOWN BELOW EVERYTHING) ── */}
+        <div className="space-y-4 pt-4">
+          <h2 className="text-sm font-black text-zinc-400 uppercase tracking-widest pl-1">
+            {TRANSLATIONS[lang].staticHeader}
+          </h2>
+
+          {aggregatedDemands.statics.length === 0 ? (
+            <div className="bg-zinc-900/10 border border-white/5 rounded-3xl p-8 text-center text-zinc-650">
+              <p className="text-xs font-bold">{TRANSLATIONS[lang].emptyStatic}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {aggregatedDemands.statics.map((item) => (
+                <div 
+                  key={item.name}
+                  className="bg-zinc-900/35 border border-white/5 rounded-2xl p-4 flex items-center justify-between shadow-md"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl shrink-0">{getEmoji(item.name)}</span>
+                    <span className="text-sm font-black text-zinc-200 uppercase truncate max-w-[120px]">{item.name}</span>
+                  </div>
+                  <div className="bg-zinc-800 text-zinc-300 font-mono font-black text-lg px-3.5 py-1.5 rounded-xl">
+                    {item.count}x
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </main>
+
     </div>
   );
 };

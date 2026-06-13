@@ -17,8 +17,10 @@ export const useMarketingPulses = (role: string | null) => {
             limit(20)
         );
 
-        const unsub = onSnapshot(q, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
+        const unsub = onSnapshot(
+            q,
+            (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
                 const data = change.doc.data();
                 
                 // Only process PROMOTION type messages that are newly added to the snapshot
@@ -43,6 +45,8 @@ export const useMarketingPulses = (role: string | null) => {
                     }
                 }
             });
+        }, (error) => {
+            console.warn(`[useMarketingPulses] Listener error: ${error.message}`);
         });
 
         return () => unsub();

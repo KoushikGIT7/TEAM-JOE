@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -85,7 +86,7 @@ input[type=range]::-webkit-slider-thumb {
   height: 24px;
   width: 24px;
   border-radius: 50%;
-  background: #0F9D58;
+  background: #b76dff;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -178,8 +179,8 @@ input[type=range]::-webkit-slider-thumb {
     from 0deg, 
     transparent 0deg, 
     transparent 320deg, 
-    var(--laser-color, #10b981) 340deg, 
-    var(--laser-color, #10b981) 360deg
+    var(--laser-color, #b76dff) 340deg, 
+    var(--laser-color, #b76dff) 360deg
   );
   animation: laser-rotate 3s infinite linear;
 }
@@ -190,4 +191,19 @@ input[type=range]::-webkit-slider-thumb {
   background: white;
   border-radius: 3rem;
   z-index: 1;
+}
+
+/* New UI Utilities */
+.glass-stroke {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.glass-bg {
+  background: rgba(23, 31, 51, 0.4);
+  backdrop-filter: blur(20px);
+}
+.neon-shadow-purple {
+  box-shadow: 0 0 15px rgba(221, 183, 255, 0.15);
+}
+.neon-shadow-green {
+  box-shadow: 0 0 15px rgba(74, 225, 118, 0.25);
 }

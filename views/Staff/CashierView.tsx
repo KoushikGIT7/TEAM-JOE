@@ -1,26 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-   LogOut, CheckCircle, Clock, Banknote, RefreshCw, Search, LayoutDashboard,
-   FileText, BarChart3, Settings, X, AlertCircle, TrendingUp, DollarSign,
-   Receipt, Download, Calendar, Filter, Menu, PieChart as PieIcon, Image as ImageIcon,
-   Calculator, TrendingDown, ArrowUpRight, ChevronRight, ShieldCheck, LayoutGrid, Zap, AlertTriangle,
-   Wallet
+   LogOut, Clock, RefreshCw, Search, X, AlertCircle, ChevronRight, 
+   ShieldCheck, AlertTriangle, ImageIcon, Calculator, CheckCircle2, 
+   XCircle, Volume2, VolumeX, Hand
 } from 'lucide-react';
 import { UserProfile, Order, WalletRechargeRequest } from '../../types';
 import {
    listenToPendingCashOrders, confirmCashPayment, rejectCashPayment,
-   listenToAllOrders, listenToMenu, registerBankDeposit, flushMissedPickups
+   listenToAllOrders, listenToMenu, getDailyStatsRange
 } from '../../services/firestore-db';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import Logo from '../../components/Logo';
 import { joeSounds } from '../../utils/audio';
 import { sonicVoice } from '../../services/voice-engine';
 import { offlineDetector } from '../../utils/offlineDetector';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { fetchReport, exportReport, ExportFormat } from '../../services/reporting';
-import SmartImage from '../../components/Common/SmartImage';
-import { preloadImage } from '../../utils/image-optimizer';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { fetchReport } from '../../services/reporting';
 import AuditDownloadButton from '../../components/AuditDownloadButton';
 import { listenToAllRechargeRequests, approveRechargeRequest, rejectRechargeRequest } from '../../services/wallet';
 
@@ -29,12 +24,302 @@ interface CashierViewProps {
    onLogout: () => void;
 }
 
-type CashierTab = 'PENDING' | 'ORDERS' | 'INSIGHT' | 'SUMMARY' | 'SETTINGS' | 'RECHARGES';
+type CashierTab = 'RECHARGES' | 'CASH_ORDERS' | 'ANALYTICS' | 'LEDGER' | 'SUMMARY';
 
-const COLORS = ['#10B981', '#F59E0B', '#6366F1', '#EC4899'];
+const COLORS = ['#b76dff', '#4ae176', '#3b82f6', '#f43f5e'];
 
+// ─── modular card: recharge request ───
+const RechargeRequestCard: React.FC<{
+  req: WalletRechargeRequest;
+  onApprove: (id: string) => void;
+  rejectId: string | null;
+  setRejectId: (id: string | null) => void;
+  walletRejectNote: Record<string, string>;
+  setWalletRejectNote: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  walletActionLoading: string | null;
+  handleRejectRechargeSubmit: (id: string) => void;
+  setWalletScreenshotModal: (url: string | null) => void;
+  formatTime: (ts?: number) => string;
+}> = ({
+  req, onApprove, rejectId, setRejectId, walletRejectNote, setWalletRejectNote,
+  walletActionLoading, handleRejectRechargeSubmit, setWalletScreenshotModal, formatTime
+}) => {
+  const [studentProfile, setStudentProfile] = useState<any>(null);
+
+  useEffect(() => {
+    getDoc(doc(db, "users", req.uid)).then(snap => {
+      if (snap.exists()) {
+        setStudentProfile(snap.data());
+      }
+    });
+  }, [req.uid]);
+
+  const customTitle = studentProfile?.customTitle || '';
+  const customFrameColor = studentProfile?.customFrameColor || '';
+  const customAvatarDecoration = studentProfile?.customAvatarDecoration || '';
+  
+  return (
+    <div className={`p-5 rounded-2xl border transition-all glass-bg relative overflow-hidden ${
+      customFrameColor ? `border-2 ${customFrameColor} neon-shadow-purple` : 'border-white/5 bg-surface-mid/60'
+    } space-y-4 hover:border-white/10`}>
+       {customAvatarDecoration && (
+         <div className="absolute top-2 right-2 text-lg animate-pulse select-none z-20">
+           {customAvatarDecoration}
+         </div>
+       )}
+       <div className="flex justify-between items-start">
+          <div className="space-y-1">
+             <span className="font-mono text-[9px] text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-2.5 py-0.5 rounded-full font-bold">
+                RECHARGE REQUEST
+             </span>
+             <h4 className="font-display font-black text-sm text-white uppercase truncate max-w-[160px] flex items-center gap-1.5 mt-1">
+                {req.studentName}
+             </h4>
+             {customTitle && (
+               <span className="text-[9px] text-[#ddb7ff] bg-[#b76dff]/15 px-2 py-0.5 rounded border border-[#b76dff]/25 font-bold font-mono inline-block">
+                 {customTitle}
+               </span>
+             )}
+          </div>
+          <span className="font-mono text-lg font-black text-brand-purple-light">
+             ₹{req.amount}
+          </span>
+       </div>
+
+       <div className="space-y-1.5 text-xs bg-surface-lowest border border-white/5 p-3 rounded-xl font-mono text-on-surface-variant">
+          <div className="flex justify-between">
+             <span>UTR String:</span>
+             <span className="text-white font-bold">{req.utrNumber}</span>
+          </div>
+          <div className="flex justify-between">
+             <span>Timestamp:</span>
+             <span className="text-white">{formatTime(req.createdAt)}</span>
+          </div>
+       </div>
+
+       {req.screenshotUrl && (
+          <button 
+             onClick={() => setWalletScreenshotModal(req.screenshotUrl)}
+             className="w-full flex items-center justify-between gap-1.5 text-xs font-mono text-brand-purple-light bg-brand-purple-dark/15 p-2.5 rounded-xl border border-brand-purple/20 hover:bg-brand-purple-dark/25 transition cursor-pointer"
+          >
+             <span className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 shrink-0" /> View Receipt Image</span>
+             <ChevronRight className="w-4 h-4" />
+          </button>
+       )}
+
+       {rejectId === req.id ? (
+          <div className="space-y-2 pt-3 border-t border-white/5">
+             <input
+                type="text"
+                required
+                className="w-full h-10 bg-surface-lowest border border-white/10 rounded-xl px-3 text-xs font-sans text-white focus:outline-none placeholder:text-zinc-700"
+                placeholder="Specify reason (e.g. UTR doesn't match)"
+                value={walletRejectNote[req.id] || ''}
+                onChange={(e) => setWalletRejectNote(prev => ({ ...prev, [req.id]: e.target.value }))}
+             />
+             <div className="flex gap-2">
+                <button
+                   onClick={() => handleRejectRechargeSubmit(req.id)}
+                   disabled={!!walletActionLoading}
+                   className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-mono text-xs font-bold transition cursor-pointer disabled:opacity-40"
+                >
+                   REJECT
+                </button>
+                <button
+                   onClick={() => setRejectId(null)}
+                   className="py-2 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-mono text-xs cursor-pointer transition"
+                >
+                   CANCEL
+                </button>
+             </div>
+          </div>
+       ) : (
+          <div className="flex gap-2.5 pt-3 border-t border-white/5 font-mono">
+             <button
+                onClick={() => onApprove(req.id)}
+                disabled={!!walletActionLoading}
+                className="flex-1 h-10 rounded-xl bg-brand-purple hover:bg-brand-purple/85 text-white text-[11px] font-black tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition active:scale-95"
+             >
+                <CheckCircle2 className="w-4 h-4" />
+                CONFIRM APPROVE
+             </button>
+             <button
+                onClick={() => {
+                   setRejectId(req.id);
+                   setWalletRejectNote(prev => ({ ...prev, [req.id]: '' }));
+                }}
+                className="px-4 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+             >
+                <XCircle className="w-4 h-4" />
+                REJECT
+             </button>
+          </div>
+       )}
+    </div>
+  );
+};
+
+// ─── modular card: cash order with swipe gestures ───
+const CashOrderCard: React.FC<{
+  order: Order;
+  hasConflict: boolean;
+  onConfirm: (id: string) => void;
+  onReject: (id: string) => void;
+  confirming: boolean;
+  rejecting: boolean;
+}> = ({ order, hasConflict, onConfirm, onReject, confirming, rejecting }) => {
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const [studentProfile, setStudentProfile] = useState<any>(null);
+
+  useEffect(() => {
+    getDoc(doc(db, "users", order.userId)).then(snap => {
+      if (snap.exists()) {
+        setStudentProfile(snap.data());
+      }
+    });
+  }, [order.userId]);
+
+  const customTitle = studentProfile?.customTitle || '';
+  const customFrameColor = studentProfile?.customFrameColor || '';
+  const customAvatarDecoration = studentProfile?.customAvatarDecoration || '';
+
+  const minSwipeDistance = 80;
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+    setIsSwiping(true);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!touchStart) return;
+    const currentX = e.targetTouches[0].clientX;
+    const diff = currentX - touchStart;
+    setSwipeOffset(Math.max(-200, Math.min(200, diff)));
+  };
+
+  const onTouchEnd = () => {
+    setIsSwiping(false);
+    if (!touchStart || !touchEnd) {
+      setSwipeOffset(0);
+      return;
+    }
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isRightSwipe) {
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+      onConfirm(order.id);
+    } else if (isLeftSwipe) {
+      if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+      onReject(order.id);
+    }
+    setSwipeOffset(0);
+  };
+
+  return (
+    <div 
+      onTouchStart={onTouchStart}
+      onTouchMove={(e) => {
+        setTouchEnd(e.targetTouches[0].clientX);
+        onTouchMove(e);
+      }}
+      onTouchEnd={onTouchEnd}
+      style={{ transform: `translateX(${swipeOffset}px)` }}
+      className={`p-5 rounded-2xl border transition-all relative overflow-hidden select-none touch-none duration-150 glass-bg ${
+        swipeOffset > 20 
+          ? 'border-brand-purple bg-brand-purple/10' 
+          : swipeOffset < -20 
+            ? 'border-rose-500 bg-rose-500/10' 
+            : customFrameColor 
+              ? `border-2 ${customFrameColor} neon-shadow-purple` 
+              : hasConflict 
+                ? 'border-amber-500/30' 
+                : 'border-white/5 bg-surface-mid/60'
+      } space-y-4`}
+    >
+      {swipeOffset > 30 && (
+        <div className="absolute inset-y-0 left-0 bg-brand-purple/20 w-12 flex items-center justify-center border-r border-brand-purple/30 z-20">
+          <CheckCircle2 className="w-6 h-6 text-brand-purple-light animate-pulse" />
+        </div>
+      )}
+      {swipeOffset < -30 && (
+        <div className="absolute inset-y-0 right-0 bg-rose-500/20 w-12 flex items-center justify-center border-l border-rose-500/30 z-20">
+          <XCircle className="w-6 h-6 text-rose-400 animate-pulse" />
+        </div>
+      )}
+
+      {customAvatarDecoration && (
+        <div className="absolute top-2 right-2 text-lg animate-pulse select-none z-20">
+          {customAvatarDecoration}
+        </div>
+      )}
+
+      <div className="flex justify-between items-start">
+         <div className="space-y-1">
+            <span className="font-mono text-[9px] text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/20 px-2.5 py-0.5 rounded-full font-bold">
+               PENDING CASH PAYMENT
+            </span>
+            <h4 className="font-display font-black text-sm text-white uppercase mt-1">
+               TOKEN {order.tokenNumber}
+            </h4>
+            <p className="font-sans text-xs text-zinc-400 flex items-center gap-1.5 mt-0.5">
+               <span>{order.userName}</span>
+               {customTitle && (
+                 <span className="text-[9px] text-[#ddb7ff] bg-[#b76dff]/15 px-2 py-0.5 rounded border border-[#b76dff]/25 font-bold font-mono inline-block">
+                   {customTitle}
+                 </span>
+               )}
+            </p>
+         </div>
+         <span className="font-mono text-lg font-black text-brand-purple-light">
+            ₹{order.totalAmount}
+         </span>
+      </div>
+
+      <div className="space-y-1 text-xs text-zinc-300 bg-surface-lowest border border-white/5 p-3 rounded-xl font-mono">
+         {order.items.map((it, idx) => (
+            <div key={idx} className="flex justify-between">
+               <span>{it.quantity}x {it.name}</span>
+               <span className="text-zinc-500">₹{it.price * it.quantity}</span>
+            </div>
+         ))}
+      </div>
+
+      <div className="flex gap-2.5 pt-3 border-t border-white/5 font-mono">
+         <button
+            onClick={() => onConfirm(order.id)}
+            disabled={confirming}
+            className="flex-1 h-10 rounded-xl bg-brand-purple hover:bg-brand-purple/85 text-white text-[11px] font-black tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-40 active:scale-95"
+         >
+            <CheckCircle2 className="w-4 h-4" />
+            CONFIRM RECEIVED
+         </button>
+         <button
+            onClick={() => onReject(order.id)}
+            disabled={rejecting}
+            className="px-4 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-40 active:scale-95"
+         >
+            <XCircle className="w-4 h-4" />
+            REJECT
+         </button>
+      </div>
+
+      <div className="text-[9px] font-mono text-zinc-500 text-center flex items-center justify-center gap-1 select-none pointer-events-none opacity-60">
+        <Hand className="w-3.5 h-3.5 rotate-90" />
+        <span>Swipe Right to confirm, Swipe Left to reject</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── main views panel component ───
 const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
-   const [activeTab, setActiveTab] = useState<CashierTab>('PENDING');
+   const [activeTab, setActiveTab] = useState<CashierTab>('RECHARGES');
    const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
    const [allOrders, setAllOrders] = useState<Order[]>([]);
    const [confirming, setConfirming] = useState<string | null>(null);
@@ -49,24 +334,50 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    const [walletActionLoading, setWalletActionLoading] = useState<string | null>(null);
    const [walletRejectNote, setWalletRejectNote] = useState<Record<string, string>>({});
    const [walletScreenshotModal, setWalletScreenshotModal] = useState<string | null>(null);
+   const [rejectId, setRejectId] = useState<string | null>(null);
 
    const [reportStart, setReportStart] = useState<string>(() => new Date().toISOString().split('T')[0]);
    const [reportEnd, setReportEnd] = useState<string>(() => new Date().toISOString().split('T')[0]);
    const [reportLoading, setReportLoading] = useState(false);
-   const [reportQuery, setReportQuery] = useState({ days: 0, label: 'Today' });
-   const [activeFilter, setActiveFilter] = useState<'ALL' | 'CASH' | 'ONLINE'>('ALL');
-   const [showDepositModal, setShowDepositModal] = useState(false);
-   const [depositAmount, setDepositAmount] = useState('');
-   const [depositRef, setDepositRef] = useState('');
-   const [depositUploading, setDepositUploading] = useState(false);
 
-   const audioRef = useRef<HTMLAudioElement | null>(null);
+   const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
-   // 🛡️ SAFETY: Force-clear loading after 3s max
+   const [earningsToday, setEarningsToday] = useState<number>(0);
+   const [earnings7D, setEarnings7D] = useState<number>(0);
+   const [earnings30D, setEarnings30D] = useState<number>(0);
+
+   const fetchEarningsSummary = async () => {
+      try {
+         const todayStr = new Date().toISOString().split('T')[0];
+         
+         const end7 = new Date();
+         const start7 = new Date();
+         start7.setDate(end7.getDate() - 6);
+         const start7Str = start7.toISOString().split('T')[0];
+         
+         const end30 = new Date();
+         const start30 = new Date();
+         start30.setDate(end30.getDate() - 29);
+         const start30Str = start30.toISOString().split('T')[0];
+
+         const [todayStats, stats7D, stats30D] = await Promise.all([
+            getDailyStatsRange(todayStr, todayStr),
+            getDailyStatsRange(start7Str, todayStr),
+            getDailyStatsRange(start30Str, todayStr)
+         ]);
+
+         setEarningsToday(todayStats.onlineRevenue || 0);
+         setEarnings7D(stats7D.onlineRevenue || 0);
+         setEarnings30D(stats30D.onlineRevenue || 0);
+      } catch (err) {
+         console.error("Failed to fetch earnings summary:", err);
+      }
+   };
+
    useEffect(() => {
-      const safetyTimer = setTimeout(() => setLoading(false), 3000);
-      return () => clearTimeout(safetyTimer);
-   }, []);
+      fetchEarningsSummary();
+   }, [allOrders]);
 
    // 📊 LIVE STATS: Real-time state for Diagnostic Stratagem
    const [liveStats, setLiveStats] = useState({
@@ -76,7 +387,11 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    });
    const [liveStatsUpdatedAt, setLiveStatsUpdatedAt] = useState<Date | null>(null);
 
-   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+   // 🛡️ SAFETY: Force-clear loading after 3s max
+   useEffect(() => {
+      const safetyTimer = setTimeout(() => setLoading(false), 3000);
+      return () => clearTimeout(safetyTimer);
+   }, []);
 
    useEffect(() => {
       const onOnline = () => setIsOffline(false);
@@ -90,9 +405,9 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    }, []);
 
    useEffect(() => {
-      // 🔊 Initialize sound effects inline
-      audioRef.current = new Audio(joeSounds.CHIME);
-      audioRef.current.load();
+      const unsubAudio = joeSounds.subscribe(() => {
+         setAudioStatus(joeSounds.getMutedState());
+      });
 
       if ('Notification' in window && Notification.permission === 'default') {
          Notification.requestPermission();
@@ -101,9 +416,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       let lastLen = 0;
       const unsubs = [
          listenToPendingCashOrders((data) => {
-            // 🔔 Alert on new cash requests
             if (data.length > lastLen) {
-               if (audioRef.current) audioRef.current.play().catch(() => {});
+               joeSounds.playAlert();
                if ('Notification' in window && Notification.permission === 'granted') {
                   new Notification(`💵 ${data.length} Cash Request${data.length > 1 ? 's' : ''} Pending`, {
                      body: `Tap to review.`,
@@ -118,7 +432,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
          }),
          listenToAllOrders((data) => {
             setAllOrders(data);
-            setLoading(false); // Backup loading clear
+            setLoading(false);
             offlineDetector.recordPing();
          }),
          listenToAllRechargeRequests((data) => {
@@ -128,30 +442,36 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       ];
 
       return () => {
+         unsubAudio();
          unsubs.forEach(fn => fn());
       };
    }, []);
 
-   // 🍱 [INVENTORY-RADAR] Real-time Stock Burn visualization
+   // [INVENTORY-RADAR]
    const [inventoryData, setInventoryData] = useState<any[]>([]);
    useEffect(() => {
-      const unsub = onSnapshot(collection(db, 'inventory_meta'), (snap) => {
-         const items = snap.docs.map(doc => {
-            const data = doc.data();
-            const available = Math.max(0, (data.totalStock || 0) - (data.consumed || 0));
-            return {
-               name: data.itemName || doc.id,
-               available,
-               consumed: data.consumed || 0,
-               total: data.totalStock || 0
-            };
-         });
-         setInventoryData(items);
-      });
+      const unsub = onSnapshot(
+         collection(db, 'inventory_meta'),
+         (snap) => {
+            const items = snap.docs.map(doc => {
+               const data = doc.data();
+               const available = Math.max(0, (data.totalStock || 0) - (data.consumed || 0));
+               return {
+                  name: data.itemName || doc.id,
+                  available,
+                  consumed: data.consumed || 0,
+                  total: data.totalStock || 0
+               };
+            });
+            setInventoryData(items);
+         },
+         (error) => {
+            console.warn(`[CashierView:inventory_meta] Listener error: ${error.message}`);
+         }
+      );
       return () => unsub();
    }, []);
 
-   // 🔴 REAL-TIME DIAGNOSTIC STRATAGEM: Direct onSnapshot listener
    useEffect(() => {
       const s = new Date(reportStart); 
       s.setHours(0,0,0,0);
@@ -165,7 +485,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
          orderBy('createdAt', 'asc')
       );
 
-      const unsub = onSnapshot(rangeQ,
+      const unsub = onSnapshot(
+         rangeQ,
          (snapshot) => {
             const rangeOrders = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as any[];
             const paidOrders = rangeOrders.filter(o => o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED');
@@ -174,8 +495,6 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             const avg = paidOrders.length > 0 ? paidOrders.reduce((s, o) => s + (o.totalAmount || 0), 0) / paidOrders.length : 0;
 
             const hourlyMap: Record<string, { orders: number; revenue: number }> = {};
-            // If it's more than 2 days, we show day-by-day trend instead of hourly?
-            // Actually, keep it hourly for now as the user primarily reconciliation daily/weekly.
             for (let i = 7; i <= 21; i++) hourlyMap[`${i}:00`] = { orders: 0, revenue: 0 };
             
             paidOrders.forEach(o => {
@@ -196,15 +515,14 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
             });
             setLiveStatsUpdatedAt(new Date());
          },
-         (err) => {
-            console.error('[LIVE-STATS] Range orders listener error:', err);
+         (error) => {
+            console.warn(`[CashierView:rangeQ] Listener error: ${error.message}`);
          }
       );
 
       return () => unsub();
    }, [reportStart, reportEnd]);
 
-   // Conflict Intelligence: Detect multiple orders for the same amount
    const conflictMap = useMemo(() => {
       const counts: Record<number, number> = {};
       pendingOrders.forEach(o => {
@@ -213,12 +531,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       return counts;
    }, [pendingOrders]);
 
-
-
-   // PERFORMANCE FIX [Laziness Strategy]: Only sync report data when the user is actually 
-   // looking at the Insight or Summary tabs. This stops massive background reads during peak hours.
    useEffect(() => {
-      if (activeTab !== 'INSIGHT' && activeTab !== 'SUMMARY') return;
+      if (activeTab !== 'ANALYTICS' && activeTab !== 'SUMMARY') return;
 
       const loadReportData = async () => {
          setReportLoading(true);
@@ -236,27 +550,28 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       loadReportData();
    }, [allOrders, activeTab, reportStart, reportEnd]);
 
-   // --- ⚙️ HANDLERS ---
    const handleConfirm = (orderId: string) => {
       if (!offlineDetector.isOnline()) {
          alert("Waiting for connection...");
          return;
       }
-      // ⚡ OPTIMISTIC STROKE: Clear from UI in <50ms
+      setConfirming(orderId);
       setOptimisticClearedIds(prev => new Set(prev).add(orderId));
       joeSounds.playPaymentConfirmed();
-      sonicVoice.announceOrderComplete(); // 🎙️ [SONIC-AUDIT] Handshake Confirmation
-      // Background Execution (Silent)
-      confirmCashPayment(orderId, profile.uid).catch((err: any) => {
-         // Rollback only on hard failure
-         setOptimisticClearedIds(prev => {
-            const next = new Set(prev);
-            next.delete(orderId);
-            return next;
+      sonicVoice.announceOrderComplete();
+      
+      confirmCashPayment(orderId, profile.uid)
+         .catch((err: any) => {
+            setOptimisticClearedIds(prev => {
+               const next = new Set(prev);
+               next.delete(orderId);
+               return next;
+            });
+            alert(err.message || 'Failed to approve. Reverting...');
+         })
+         .finally(() => {
+            setConfirming(null);
          });
-         alert(err.message || 'Failed to approve. Reverting...');
-      });
-
       offlineDetector.recordPing();
    };
 
@@ -269,6 +584,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       setRejecting(orderId);
       try {
          await rejectCashPayment(orderId, profile.uid);
+         joeSounds.playRejected();
          offlineDetector.recordPing();
       } catch (err: any) {
          alert(err.message || 'Failed to reject');
@@ -277,30 +593,12 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       }
    };
 
-   const handleAuditExport = async () => {
-      if (!reportData) {
-         alert('Data still syncing, please wait...');
-         return;
-      }
-      try {
-         console.log('📄 [AUDIT] Generating Strategy Report...');
-         await exportReport(reportData, { typeLabel: 'Daily Audit', format: 'pdf' });
-         console.log('✅ [AUDIT] Report Delivered.');
-      } catch (err) {
-         console.error('❌ [AUDIT] PDF Error:', err);
-         alert('Could not generate PDF. Please check data.');
-      }
-   };
-
-
-
    const formatTime = (ts?: number) => {
       if (!ts) return '--:--';
       const d = new Date(ts);
       return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
    };
 
-   // --- 📊 CALCULATED STATS ---
    const filteredOrders = useMemo(() => {
       let filtered = allOrders;
       if (search) {
@@ -316,839 +614,489 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       const todayOrders = allOrders.filter(o => {
          const d = new Date(o.createdAt);
          d.setHours(0, 0, 0, 0);
-         return d.getTime() === today.getTime() && o.paymentStatus === 'SUCCESS';
+         return d.getTime() === today.getTime() && (o.paymentStatus === 'SUCCESS' || o.paymentStatus === 'VERIFIED');
       });
 
       const cash = todayOrders.filter(o => o.paymentType === 'CASH').reduce((s, o) => s + o.totalAmount, 0);
       const avg = todayOrders.length > 0 ? todayOrders.reduce((s, o) => s + o.totalAmount, 0) / todayOrders.length : 0;
 
-      const hourlyData = new Array(24).fill(0).map((_, i) => ({ hour: `${i}:00`, orders: 0, revenue: 0 }));
-      todayOrders.forEach(o => {
-         const hour = new Date(o.createdAt).getHours();
-         hourlyData[hour].orders++;
-         hourlyData[hour].revenue += o.totalAmount;
-      });
-
-      const paymentSplit = [
-         { name: 'Cash', value: cash },
-         { name: 'Online', value: todayOrders.filter(o => o.paymentType !== 'CASH').reduce((s, o) => s + o.totalAmount, 0) }
-      ];
-
       return {
          cash,
          count: todayOrders.length,
-         avg,
-         hourlyData: hourlyData.filter(h => h.orders > 0 || (parseInt(h.hour) >= 8 && parseInt(h.hour) <= 21)),
-         paymentSplit
+         avg
       };
    }, [allOrders]);
 
-   // --- 💻 AUTOMATION TERMINAL ---
+   const detectAmountConflicts = () => {
+      const counts: { [amount: number]: number } = {};
+      walletRequests.forEach(r => {
+         counts[r.amount] = (counts[r.amount] || 0) + 1;
+      });
+      return Object.keys(counts).filter(amt => counts[parseFloat(amt)] > 1).map(Number);
+   };
+   const conflicts = detectAmountConflicts();
 
-
-   // --- 💻 DESKTOP COMPONENTS (ORIGINAL STYLE) ---
-   const renderDesktopDashboard = () => (
-      <div className="space-y-8 animate-in fade-in duration-500">
-         <div className="flex flex-wrap items-center justify-between gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-               {[
-                  { label: 'Today', days: 0 },
-                  { label: '7D', days: 7 },
-                  { label: '30D', days: 30 }
-               ].map(q => (
-                  <button
-                     key={q.label}
-                     onClick={() => {
-                        const end = new Date();
-                        const start = new Date();
-                        start.setDate(end.getDate() - q.days);
-                        setReportStart(start.toISOString().split('T')[0]);
-                        setReportEnd(end.toISOString().split('T')[0]);
-                     }}
-                     className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        new Date(reportStart).getDate() === (new Date(new Date().setDate(new Date().getDate() - q.days))).getDate() 
-                        ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-500'
-                     }`}
-                  >
-                     {q.label}
-                  </button>
-               ))}
-            </div>
-            <AuditDownloadButton realReport={reportData} period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`} />
-         </div>
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
-               <DollarSign className="w-8 h-8 text-emerald-600 mb-4" />
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Period Cash</p>
-               <p className="text-4xl font-black text-slate-900 italic">₹{liveStats.cash.toLocaleString()}</p>
-            </div>
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
-               <Receipt className="w-8 h-8 text-blue-600 mb-4" />
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Sales</p>
-               <p className="text-4xl font-black text-slate-900 italic">{liveStats.count}</p>
-            </div>
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
-               <AlertCircle className="w-8 h-8 text-amber-500 mb-4" />
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pending Sync</p>
-               <p className="text-4xl font-black text-slate-900 italic">{pendingOrders.length}</p>
-            </div>
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50">
-               <TrendingUp className="w-8 h-8 text-indigo-600 mb-4" />
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Ticket</p>
-               <p className="text-4xl font-black text-slate-900 italic">₹{Math.round(liveStats.avg)}</p>
-            </div>
-         </div>
-
-         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl">
-               <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-10">Sales Velocity (Hourly)</h3>
-               <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                     <BarChart data={liveStats.hourlyData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="hour" tick={{ fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 25px 50px rgba(0,0,0,0.1)' }} cursor={{ fill: '#f8fafc' }} />
-                        <Bar dataKey="orders" fill="#10B981" radius={[8, 8, 0, 0]} />
-                     </BarChart>
-                  </ResponsiveContainer>
-               </div>
-            </div>
-            
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl">
-               <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-10">Inventory Radar (Available / Total)</h3>
-               <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                     <BarChart data={inventoryData} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                        <XAxis type="number" tick={{ fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} hide />
-                        <YAxis dataKey="name" type="category" tick={{ fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} width={80} />
-                        <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 25px 50px rgba(0,0,0,0.1)' }} />
-                        <Bar dataKey="available" fill="#3B82F6" radius={[0, 8, 8, 0]} barSize={20} />
-                        <Bar dataKey="consumed" fill="#f43f5e" radius={[0, 8, 8, 0]} barSize={20} opacity={0.2} />
-                     </BarChart>
-                  </ResponsiveContainer>
-               </div>
-            </div>
-
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl">
-               <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-10">Payment Distribution</h3>
-               <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                     <PieChart>
-                        <Pie data={liveStats.paymentSplit} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={8} dataKey="value" nameKey="name">
-                           {liveStats.paymentSplit.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip /><Legend verticalAlign="bottom" height={36} iconType="circle" />
-                     </PieChart>
-                  </ResponsiveContainer>
-               </div>
-            </div>
-         </div>
-      </div>
-   );
-
-   const renderDesktopRequests = () => (
-      <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
-         <div className="bg-amber-500 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-amber-900/10 flex items-center justify-between overflow-hidden relative">
-            <div className="relative z-10">
-               <h2 className="text-3xl font-black uppercase italic tracking-tight">Active Verifications</h2>
-               <p className="text-amber-100 font-bold opacity-80 mt-1">Pending cash approvals awaiting action</p>
-            </div>
-            <div className="relative z-10 bg-white/20 backdrop-blur-xl px-10 py-6 rounded-3xl border border-white/20 flex items-center gap-6">
-               <Banknote className="w-10 h-10" />
-               <div>
-                  <p className="text-[10px] font-black opacity-50 uppercase tracking-widest">In Queue</p>
-                  <p className="text-5xl font-black leading-none">{pendingOrders.length}</p>
-               </div>
-            </div>
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16" />
-         </div>
-
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).map(order => {
-               const hasConflict = conflictMap[order.totalAmount] > 1;
-               const isAutoVerified = order.paymentStatus === 'SUCCESS';
-               const isCashRequest = order.paymentStatus === 'AWAITING_CONFIRMATION';
-
-               return (
-                  <div key={order.id} className={`bg-white rounded-[2.5rem] border-4 transition-all duration-300 ${isAutoVerified ? 'border-emerald-500 bg-emerald-50/20 shadow-emerald-500/10' :
-                        hasConflict ? 'border-amber-400 bg-amber-50/30' : 'border-slate-100'
-                     } p-8 shadow-xl hover:shadow-2xl group overflow-hidden relative active:scale-[0.99]`}>
-                     <div className="flex justify-between items-start mb-8">
-                        <div>
-                           <div className="flex flex-wrap items-center gap-2 mb-2">
-                              <span className="text-[13px] font-black bg-slate-900 text-white px-4 py-1.5 rounded-xl uppercase tracking-widest italic">
-                                 #{order.id.slice(-6).toUpperCase()}
-                              </span>
-                              {isAutoVerified && (
-                                 <span className="text-[9px] font-black bg-emerald-600 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1">
-                                    <CheckCircle className="w-3 h-3" /> VERIFIED
-                                 </span>
-                              )}
-                              {hasConflict && !isAutoVerified && (
-                                 <span className="text-[9px] font-black bg-amber-500 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1">
-                                    <AlertCircle className="w-3 h-3" /> CONFLICT
-                                 </span>
-                              )}
-                              {isCashRequest && (
-                                 <span className="text-[9px] font-black bg-amber-700 text-white px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1">
-                                    <Banknote className="w-3 h-3" /> CASH
-                                 </span>
-                              )}
-                           </div>
-                           <h3 className="text-3xl font-black text-slate-900 tracking-tight">{order.userName}</h3>
-                        </div>
-                        <div className="text-right">
-                           <p className={`text-5xl font-black leading-none ${isAutoVerified ? 'text-emerald-600' : 'text-slate-900'}`}>₹{order.totalAmount}</p>
-                           <p className="text-[10px] text-slate-400 font-bold mt-3 uppercase tracking-widest italic">{formatTime(order.createdAt)}</p>
-                        </div>
-                     </div>
-
-                     {/* Clean item chips */}
-                     <div className="flex flex-wrap gap-2 mb-6">
-                        {order.items.map((it, idx) => (
-                           <div key={idx} className="bg-slate-50 border border-slate-100 flex items-center gap-2 px-3 py-2 rounded-xl">
-                              <span className="text-[11px] font-black text-slate-700">{it.quantity}× {it.name}</span>
-                              <span className="text-[9px] text-slate-400">₹{it.price * it.quantity}</span>
-                           </div>
-                        ))}
-                     </div>
-
-                     <div className="flex gap-4 relative z-10">
-                        <button
-                           onClick={() => handleConfirm(order.id)}
-                           disabled={!!confirming || order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS'}
-                           className={`flex-[2] h-24 rounded-[2rem] font-black text-lg uppercase tracking-[0.3em] shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-4 ${(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? 'bg-emerald-100 text-emerald-900 opacity-50 shadow-none' :
-                                 conflictMap[order.totalAmount] > 1 ? 'bg-amber-500 text-white shadow-amber-900/30' : 'bg-slate-900 text-white shadow-black/20'
-                              }`}
-                        >
-                           {confirming === order.id ? <RefreshCw className="w-6 h-6 animate-spin" /> : (
-                              <>
-                                 {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? <CheckCircle className="w-8 h-8" /> : <Zap className="w-8 h-8" />}
-                                 {(order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'SUCCESS') ? "PAID" : isCashRequest ? "CONFIRM CASH" : conflictMap[order.totalAmount] > 1 ? "SOLVE CONFLICT" : "APPROVE CASH"}
-                              </>
-                           )}
-                        </button>
-                        {order.paymentStatus !== 'SUCCESS' && (
-                           <button onClick={() => handleReject(order.id)} disabled={!!rejecting} className="w-20 h-20 bg-rose-50 text-rose-600 font-black rounded-[1.5rem] border-2 border-rose-100 active:scale-95 transition-all flex items-center justify-center shadow-lg shadow-rose-900/5">
-                              <X className="w-8 h-8" />
-                           </button>
-                        )}
-                     </div>
-                     {hasConflict && (
-                        <div className="absolute top-0 right-0 p-3"><AlertCircle className="w-6 h-6 text-amber-500 opacity-20" /></div>
-                     )}
-                  </div>
-               );
-            })}
-            {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).length === 0 && (
-               <div className="md:col-span-2 py-32 text-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
-                  <ShieldCheck className="w-20 h-20 text-slate-100 mb-6" />
-                  <p className="text-2xl font-black text-slate-900">Terminals Cleared</p>
-                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">All cash requests have been processed</p>
-               </div>
-            )}
-         </div>
-      </div>
-   );
-
-   const renderDesktopHistory = () => (
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl overflow-hidden animate-in fade-in duration-500">
-         <div className="p-10 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div>
-               <h2 className="text-2xl font-black text-slate-900 uppercase italic">Transaction Ledger</h2>
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Live accounting audit</p>
-            </div>
-            <div className="relative w-full sm:w-96">
-               <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-               <input
-                  type="text" placeholder="Search by name or order code..." value={search} onChange={e => setSearch(e.target.value)}
-                  className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-14 pr-6 text-sm font-black outline-none focus:ring-2 focus:ring-emerald-500/10 transition-all"
-               />
-            </div>
-         </div>
-         <div className="overflow-x-auto">
-            <table className="w-full text-left">
-               <thead className="bg-slate-50/50 border-b border-slate-100">
-                  <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
-                     <th className="px-10 py-5">Order Reference</th>
-                     <th className="px-10 py-5">Student</th>
-                     <th className="px-10 py-5">Method</th>
-                     <th className="px-10 py-5">Status</th>
-                     <th className="px-10 py-5 text-right">Amount</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-50">
-                  {filteredOrders.map(order => (
-                     <tr key={order.id} className="hover:bg-slate-50/30 transition-colors">
-                        <td className="px-10 py-6 text-sm font-black text-slate-900">#{order.id.slice(-10).toUpperCase()}</td>
-                        <td className="px-10 py-6">
-                           <p className="text-sm font-black text-slate-800 leading-none">{order.userName}</p>
-                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">{formatTime(order.createdAt)}</p>
-                        </td>
-                        <td className="px-10 py-6">
-                           <span className="text-sm font-mono font-black text-slate-900 tracking-widest">
-                              {order.utr || order.id.slice(-4).toUpperCase()}
-                           </span>
-                        </td>
-                        <td className="px-10 py-6">
-                           <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${order.paymentType === 'CASH' ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-blue-100 text-blue-600 border border-blue-200'}`}>
-                              {order.paymentType}
-                           </span>
-                        </td>
-                        <td className="px-10 py-6">
-                           <span className={`text-[10px] font-black uppercase tracking-widest ${order.paymentStatus === 'SUCCESS' ? 'text-emerald-500' : 'text-slate-300'}`}>
-                              {order.paymentStatus === 'SUCCESS' ? 'Verified' : 'Unconfirmed'}
-                           </span>
-                        </td>
-                        <td className="px-10 py-6 text-right font-black text-slate-900 text-lg italic">₹{order.totalAmount}</td>
-                     </tr>
-                  ))}
-               </tbody>
-            </table>
-         </div>
-      </div>
-   );
-
-   // --- 📱 MOBILE SPECIFIC VIEW RENDERERS ---
-
-   const renderMobileRequests = () => (
-      <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-         <div className="flex items-center justify-between mb-4 px-1">
-            <h2 className="text-base font-black uppercase italic text-slate-900">Verification Queue</h2>
-            <span className="bg-amber-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-amber-500/20">{pendingOrders.length} Pending</span>
-         </div>
-
-         <div className="space-y-3">
-            {pendingOrders.filter(o => !optimisticClearedIds.has(o.id)).map(order => {
-               const hasConflict = conflictMap[order.totalAmount] > 1;
-               const isUtrSubmitted = order.paymentStatus === 'UTR_SUBMITTED';
-               const isCashRequest = order.paymentStatus === 'AWAITING_CONFIRMATION';
-
-               return (
-                  <div key={order.id} className={`bg-white rounded-2xl p-4 border transition-all duration-300 ${hasConflict ? 'border-amber-200 shadow-lg shadow-amber-500/5' :
-                        isUtrSubmitted ? 'border-indigo-200 shadow-lg shadow-indigo-500/5' : 'border-slate-100'
-                     }`}>
-                     {/* Card Header: Student Name & Time */}
-                     <div className="flex justify-between items-start mb-3">
-                        <div className="min-w-0 pr-2">
-                           <h3 className="text-[15px] font-black text-slate-900 truncate leading-tight">{order.userName}</h3>
-                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatTime(order.createdAt)} • #{order.id.slice(-4).toUpperCase()}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                           <p className="text-xl font-black text-slate-900 leading-none">₹{order.totalAmount}</p>
-                           {isUtrSubmitted && <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest mt-1 block">UTR SENT</span>}
-                        </div>
-                     </div>
-
-                     {/* UTR Highlights (Gen-Z Minimalist) */}
-                     {(order.paymentStatus === 'UTR_SUBMITTED' || order.utrLast4 || order.utr) && (
-                        <div className="bg-slate-900 rounded-xl p-3 mb-3 border border-white/5 flex items-center justify-between">
-                           <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">UTR KEY</span>
-                           <p className="font-mono font-black text-white text-lg tracking-widest leading-none">
-                              {order.utrLast4 || (order.utr?.length === 4 ? order.utr : order.utr?.slice(-4)) || '----'}
-                           </p>
-                        </div>
-                     )}
-                     {isCashRequest && (
-                        <div className="bg-amber-500 rounded-xl p-3 mb-3 border border-white/5 flex items-center justify-between">
-                           <span className="text-[8px] font-black text-amber-900 uppercase tracking-widest">STATUS</span>
-                           <p className="font-black text-white text-sm uppercase tracking-widest leading-none">CASH REQUEST</p>
-                        </div>
-                     )}
-
-                     {/* Items Summary (Compact but readable) */}
-                     <div className="flex flex-wrap gap-1.5 mb-4">
-                        {order.items.map((it, idx) => (
-                           <span key={idx} className="bg-slate-50 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-100">
-                              {it.quantity}x {it.name}
-                           </span>
-                        ))}
-                     </div>
-
-                     {/* POS-style Smart Actions */}
-                     <div className="flex gap-2">
-                        <button
-                           onClick={() => handleConfirm(order.id)}
-                           className={`flex-1 h-11 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 ${isUtrSubmitted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' :
-                                 hasConflict ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-white'
-                              }`}
-                        >
-                           <Zap className="w-3.5 h-3.5" />
-                           {isUtrSubmitted ? "Verify & Pay" : isCashRequest ? "Confirm Cash" : "Accept Cash"}
-                        </button>
-                        <button
-                           onClick={() => handleReject(order.id)}
-                           className="w-11 h-11 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                        >
-                           <X className="w-4 h-4" />
-                        </button>
-                     </div>
-                  </div>
-               );
-            })}
-            {pendingOrders.length === 0 && (
-               <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-                  <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-                  <p className="text-sm font-black text-slate-900">All Clear</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 leading-none">Queue fully processed</p>
-               </div>
-            )}
-         </div>
-      </div>
-   );
-
-   const renderMobileHistory = () => (
-      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-         <div className="px-1 block space-y-3">
-            <h2 className="text-base font-black uppercase italic text-slate-900">Cryptographic Ledger</h2>
-            <div className="relative">
-               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-               <input
-                  type="text" placeholder="Find order..." value={search} onChange={e => setSearch(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-xs font-black outline-none focus:ring-4 focus:ring-emerald-500/5 transition-all"
-               />
-            </div>
-         </div>
-
-         <div className="space-y-2">
-            {filteredOrders.map(order => (
-               <div key={order.id} className="bg-white rounded-xl p-4 border border-slate-100 flex items-center justify-between shadow-sm">
-                  <div className="min-w-0 pr-4">
-                     <p className="text-[13px] font-black text-slate-900 leading-tight truncate">{order.userName}</p>
-                     <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{order.id.slice(-4).toUpperCase()}</span>
-                        <span className="text-[9px] font-mono font-black text-emerald-600 uppercase tracking-widest italic">{order.utr?.slice(-4) || 'CASH'}</span>
-                     </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                     <p className="text-[15px] font-black text-slate-900">₹{order.totalAmount}</p>
-                     <span className={`text-[8px] font-black uppercase tracking-widest mt-1 block ${order.paymentStatus === 'SUCCESS' ? 'text-emerald-500' : 'text-slate-300'}`}>
-                        {order.paymentStatus === 'SUCCESS' ? 'VERIFIED' : 'PENDING'}
-                     </span>
-                  </div>
-               </div>
-            ))}
-         </div>
-      </div>
-   );
-
-   const renderMobileDashboard = () => (
-      <div className="space-y-4 animate-in fade-in duration-500">
-         <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-               <DollarSign className="w-5 h-5 text-emerald-600 mb-2" />
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Cash</p>
-               <p className="text-xl font-black text-slate-900 italic">₹{stats.cash.toLocaleString()}</p>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-               <Receipt className="w-5 h-5 text-blue-600 mb-2" />
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Tickets</p>
-               <p className="text-xl font-black text-slate-900 italic">{stats.count}</p>
-            </div>
-         </div>
-
-         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-            <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Velocity Audit</h3>
-            <div className="h-48">
-               <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.hourlyData}>
-                     <Bar dataKey="orders" fill="#10B981" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-               </ResponsiveContainer>
-            </div>
-         </div>
-      </div>
-   );
-
-   const renderDesktopRecharges = () => (
-      <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
-         <div className="bg-emerald-600 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-emerald-900/10 flex items-center justify-between overflow-hidden relative">
-            <div className="relative z-10">
-               <h2 className="text-3xl font-black uppercase italic tracking-tight">Wallet Recharges</h2>
-               <p className="text-emerald-100 font-bold opacity-80 mt-1">Verify manual cash deposit screenshots to approve wallet balances</p>
-            </div>
-            <div className="relative z-10 bg-white/20 backdrop-blur-xl px-10 py-6 rounded-3xl border border-white/20 flex items-center gap-6">
-               <Wallet className="w-10 h-10" />
-               <div>
-                  <p className="text-[10px] font-black opacity-50 uppercase tracking-widest">Pending</p>
-                  <p className="text-5xl font-black leading-none">{walletRequests.length}</p>
-               </div>
-            </div>
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16" />
-         </div>
-
-         {walletRequests.length === 0 ? (
-            <div className="py-32 text-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
-               <ShieldCheck className="w-20 h-20 text-slate-100 mb-6" />
-               <p className="text-2xl font-black text-slate-900">Queue Fully Processed</p>
-               <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">All student recharge requests have been cleared</p>
-            </div>
-         ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               {walletRequests.map(req => (
-                  <div key={req.id} className="bg-white rounded-[2rem] border-4 border-slate-100 p-6 shadow-xl relative group flex flex-col">
-                     <div className="flex justify-between items-start mb-6">
-                        <div className="flex items-center gap-4">
-                           <button onClick={() => setWalletScreenshotModal(req.screenshotUrl)} className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 hover:scale-105 transition-all">
-                              <img src={req.screenshotUrl} alt="Screenshot" className="w-full h-full object-cover" />
-                           </button>
-                           <div>
-                              <span className="text-[10px] font-black bg-slate-900 text-white px-3 py-1 rounded-full uppercase tracking-widest mb-2 inline-block">Wallet</span>
-                              <h4 className="text-xl font-black text-slate-900 leading-none">{req.studentName}</h4>
-                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">{formatTime(req.createdAt)}</p>
-                           </div>
-                        </div>
-                        <p className="text-3xl font-black text-emerald-600 italic">₹{req.amount}</p>
-                     </div>
-                     <input
-                        placeholder="Rejection note (optional)"
-                        value={walletRejectNote[req.id] || ''}
-                        onChange={e => setWalletRejectNote(prev => ({ ...prev, [req.id]: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 mb-4 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
-                     />
-                     <div className="flex gap-2 mt-auto">
-                        <button
-                           onClick={async () => {
-                              setWalletActionLoading(req.id + '_approve');
-                              try { await approveRechargeRequest(req.id, profile.name); } 
-                              catch (err: any) { alert(err.message); } 
-                              finally { setWalletActionLoading(null); }
-                           }}
-                           disabled={!!walletActionLoading}
-                           className="flex-[2] h-14 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
-                        >
-                           {walletActionLoading === req.id + '_approve' ? <RefreshCw className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />} Approve
-                        </button>
-                        <button
-                           onClick={async () => {
-                              setWalletActionLoading(req.id + '_reject');
-                              try { await rejectRechargeRequest(req.id, profile.name, walletRejectNote[req.id] || ''); } 
-                              catch (err: any) { alert(err.message); } 
-                              finally { setWalletActionLoading(null); }
-                           }}
-                           disabled={!!walletActionLoading}
-                           className="w-14 h-14 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 flex items-center justify-center hover:bg-rose-100 transition-all active:scale-95"
-                        >
-                           {walletActionLoading === req.id + '_reject' ? <RefreshCw className="w-5 h-5 animate-spin" /> : <X className="w-5 h-5" />}
-                        </button>
-                     </div>
-                  </div>
-               ))}
-            </div>
-         )}
-      </div>
-   );
-
-   const renderMobileRecharges = () => (
-      <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-         <div className="flex items-center justify-between mb-4 px-1">
-            <h2 className="text-base font-black uppercase italic text-slate-900 flex items-center gap-2">
-               <Wallet className="w-4 h-4 text-emerald-600" /> Wallet Recharges
-            </h2>
-            <span className="bg-emerald-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-emerald-500/20">
-               {walletRequests.length} Pending
-            </span>
-         </div>
-
-         {walletRequests.length === 0 ? (
-            <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-               <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-               <p className="text-sm font-black text-slate-905">All Clear</p>
-               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 leading-none">No pending wallet requests</p>
-            </div>
-         ) : (
-            <div className="space-y-3">
-               {walletRequests.map(req => (
-                  <div key={req.id} className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-sm flex flex-col">
-                     <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-3 min-w-0 pr-2">
-                           <button onClick={() => setWalletScreenshotModal(req.screenshotUrl)} className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
-                              <img src={req.screenshotUrl} alt="Screenshot" className="w-full h-full object-cover" />
-                           </button>
-                           <div className="min-w-0">
-                              <h3 className="text-[13px] font-black text-slate-900 truncate leading-tight">{req.studentName}</h3>
-                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatTime(req.createdAt)}</p>
-                           </div>
-                        </div>
-                        <p className="text-lg font-black text-emerald-600 leading-none shrink-0">₹{req.amount}</p>
-                     </div>
-                     <input
-                        placeholder="Rejection note (optional)"
-                        value={walletRejectNote[req.id] || ''}
-                        onChange={e => setWalletRejectNote(prev => ({ ...prev, [req.id]: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 mb-3 text-[10px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
-                     />
-                     <div className="flex gap-2">
-                        <button
-                           onClick={async () => {
-                              setWalletActionLoading(req.id + '_approve');
-                              try { await approveRechargeRequest(req.id, profile.name); } 
-                              catch (err: any) { alert(err.message); } 
-                              finally { setWalletActionLoading(null); }
-                           }}
-                           disabled={!!walletActionLoading}
-                           className="flex-1 h-10 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95"
-                        >
-                           {walletActionLoading === req.id + '_approve' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Approve
-                        </button>
-                        <button
-                           onClick={async () => {
-                              setWalletActionLoading(req.id + '_reject');
-                              try { await rejectRechargeRequest(req.id, profile.name, walletRejectNote[req.id] || ''); } 
-                              catch (err: any) { alert(err.message); } 
-                              finally { setWalletActionLoading(null); }
-                           }}
-                           disabled={!!walletActionLoading}
-                           className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 flex items-center justify-center active:scale-95"
-                        >
-                           {walletActionLoading === req.id + '_reject' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                        </button>
-                     </div>
-                  </div>
-               ))}
-            </div>
-         )}
-      </div>
-   );
-
-   const renderDesktopSummary = () => (
-      <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
-         <div className="bg-white rounded-[3rem] p-12 border border-slate-100 shadow-2xl relative overflow-hidden">
-            <div className="flex items-center justify-between mb-12">
-               <div className="flex items-center gap-6">
-                  <div className="w-16 h-16 bg-emerald-600 rounded-3xl flex items-center justify-center shadow-xl shadow-emerald-900/20"><Calculator className="w-8 h-8 text-white" /></div>
-                  <div>
-                     <h2 className="text-3xl font-black text-slate-900 uppercase italic">Shift Settlement</h2>
-                     <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Reconciliation & Audit Control</p>
-                  </div>
-               </div>
-               <div className="flex items-center gap-4">
-                  <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-                     {[
-                        { label: 'Today', days: 0 },
-                        { label: '7D', days: 7 },
-                        { label: '30D', days: 30 }
-                     ].map(q => (
-                        <button
-                           key={q.label}
-                           onClick={() => {
-                              const end = new Date();
-                              const start = new Date();
-                              start.setDate(end.getDate() - q.days);
-                              setReportStart(start.toISOString().split('T')[0]);
-                              setReportEnd(end.toISOString().split('T')[0]);
-                           }}
-                           className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                              new Date(reportStart).getDate() === (new Date(new Date().setDate(new Date().getDate() - q.days))).getDate() 
-                              ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-                           }`}
-                        >
-                           {q.label}
-                        </button>
-                     ))}
-                  </div>
-                  <AuditDownloadButton realReport={reportData} period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`} />
-               </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-               <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Cash in Drawer (Estimated)</p>
-                  <p className="text-6xl font-black text-slate-900 italic">₹{stats.cash.toLocaleString()}</p>
-                  <div className="h-px bg-slate-200 my-8" />
-                  <div className="flex items-center justify-between">
-                     <div>
-                        <p className="text-[9px] font-black text-slate-400 uppercase">Sales Count</p>
-                        <p className="text-xl font-black text-slate-800">{stats.count}</p>
-                     </div>
-                     <div className="text-right">
-                        <p className="text-[9px] font-black text-slate-400 uppercase">Avg Yield</p>
-                        <p className="text-xl font-black text-slate-800">₹{Math.round(stats.avg)}</p>
-                     </div>
-                  </div>
-               </div>
-               <div className="bg-emerald-600 p-10 rounded-[2.5rem] shadow-2xl text-white relative flex flex-col justify-center">
-                  <p className="text-[10px] font-black opacity-50 uppercase tracking-[0.3em] mb-4">Live System Status</p>
-                  <h3 className="text-4xl font-black italic">OPERATIONAL</h3>
-                  <p className="text-sm font-bold opacity-70 mt-4 leading-relaxed uppercase tracking-widest">All protocols running. <br />Database synced 0ms ago.</p>
-                  <ShieldCheck className="absolute bottom-[-20px] right-[-20px] w-48 h-48 opacity-[0.05] -rotate-12" />
-               </div>
-            </div>
-
-            <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
-               <div className="flex items-center gap-5">
-                  <div className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-emerald-600 font-black text-lg shadow-sm">
-                     {profile.name.charAt(0)}
-                  </div>
-                  <div>
-                     <p className="text-xs font-black text-slate-900 uppercase">{profile.name}</p>
-                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">{profile.uid.slice(0, 16).toUpperCase()}</p>
-                  </div>
-               </div>
-               <button onClick={onLogout} className="px-8 py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-[10px] uppercase tracking-widest border border-rose-100 hover:bg-rose-500 hover:text-white transition-all">
-                  End Active Session
-               </button>
-            </div>
-         </div>
-      </div>
-   );
-
-   const renderMobileControl = () => {
-      switch (activeTab) {
-         case 'PENDING': return renderMobileRequests();
-         case 'RECHARGES': return renderMobileRecharges();
-         case 'ORDERS': return renderMobileHistory();
-         case 'INSIGHT': return renderMobileDashboard();
-         case 'SUMMARY': return (
-            <div className="space-y-4 animate-in fade-in duration-300">
-               <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
-                  <p className="text-[9px] font-black opacity-40 uppercase tracking-[0.4em] mb-3">Cash Position</p>
-                  <div className="flex items-baseline gap-1.5 mb-6">
-                     <span className="text-sm font-black opacity-20">₹</span>
-                     <p className="text-4xl font-black tracking-tight leading-none italic">{stats.cash.toLocaleString()}</p>
-                  </div>
-                  <p className="text-[9px] font-black opacity-40 uppercase tracking-[0.2em]">{profile.name}</p>
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-3xl -mr-8 -mt-8" />
-               </div>
-
-               <div className="space-y-2">
-                  <button onClick={handleAuditExport} className="w-full h-14 bg-emerald-600 text-white rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 active:scale-95 shadow-lg shadow-emerald-500/10">
-                     <FileText className="w-4 h-4 text-emerald-100" /> DOWNLOAD PDF
-                  </button>
-                  <button onClick={onLogout} className="w-full h-12 bg-white text-rose-600 border border-slate-200 rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95">
-                     <LogOut className="w-4 h-4" /> SIGN OUT
-                  </button>
-               </div>
-
-               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center justify-between">
-                  <div>
-                     <p className="text-[10px] font-black text-slate-900 uppercase">STATION {profile.role}</p>
-                     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{profile.uid.slice(0, 16)}</p>
-                  </div>
-                  <ShieldCheck className="w-5 h-5 text-emerald-500/20" />
-               </div>
-            </div>
-         );
-         default: return null;
+   const handleApproveRecharge = async (id: string) => {
+      setWalletActionLoading(id + '_approve');
+      try {
+         await approveRechargeRequest(id, profile.name);
+         if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+         joeSounds.playPaymentConfirmed();
+      } catch (err: any) {
+         alert(err.message);
+      } finally {
+         setWalletActionLoading(null);
       }
    };
 
-   // --- 🎨 MAIN RENDER ---
+   const handleRejectRechargeSubmit = async (id: string) => {
+      const reason = walletRejectNote[id] || '';
+      if (!reason) {
+         alert('Please specify a rejection reason.');
+         return;
+      }
+      setWalletActionLoading(id + '_reject');
+      try {
+         await rejectRechargeRequest(id, profile.name, reason);
+         if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+         joeSounds.playRejected();
+         setRejectId(null);
+      } catch (err: any) {
+         alert(err.message);
+      } finally {
+         setWalletActionLoading(null);
+      }
+   };
+
+   const handleAudioToggle = async () => {
+     if (audioStatus === 'Silent') {
+       await joeSounds.init();
+     } else {
+       joeSounds.toggleMute();
+     }
+   };
+
+   const verificationsCount = walletRequests.length;
+
+   const onlineVal = liveStats.paymentSplit[1]?.value || 0;
+   const totalVal = onlineVal;
+   const onlinePct = totalVal > 0 ? 100 : 0;
+   const cashPct = 0;
+
    return (
-      <div className="min-h-screen bg-slate-50/50 select-none font-sans text-slate-900">
+      <div className="min-h-screen bg-surface-lowest text-on-surface font-sans select-none overflow-y-auto pb-24">
          {isOffline && (
-            <div className="bg-red-600 text-white px-8 py-2 text-center font-black text-[10px] uppercase tracking-widest animate-pulse flex items-center justify-center gap-3 shrink-0 z-50">
+            <div className="bg-rose-950 border border-rose-500/20 text-rose-400 px-8 py-2 text-center font-mono text-[10px] uppercase tracking-widest animate-pulse flex items-center justify-center gap-3 shrink-0 z-50">
                <AlertTriangle className="w-3 h-3" /> Connection unstable. Waiting for cashier database...
             </div>
          )}
 
-         {/* 💻 DESKTOP DUAL-LAYOUT (hidden lg:flex) */}
-         <div className="hidden lg:flex min-h-screen">
-            <aside className="w-80 bg-[#111827] text-white flex flex-col p-8 pt-16 shrink-0 shadow-2xl z-30">
-               <div className="flex items-center gap-5 mb-20 px-4">
-                  <Logo size="lg" />
+         {/* Stickyblurred premium Header */}
+         <header className="sticky top-0 z-50 bg-surface-lowest/80 backdrop-blur-xl border-b border-white/5 flex flex-wrap justify-between items-center px-6 py-4 max-w-4xl mx-auto">
+            <div className="flex items-center gap-3">
+               <div className="w-10 h-10 rounded-full border-2 border-brand-purple flex items-center justify-center bg-surface-low text-brand-purple-light font-black font-display text-sm">
+                  {profile.name.charAt(0).toUpperCase()}
+               </div>
+               <div>
+                  <span className="font-mono text-[9px] text-brand-purple bg-brand-purple/10 border border-brand-purple/20 px-2 py-0.5 rounded-full font-bold flex items-center gap-1.5 animate-pulse w-fit">
+                     <span className="w-1.5 h-1.5 rounded-full bg-brand-purple" />
+                     Cashier Desk Terminal Active
+                  </span>
+                  <h1 className="font-display text-base font-black text-white mt-0.5">
+                     Register Approvals HUD
+                  </h1>
+               </div>
+            </div>
+
+            <div className="flex items-center gap-4 mt-2 sm:mt-0">
+               {/* Soundscape Context health indicator badge */}
+               <button 
+                  onClick={handleAudioToggle}
+                  className={`px-3.5 py-2 rounded-xl border flex items-center gap-1.5 text-[9px] font-mono font-black transition active:scale-95 cursor-pointer ${
+                     audioStatus === 'Connected' 
+                        ? 'bg-brand-purple/10 border-brand-purple/20 text-brand-purple-light' 
+                        : audioStatus === 'Muted'
+                           ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                           : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                  }`}
+               >
+                  {audioStatus === 'Connected' ? (
+                     <>
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>AUDIO: CENTRAL ACTIVE</span>
+                     </>
+                  ) : audioStatus === 'Muted' ? (
+                     <>
+                        <VolumeX className="w-3.5 h-3.5" />
+                        <span>AUDIO: MUTED</span>
+                     </>
+                  ) : (
+                     <>
+                        <VolumeX className="w-3.5 h-3.5 animate-pulse" />
+                        <span>AUDIO: SILENT (TAP TO WAKE)</span>
+                     </>
+                  )}
+               </button>
+
+               <button 
+                  onClick={onLogout} 
+                  className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 hover:text-white rounded-xl font-mono text-[10px] font-bold tracking-wider uppercase transition active:scale-95 cursor-pointer"
+               >
+                  Logout
+               </button>
+            </div>
+         </header>
+
+         {/* Centered Main Container */}
+         <div className="max-w-4xl mx-auto px-4 pt-6 space-y-6">
+            
+            {/* Top Stat chips summary */}
+            <section className="flex justify-between items-center gap-4 bg-surface-low/30 border border-white/5 p-4 rounded-2xl">
+               <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-xs text-on-surface-variant font-bold">Verifications Queue:</span>
+                  <span className={`font-mono font-black rounded-full px-2 py-0.5 text-[10px] ${
+                     verificationsCount > 0 ? 'bg-brand-purple text-surface-lowest animate-pulse' : 'bg-surface-high text-on-surface-variant'
+                  }`}>
+                     {verificationsCount}
+                  </span>
                </div>
 
-               <nav className="flex-1 space-y-3">
-                  {[
-                     { id: 'INSIGHT', label: 'Monitor Deck', icon: LayoutDashboard },
-                     { id: 'PENDING', label: 'Inbound Queue', icon: Banknote },
-                     { id: 'RECHARGES', label: 'Wallet Recharges', icon: Wallet },
-                     { id: 'ORDERS', label: 'Master Ledger', icon: FileText },
-                     { id: 'SUMMARY', label: 'Settlement', icon: Calculator }
-                  ].map(tab => (
-                     <button
-                        key={tab.id} onClick={() => setActiveTab(tab.id as CashierTab)}
-                        className={`w-full flex items-center gap-6 px-8 py-5 rounded-[2rem] transition-all group ${activeTab === tab.id ? 'bg-emerald-600 shadow-2xl shadow-emerald-900/30 ring-1 ring-emerald-400/20 active:scale-95' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                     >
-                        <tab.icon className={`w-6 h-6 transition-transform ${activeTab === tab.id ? 'scale-110' : 'group-hover:scale-110'}`} />
-                        <span className="text-[12px] font-black uppercase tracking-[0.3em] leading-none">{tab.label}</span>
-                     </button>
-                  ))}
-               </nav>
+               <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-xs text-on-surface-variant font-bold">Online Volume (Today):</span>
+                  <span className="font-mono text-brand-purple-light font-extrabold text-sm">
+                     ₹{earningsToday.toLocaleString()}
+                  </span>
+               </div>
+            </section>
 
-               <div className="mt-auto pt-10 border-t border-white/5">
-                  <div className="flex items-center gap-5 px-5 mb-10">
-                     <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-emerald-500 font-black text-xl shadow-inner border border-white/5">{profile.name.charAt(0)}</div>
-                     <div className="min-w-0"><p className="text-sm font-black truncate text-white italic leading-none">{profile.name}</p><p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1.5 opacity-50">Active Agent</p></div>
+            {/* Conflict intelligence overlay warnings */}
+            {conflicts.length > 0 && activeTab === 'RECHARGES' && (
+               <div className="p-4 bg-amber-400/10 border border-amber-400/20 rounded-2xl flex gap-3 items-start">
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-xs">
+                     <h4 className="font-display font-black text-amber-400 uppercase tracking-wider">
+                        Conflict Intelligence Alert: Matching amount receipts
+                     </h4>
+                     <p className="font-sans text-on-surface-variant leading-normal">
+                        Multiple pending wallet recharges match sums of: {conflicts.map(c => `₹${c}`).join(', ')}. Ensure you cross-reference the 12-digit UTR strings to avoid duplicate approval fraud.
+                     </p>
                   </div>
-                  <button onClick={onLogout} className="w-full flex items-center gap-6 px-8 py-5 rounded-[2rem] text-slate-400 hover:text-rose-400 hover:bg-rose-500/5 transition-all group">
-                     <LogOut className="w-5 h-5 text-rose-500 group-hover:scale-110 transition-transform" /><span className="text-[12px] font-black uppercase tracking-widest">End Session</span>
+               </div>
+            )}
+
+            {/* Tabs navigation */}
+            <div className="flex flex-wrap bg-surface-high/30 border border-white/5 rounded-xl p-1 gap-1">
+               {[
+                  { id: 'RECHARGES', label: `RECHARGES (${walletRequests.length})` },
+                  { id: 'ANALYTICS', label: 'SALES METRICS' },
+                  { id: 'LEDGER', label: 'HISTORY LEDGER' },
+                  { id: 'SUMMARY', label: 'SETTLEMENT' }
+               ].map(tab => (
+                  <button
+                     key={tab.id}
+                     onClick={() => setActiveTab(tab.id as CashierTab)}
+                     className={`flex-1 py-2.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                        activeTab === tab.id ? 'bg-brand-purple text-surface-lowest shadow-lg shadow-brand-purple/20' : 'text-on-surface-variant hover:text-white'
+                     }`}
+                  >
+                     {tab.label}
                   </button>
-               </div>
-            </aside>
+               ))}
+            </div>
 
-            <main className="flex-1 flex flex-col min-w-0 bg-slate-50/50 backdrop-blur-sm relative overflow-hidden">
-               <header className="bg-white/80 backdrop-blur-2xl border-b border-slate-200 px-16 py-10 sticky top-0 z-20 flex items-center justify-between shadow-sm">
-                  <div>
-                     <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">
-                        {activeTab === 'INSIGHT' ? 'DIAGNOSTIC STRATAGEM' :
-                           activeTab === 'PENDING' ? 'QUEUE VERIFICATION' :
-                              activeTab === 'RECHARGES' ? 'WALLET RECHARGE PORTAL' :
-                                 activeTab === 'ORDERS' ? 'CRYPTOGRAPHIC LEDGER' : 'SETTLEMENT PROTOCOL'}
-                     </h1>
-                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.5em] mt-1 leading-none">Authorization Level 4 • Station 202</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                     {loading && <div className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-full border border-emerald-100 flex items-center gap-3 shadow-xl shadow-emerald-900/5 animate-in slide-in-from-right-4"><RefreshCw className="w-4 h-4 animate-spin" /><span className="text-[10px] font-black uppercase tracking-widest">Master-Sync Active</span></div>}
-                  </div>
-               </header>
-               <div className="p-16 max-w-7xl mx-auto w-full flex-1">
-                  {activeTab === 'INSIGHT' ? renderDesktopDashboard() :
-                     activeTab === 'PENDING' ? renderDesktopRequests() :
-                        activeTab === 'RECHARGES' ? renderDesktopRecharges() :
-                           activeTab === 'ORDERS' ? renderDesktopHistory() :
-                              renderDesktopSummary()}
-               </div>
+            {/* Main tab sections views */}
+            <main className="space-y-4">
+
+               {/* 1. Wallet Topup Recharges Terminal */}
+               {activeTab === 'RECHARGES' && (
+                  <section className="space-y-4">
+                     {walletRequests.length === 0 ? (
+                        <div className="text-center py-16 border border-white/5 bg-surface-low/10 rounded-3xl">
+                           <p className="font-sans text-xs text-on-surface-variant">Recharge terminal queue is clean. Ready to verify!</p>
+                        </div>
+                     ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                           {walletRequests.map(req => (
+                              <RechargeRequestCard 
+                                key={req.id} 
+                                req={req}
+                                onApprove={handleApproveRecharge}
+                                rejectId={rejectId}
+                                setRejectId={setRejectId}
+                                walletRejectNote={walletRejectNote}
+                                setWalletRejectNote={setWalletRejectNote}
+                                walletActionLoading={walletActionLoading}
+                                handleRejectRechargeSubmit={handleRejectRechargeSubmit}
+                                setWalletScreenshotModal={setWalletScreenshotModal}
+                                formatTime={formatTime}
+                              />
+                           ))}
+                        </div>
+                     )}
+                  </section>
+               )}
+
+
+
+               {/* 3. Sales performance matrices charts and graphs */}
+               {activeTab === 'ANALYTICS' && (
+                  <section className="space-y-6">
+                     
+                     <div className="flex flex-wrap items-center justify-between gap-6 bg-surface-low/30 p-6 rounded-2xl border border-white/5 shadow-xl">
+                        <div className="flex bg-surface-lowest p-1.5 rounded-xl border border-white/5">
+                           {[
+                              { label: 'Today', days: 0 },
+                              { label: '7D', days: 7 },
+                              { label: '30D', days: 30 }
+                           ].map(q => (
+                              <button
+                                 key={q.label}
+                                 onClick={() => {
+                                    const end = new Date();
+                                    const start = new Date();
+                                    start.setDate(end.getDate() - q.days);
+                                    setReportStart(start.toISOString().split('T')[0]);
+                                    setReportEnd(end.toISOString().split('T')[0]);
+                                 }}
+                                 className={`px-3 py-2 rounded-lg text-[9px] font-mono font-black uppercase tracking-widest transition-all cursor-pointer ${
+                                    new Date(reportStart).getDate() === (new Date(new Date().setDate(new Date().getDate() - q.days))).getDate() 
+                                    ? 'bg-brand-purple text-surface-lowest shadow-sm' : 'text-on-surface-variant hover:text-white'
+                                 }`}
+                              >
+                                 {q.label}
+                              </button>
+                           ))}
+                        </div>
+                        <AuditDownloadButton realReport={reportData} period={reportStart === reportEnd ? 'Today' : `${reportStart} to ${reportEnd}`} />
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        {/* Sales velocity hourly chart */}
+                        <div className="bg-surface-low/30 p-6 rounded-2xl border border-white/5 shadow-2xl">
+                           <h3 className="font-mono text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-6">
+                              Sales Velocity (Hourly)
+                           </h3>
+                           <div className="h-56">
+                              <ResponsiveContainer width="100%" height="100%">
+                                 <BarChart data={liveStats.hourlyData}>
+                                    <defs>
+                                      <linearGradient id="purpleGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#b76dff" stopOpacity={0.8}/>
+                                        <stop offset="100%" stopColor="#490080" stopOpacity={0.1}/>
+                                      </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="hour" tick={{ fontSize: 9, fill: '#cbd5e1' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fill: '#cbd5e1' }} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: '#131b2e', color: '#f4f4f5' }} cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
+                                    <Bar dataKey="orders" fill="url(#purpleGrad)" radius={[6, 6, 0, 0]} />
+                                 </BarChart>
+                              </ResponsiveContainer>
+                           </div>
+                        </div>
+
+                        {/* Payment Split Dynamic CSS Progress slider */}
+                        <div className="glass-bg glass-stroke rounded-2xl p-6 space-y-4 shadow-2xl flex flex-col justify-between">
+                           <div>
+                              <h3 className="font-display font-bold text-xs text-white uppercase tracking-wider">
+                                 Digital Wallet checkout Revenue
+                              </h3>
+                              
+                              <div className="space-y-3 pt-4">
+                                 <div className="h-6 rounded-full overflow-hidden flex text-[10px] font-mono font-black text-center text-surface-lowest">
+                                    <div className="bg-brand-purple-dark h-full flex items-center justify-center transition-all duration-500 text-[#ddb7ff] w-full">
+                                       ONLINE WALLET REVENUE (100%)
+                                    </div>
+                                 </div>
+                                 
+                                 <div className="flex justify-between items-center text-[10.5px] font-mono text-on-surface-variant mt-2">
+                                    <div className="flex items-center gap-1.5">
+                                       <span className="w-2.5 h-2.5 rounded-full bg-brand-purple-dark" />
+                                       <span>Online Wallet (₹{onlineVal.toLocaleString()})</span>
+                                    </div>
+                                 </div>
+                              </div>
+                           </div>
+
+                           <div className="p-3.5 bg-white/5 border border-white/5 rounded-xl text-[11px] font-sans text-on-surface-variant leading-relaxed">
+                              👨‍✈️ <strong>Prepaid preference:</strong> Student wallet transactions represent the primary volume, validating frictionless piloting.
+                           </div>
+                        </div>
+
+                        {/* Catalog Stock Levels list chart */}
+                        <div className="bg-surface-low/30 p-6 rounded-2xl border border-white/5 shadow-2xl md:col-span-2">
+                           <h3 className="font-mono text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-4">
+                              Menu Catalog Available Stock
+                           </h3>
+                           <div className="h-48">
+                              <ResponsiveContainer width="100%" height="100%">
+                                 <BarChart data={inventoryData} layout="vertical">
+                                    <defs>
+                                      <linearGradient id="greenGrad" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stopColor="#b76dff" stopOpacity={0.8}/>
+                                        <stop offset="100%" stopColor="#490080" stopOpacity={0.2}/>
+                                      </linearGradient>
+                                      <linearGradient id="redGrad" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.3}/>
+                                        <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.05}/>
+                                      </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis type="number" tick={{ fontSize: 9, fill: '#cbd5e1' }} axisLine={false} tickLine={false} hide />
+                                    <YAxis dataKey="name" type="category" tick={{ fontSize: 9, fill: '#cbd5e1', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={80} />
+                                    <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: '#131b2e', color: '#f4f4f5' }} />
+                                    <Bar dataKey="available" fill="url(#greenGrad)" radius={[0, 6, 6, 0]} barSize={12} />
+                                    <Bar dataKey="consumed" fill="url(#redGrad)" radius={[0, 6, 6, 0]} barSize={12} />
+                                 </BarChart>
+                              </ResponsiveContainer>
+                           </div>
+                        </div>
+
+                     </div>
+                  </section>
+               )}
+
+               {/* 4. Database records ledger tables review */}
+               {activeTab === 'LEDGER' && (
+                  <section className="space-y-4">
+                     <div className="p-6 bg-surface-low/30 border border-white/5 rounded-2xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                           <h2 className="text-lg font-black text-white uppercase italic">Transaction Ledger</h2>
+                           <p className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mt-1">Live accounting audit</p>
+                        </div>
+                        <div className="relative w-full sm:w-80">
+                           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
+                           <input
+                              type="text" placeholder="Search by name or order code..." value={search} onChange={e => setSearch(e.target.value)}
+                              className="w-full bg-surface-lowest border border-white/5 rounded-xl py-3 pl-10 pr-4 text-xs font-bold text-white outline-none focus:ring-1 focus:ring-brand-purple/30 transition placeholder:text-zinc-700"
+                           />
+                        </div>
+                     </div>
+
+                     <div className="border border-white/5 bg-surface-low/10 rounded-2xl overflow-hidden overflow-x-auto shadow-2xl">
+                        <table className="w-full text-left">
+                           <thead className="bg-surface-lowest border-b border-white/5">
+                              <tr className="text-[9px] font-mono font-bold text-on-surface-variant uppercase tracking-[0.2em]">
+                                 <th className="px-6 py-4">Order Reference</th>
+                                 <th className="px-6 py-4">Student</th>
+                                 <th className="px-6 py-4">Method</th>
+                                 <th className="px-6 py-4">Status</th>
+                                 <th className="px-6 py-4 text-right">Amount</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-white/5 bg-surface-low/5 font-mono text-[10.5px]">
+                              {filteredOrders.map(order => (
+                                 <tr key={order.id} className="hover:bg-white/5 transition">
+                                    <td className="px-6 py-4 text-zinc-300">#{order.id.slice(-10).toUpperCase()}</td>
+                                    <td className="px-6 py-4 font-sans">
+                                       <p className="text-xs font-bold text-white leading-none">{order.userName}</p>
+                                       <p className="text-[9px] font-mono text-zinc-500 uppercase mt-1.5">{formatTime(order.createdAt)}</p>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                       <span className="text-zinc-400">
+                                          {order.utr || order.id.slice(-4).toUpperCase()}
+                                       </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                       <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${
+                                         order.paymentType === 'CASH' 
+                                           ? 'bg-brand-purple/10 text-brand-purple border-brand-purple/20' 
+                                           : 'bg-brand-purple-dark/20 text-[#ddb7ff] border-brand-purple/20'
+                                       }`}>
+                                          {order.paymentType}
+                                       </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-black text-brand-purple-light text-base italic">₹{order.totalAmount}</td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                  </section>
+               )}
+
+               {/* 5. Summary Settlement Reconciliation tab */}
+               {activeTab === 'SUMMARY' && (
+                  <section className="space-y-6">
+                     <div className="glass-bg glass-stroke rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+                        <div className="flex flex-col md:flex-row justify-between md:items-center gap-6 border-b border-white/5 pb-8 mb-8">
+                           <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-brand-purple-dark/15 border border-brand-purple/20 rounded-2xl flex items-center justify-center shadow-xl">
+                                 <Calculator className="w-6 h-6 text-brand-purple-light" />
+                              </div>
+                              <div>
+                                 <h2 className="text-xl font-black text-white uppercase italic font-display">Shift Settlement</h2>
+                                 <p className="text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mt-0.5">Reconciliation & Audit Control</p>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                           <div className="space-y-4">
+                              {/* Today Card */}
+                              <div className="bg-surface-lowest/40 p-5 rounded-2xl border border-brand-purple/20 relative overflow-hidden flex justify-between items-center shadow-lg">
+                                 <div className="absolute top-0 right-0 w-16 h-16 bg-brand-purple/5 blur-xl rounded-full pointer-events-none" />
+                                 <div>
+                                    <p className="text-[9px] font-mono font-black text-brand-purple-light uppercase tracking-[0.2em] mb-1">Today's Online Earnings</p>
+                                    <p className="text-3xl font-black text-white italic font-display">₹{earningsToday.toLocaleString()}</p>
+                                 </div>
+                               </div>
+
+                              {/* 7 Days Card */}
+                              <div className="bg-surface-lowest/40 p-5 rounded-2xl border border-white/5 relative overflow-hidden flex justify-between items-center shadow-lg">
+                                 <div>
+                                    <p className="text-[9px] font-mono font-black text-zinc-400 uppercase tracking-[0.2em] mb-1">Last 7 Days Online Earnings</p>
+                                    <p className="text-2xl font-black text-white italic font-display">₹{earnings7D.toLocaleString()}</p>
+                                 </div>
+                              </div>
+
+                              {/* 30 Days Card */}
+                              <div className="bg-surface-lowest/40 p-5 rounded-2xl border border-white/5 relative overflow-hidden flex justify-between items-center shadow-lg">
+                                 <div>
+                                    <p className="text-[9px] font-mono font-black text-zinc-400 uppercase tracking-[0.2em] mb-1">Last 30 Days Online Earnings</p>
+                                    <p className="text-2xl font-black text-white italic font-display">₹{earnings30D.toLocaleString()}</p>
+                                 </div>
+                              </div>
+                           </div>
+
+                           <div className="bg-brand-purple-dark/15 border border-brand-purple/20 p-8 rounded-2xl shadow-2xl text-brand-purple-light relative flex flex-col justify-center">
+                              <p className="text-[9px] font-mono font-bold opacity-50 uppercase tracking-[0.3em] mb-3">Live System Status</p>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-brand-purple animate-pulse" />
+                                <h3 className="text-2xl font-black italic font-display text-white">OPERATIONAL</h3>
+                              </div>
+                              <p className="text-[10px] font-mono font-bold text-on-surface-variant mt-3 leading-relaxed uppercase tracking-wider">All protocols running. <br />Database synced 0ms ago.</p>
+                           </div>
+                        </div>
+
+                        <div className="p-6 bg-surface-lowest/40 rounded-2xl border border-white/5 flex items-center justify-between">
+                           <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-surface-low border border-white/10 flex items-center justify-center text-brand-purple font-bold text-base shadow-sm">
+                                 {profile.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                 <p className="text-xs font-bold text-white uppercase">{profile.name}</p>
+                                 <p className="text-[8px] font-mono font-bold text-on-surface-variant uppercase tracking-widest italic">{profile.uid.slice(0, 16).toUpperCase()}</p>
+                              </div>
+                           </div>
+                           <button onClick={onLogout} className="px-6 py-3 bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 rounded-xl font-mono font-black text-[9px] uppercase tracking-widest transition cursor-pointer active:scale-95">
+                              End Active Session
+                           </button>
+                        </div>
+                     </div>
+                  </section>
+               )}
+
             </main>
          </div>
 
-         {/* 📱 MOBILE VIEW (lg:hidden) */}
-         <div className="lg:hidden flex flex-col min-h-screen pb-24">
-            <header className="bg-white px-6 py-6 border-b border-slate-100 flex items-center justify-between sticky top-0 z-20 shadow-sm">
-               <Logo size="md" />
-               <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-600 shadow-inner">{profile.name.charAt(0)}</div>
-            </header>
-            <main className="flex-1 px-5 py-10 max-w-lg mx-auto w-full">{renderMobileControl()}</main>
-
-            <nav className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-2xl border-t border-slate-100 px-6 py-6 flex items-center justify-between z-40 pb-safe shadow-[0_-15px_40px_rgba(0,0,0,0.08)]">
-               {[
-                  { id: 'PENDING', icon: AlertCircle, label: 'Queue' },
-                  { id: 'RECHARGES', icon: Wallet, label: 'Recharges' },
-                  { id: 'ORDERS', icon: Receipt, label: 'Ledger' },
-                  { id: 'INSIGHT', icon: LayoutDashboard, label: 'Insight' },
-                  { id: 'SUMMARY', icon: LayoutGrid, label: 'Admin' }
-               ].map(tab => (
-                  <button key={tab.id} onClick={() => setActiveTab(tab.id as CashierTab)} className={`flex flex-col items-center gap-2 transition-all ${activeTab === tab.id ? 'text-emerald-600 scale-110 font-black' : 'text-slate-400'}`}>
-                     <div className={`p-2.5 rounded-2xl transition-all ${activeTab === tab.id ? 'bg-emerald-50 shadow-inner ring-1 ring-emerald-500/10' : 'bg-transparent'}`}><tab.icon className="w-5 h-5" /></div>
-                     <span className="text-[9px] font-black uppercase tracking-widest leading-none">{tab.label}</span>
-                  </button>
-               ))}
-            </nav>
-         </div>
-
-         {/* 🔴 OVERLAY SYNC */}
-         {loading && !pendingOrders.length && (
-            <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-3xl z-[100] flex flex-col items-center justify-center gap-10">
-               <div className="relative group">
-                  <div className="w-32 h-32 border-[12px] border-emerald-500/10 border-t-emerald-500 rounded-full animate-spin transition-all group-hover:scale-110" />
-                  <div className="absolute inset-0 flex items-center justify-center"><ShieldCheck className="w-12 h-12 text-emerald-500 animate-pulse" /></div>
-               </div>
-               <div className="text-center space-y-3 px-10">
-                  <h3 className="text-white font-black uppercase tracking-[0.8em] text-xs italic leading-none">Initializing Stratagem</h3>
-                  <p className="text-emerald-500/50 font-black text-[10px] uppercase tracking-widest animate-pulse leading-none">Syncing Decentralized Terminal Engine...</p>
-               </div>
-            </div>
-         )}
-
-         {/* 🖼️ WALLET SCREENSHOT MODAL */}
+         {/* WALLET SCREENSHOT PREVIEW MODAL */}
          {walletScreenshotModal && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm" onClick={() => setWalletScreenshotModal(null)}>
-               <div className="bg-white rounded-3xl overflow-hidden max-w-md w-full shadow-2xl relative" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => setWalletScreenshotModal(null)} className="absolute top-4 right-4 p-2 bg-slate-900/50 backdrop-blur-md text-white rounded-full"><X className="w-5 h-5" /></button>
-                  <img src={walletScreenshotModal} alt="Payment screenshot" className="w-full object-contain max-h-[80vh]" />
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm animate-fade-in" onClick={() => setWalletScreenshotModal(null)}>
+               <div className="bg-surface-mid border border-white/10 rounded-3xl overflow-hidden max-w-md w-full shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setWalletScreenshotModal(null)} className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md text-white rounded-full cursor-pointer hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
+                  <img src={walletScreenshotModal} alt="Payment screenshot" className="w-full object-contain max-h-[85vh]" />
                </div>
             </div>
          )}

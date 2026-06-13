@@ -1,6 +1,7 @@
 import { messaging, db, auth } from '../firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { triggerOneSignalWebhook } from './onesignal-webhook';
 
 /**
  * FIREBASE-ONLY NOTIFICATION SERVICE
@@ -159,8 +160,10 @@ export const listenForOrderUpdates = (orderId: string, onUpdate?: (data: any) =>
     let lastStatus: string | null = null;
     let lastFlowStatus: string | null = null;
 
-    return onSnapshot(doc(db, 'orders', orderId), (snapshot) => {
-        if (!snapshot.exists()) return;
+    return onSnapshot(
+        doc(db, 'orders', orderId),
+        (snapshot) => {
+            if (!snapshot.exists()) return;
         
         const data = snapshot.data();
         const currentStatus = data.orderStatus;
@@ -201,6 +204,8 @@ export const listenForOrderUpdates = (orderId: string, onUpdate?: (data: any) =>
         lastStatus = currentStatus;
         lastFlowStatus = currentFlowStatus;
         if (onUpdate) onUpdate(data);
+    }, (error) => {
+        console.warn(`[listenForOrderUpdates] Listener error: ${error.message}`);
     });
 };
 
@@ -231,11 +236,19 @@ if (typeof window !== 'undefined') {
  * FCM SERVER PUSH: For background notification, call a Cloud Function here.
  * Current: local Notification API only (works while app is open/focused).
  */
-export const notifyRechargeApproved = (amount: number): void => {
+export const notifyRechargeApproved = (amount: number, userId?: string): void => {
     triggerLocalNotification(
         '✅ Recharge Approved!',
         `₹${amount} has been added to your JOE Wallet.`
     );
+    // Background push — works even when app is closed
+    if (userId) {
+        triggerOneSignalWebhook(
+            userId,
+            '✅ Wallet Recharged!',
+            `₹${amount} has been added to your JOE Wallet. Your balance is now updated.`
+        );
+    }
     // Dispatch DOM event so WalletView can show an in-app toast
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('joe_wallet_recharged', { detail: { amount } }));
@@ -245,11 +258,19 @@ export const notifyRechargeApproved = (amount: number): void => {
 /**
  * Notify student that their recharge was rejected.
  */
-export const notifyRechargeRejected = (amount: number, note?: string): void => {
+export const notifyRechargeRejected = (amount: number, note?: string, userId?: string): void => {
     triggerLocalNotification(
         '❌ Recharge Rejected',
         `Your ₹${amount} recharge request was declined.${note ? ` Reason: ${note}` : ''}`
     );
+    // Background push — works even when app is closed
+    if (userId) {
+        triggerOneSignalWebhook(
+            userId,
+            '❌ Recharge Request Declined',
+            `Your ₹${amount} top-up was rejected.${note ? ` Reason: ${note}` : ' Please contact the cashier.'}`
+        );
+    }
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('joe_wallet_rejected', { detail: { amount, note } }));
     }

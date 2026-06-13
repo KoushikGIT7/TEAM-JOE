@@ -1,21 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Camera, 
   CheckCircle, 
   XSquare, 
-  ChevronRight, 
   AlertCircle,
-  Clock,
   LogOut,
   Sparkles,
   Zap,
-  ShieldCheck,
-  Timer
+  ShieldCheck
 } from 'lucide-react';
-import { Order, UserProfile } from '../../types';
+import { UserProfile } from '../../types';
 import { getScanLogs, processAtomicIntake } from '../../services/firestore-db';
 import QRScanner from '../../components/QRScanner';
 import Logo from '../../components/Logo';
+import { joeSounds } from '../../utils/audio';
 
 interface ScannerViewProps {
   profile: UserProfile;
@@ -28,8 +26,6 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [terminalState, setTerminalState] = useState<'IDLE' | 'SCANNING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [lastResult, setLastResult] = useState<{ title: string; sub: string } | null>(null);
-
-import { joeSounds } from '../../utils/audio';
 
   // 🛡️ [Principal Architect] Sonic Feedback Engine
   const triggerStrobe = (state: 'SUCCESS' | 'ERROR', title: string, sub: string) => {
@@ -50,25 +46,21 @@ import { joeSounds } from '../../utils/audio';
     setTimeout(() => {
        setTerminalState('IDLE');
        setLastResult(null);
-    }, state === 'SUCCESS' ? 3000 : 4000); // 🕒 Increased to 3s/4s for readability
+    }, state === 'SUCCESS' ? 3000 : 4000);
   };
 
   const handleScan = async (data: string) => {
     if (!data?.trim() || terminalState !== 'IDLE') return;
 
-    // 🏎️ [PREDICTIVE-UI] Instant validation flash - NO VIBRATION here
     setLastResult({ title: 'VERIFYING...', sub: 'Checking Token Integrity' });
     setTerminalState('SUCCESS');
 
     try {
-      // Pass true for autoServeReady so READY items are instantly marked SERVED and deducted
       const { result } = await processAtomicIntake(data.trim(), profile.uid, true);
       
-      // [PHASED-AUDIT] Type-Cast for string comparison as result might be an extended enum
       const res = result as string;
       
       if (res === 'ALREADY_MANIFESTED' || res === 'ALREADY_CONSUMED') {
-         // Silent re-scan gate
          return;
       } else if (res === 'AWAITING_PAYMENT') {
         triggerStrobe('ERROR', 'UNPAID ORDER', 'Direct student to cashier');
@@ -102,7 +94,7 @@ import { joeSounds } from '../../utils/audio';
   }, []);
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 flex-col overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-zinc-950 flex-col overflow-hidden font-sans text-zinc-100">
       
       {/* 📸 CAMERA INTAKE */}
       {isCameraOpen && (
@@ -118,20 +110,20 @@ import { joeSounds } from '../../utils/audio';
       )}
 
       {/* 🏷️ HEADER */}
-      <div className="px-8 h-20 flex justify-between items-center bg-white border-b border-slate-200 shrink-0 shadow-sm">
+      <div className="px-8 h-20 flex justify-between items-center bg-zinc-900/40 backdrop-blur-md border-b border-white/5 shrink-0 shadow-lg">
         <div className="flex items-center gap-4">
-           <div className="bg-slate-900 p-2 rounded-lg">
+           <div className="bg-zinc-950 p-2 rounded-xl border border-white/5">
               <Logo size="sm" />
            </div>
-           <h1 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Intake Console</h1>
+           <h1 className="text-lg font-black text-white uppercase tracking-wider italic">Intake Console</h1>
         </div>
         <div className="flex items-center gap-6">
            <div className="text-right">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Operator</p>
-              <p className="text-sm font-black text-slate-900">{profile?.name || 'Authorized Staff'}</p>
+              <p className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest mb-0.5">Operator</p>
+              <p className="text-sm font-black text-white">{profile?.name || 'Authorized Staff'}</p>
            </div>
-           <div className="h-10 w-[1px] bg-slate-200" />
-           <button onClick={onLogout} className="p-3 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-100 rounded-xl text-slate-400 hover:text-rose-600 transition-all">
+           <div className="h-10 w-[1px] bg-white/5" />
+           <button onClick={onLogout} className="p-3 bg-white/5 hover:bg-rose-500/10 border border-white/10 hover:border-rose-500/20 rounded-xl text-zinc-400 hover:text-rose-500 transition-all">
               <LogOut className="w-5 h-5" />
            </button>
         </div>
@@ -140,71 +132,71 @@ import { joeSounds } from '../../utils/audio';
       <main className="flex-1 p-8 overflow-hidden flex gap-8">
         
         {/* ACTION PANEL */}
-        <div className="w-[450px] space-y-8 h-full flex flex-col">
-           <div className="bg-slate-900 rounded-[3rem] p-12 text-center text-white shadow-2xl relative overflow-hidden group">
+        <div className="w-[450px] space-y-6 h-full flex flex-col">
+           <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 text-center text-white shadow-2xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-                 <Sparkles className="w-32 h-32 text-white blur-xl" />
+                 <Sparkles className="w-32 h-32 text-purple-400 blur-xl" />
               </div>
-              <h2 className="text-4xl font-black uppercase tracking-tighter italic mb-8 relative z-10">Scan Student QR</h2>
-              <p className="text-white/40 font-bold text-[10px] uppercase tracking-[0.4em] mb-12 relative z-10">Live Validation Protocol v4.0</p>
+              <h2 className="text-3xl font-black uppercase tracking-wider italic mb-6 relative z-10">Scan Student QR</h2>
+              <p className="text-zinc-500 font-mono font-bold text-[9px] uppercase tracking-widest mb-8 relative z-10">Live Validation Protocol v4.0</p>
               <button 
                 onClick={() => setIsCameraOpen(true)}
-                className="w-full h-24 bg-white text-slate-900 rounded-3xl font-black uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all text-sm flex items-center justify-center gap-6 relative z-10"
+                className="w-full h-20 bg-brand-purple hover:bg-brand-purple-light text-white rounded-2xl font-black uppercase tracking-wider shadow-lg active:scale-95 transition-all text-sm flex items-center justify-center gap-4 relative z-10 cursor-pointer"
               >
-                <Camera className="w-8 h-8" />
+                <Camera className="w-6 h-6" />
                 Initialize Intake
               </button>
            </div>
 
            {/* Feedback Area */}
-           <div className="flex-1 relative bg-white rounded-[3.5rem] border-4 border-slate-100 p-12 flex flex-col items-center justify-center text-center overflow-hidden">
+           <div className="flex-1 relative bg-zinc-900/20 rounded-3xl border border-white/5 p-8 flex flex-col items-center justify-center text-center overflow-hidden">
               {terminalState === 'IDLE' ? (
                  <>
-                    <Zap className="w-16 h-16 text-slate-100 mb-6" />
-                    <h3 className="text-2xl font-black text-slate-200 uppercase tracking-tighter">Awaiting Signal</h3>
+                    <Zap className="w-12 h-12 text-zinc-800 mb-4 animate-pulse" />
+                    <h3 className="text-lg font-black text-zinc-600 uppercase tracking-widest">Awaiting Signal</h3>
                  </>
               ) : (
-                <div className={`absolute inset-0 flex flex-col items-center justify-center p-12 animate-in zoom-in duration-150 ${
-                   terminalState === 'SUCCESS' ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'
-                }`}>
-                   <div className="bg-white/20 p-6 rounded-[2.5rem] mb-6">
-                      {terminalState === 'SUCCESS' ? <ShieldCheck className="w-16 h-16" /> : <AlertCircle className="w-16 h-16" />}
-                   </div>
-                   <h2 className="text-4xl font-black uppercase tracking-tighter italic mb-2">{lastResult?.title}</h2>
-                   <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-80">{lastResult?.sub}</p>
-                </div>
+                 <div className={`absolute inset-0 flex flex-col items-center justify-center p-8 animate-in zoom-in duration-150 ${
+                    terminalState === 'SUCCESS' ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/20' : 'bg-rose-950/90 text-rose-400 border border-rose-500/20'
+                 }`}>
+                    <div className="bg-white/5 border border-white/10 p-4 rounded-2xl mb-4">
+                       {terminalState === 'SUCCESS' ? <ShieldCheck className="w-12 h-12" /> : <AlertCircle className="w-12 h-12" />}
+                    </div>
+                    <h2 className="text-3xl font-black uppercase tracking-wider italic mb-2">{lastResult?.title}</h2>
+                    <p className="text-[10px] font-mono font-bold uppercase tracking-widest opacity-80">{lastResult?.sub}</p>
+                 </div>
               )}
            </div>
         </div>
 
         {/* LOG PANEL */}
-        <div className="flex-1 bg-white rounded-[4rem] border-4 border-slate-100 overflow-hidden flex flex-col shadow-huge">
-           <div className="p-10 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <div className="flex-1 bg-zinc-900/30 border border-white/5 rounded-3xl overflow-hidden flex flex-col shadow-2xl">
+           <div className="p-8 border-b border-white/5 flex justify-between items-center bg-zinc-900/10">
               <div className="flex flex-col">
-                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Operational Trail</span>
-                 <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Recent Intake Logs</h2>
+                 <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest mb-1">Operational Trail</span>
+                 <h2 className="text-xl font-black text-white uppercase tracking-wider italic">Recent Intake Logs</h2>
               </div>
-              <div className="bg-white px-5 py-2 rounded-xl text-[10px] font-black text-emerald-600 border border-emerald-100 shadow-sm flex items-center gap-2">
-                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="bg-brand-purple/10 border border-brand-purple/20 px-4 py-1.5 rounded-xl text-[9px] font-mono font-bold text-brand-purple shadow-sm flex items-center gap-2">
+                 <div className="w-1.5 h-1.5 rounded-full bg-brand-purple animate-pulse" />
                  LIVE STREAM
               </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-10 space-y-4">
+           <div className="flex-1 overflow-y-auto p-8 space-y-4">
               {recentScans.map((log: any, i: number) => (
-                <div key={i} className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl group hover:bg-slate-100 transition-colors">
-                   <div className="flex items-center gap-6">
-                      <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center border border-slate-200 shadow-sm group-hover:border-slate-300 transition-colors">
-                         {log.result === 'SUCCESS' ? <CheckCircle className="w-6 h-6 text-emerald-500" /> : <XSquare className="w-6 h-6 text-rose-500" />}
+                <div key={i} className="flex items-center justify-between p-5 bg-zinc-900/50 border border-white/5 rounded-2xl group hover:bg-zinc-800/40 hover:border-white/10 transition-colors">
+                   <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-zinc-950 flex items-center justify-center border border-white/5 group-hover:border-white/10 transition-colors">
+                         {log.result === 'SUCCESS' ? <CheckCircle className="w-5 h-5 text-brand-purple-light" /> : <XSquare className="w-5 h-5 text-rose-400" />}
                       </div>
                       <div>
-                         <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Order #{log.orderId?.slice(-6).toUpperCase()}</p>
-                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Status: {log.disposition || 'Processed'}</p>
+                         <p className="text-sm font-black text-white uppercase tracking-wider font-mono">Order #{log.orderId?.slice(-6).toUpperCase()}</p>
+                         <p className="text-[10px] font-mono font-bold text-zinc-500 uppercase tracking-widest mt-1">Status: {log.disposition || 'Processed'}</p>
                       </div>
                    </div>
                    <div className="text-right">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Log Time</p>
-                      <p className="text-xs font-black text-slate-900 font-mono italic">
+                      <p className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest leading-none mb-1">Log Time</p>
+                      <p className="text-xs font-mono font-bold text-white italic">
                          {new Date(log.scanTime?.toDate?.() || log.scanTime).toLocaleTimeString()}
                       </p>
                    </div>

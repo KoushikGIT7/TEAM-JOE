@@ -1,85 +1,116 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { LogOut, CheckCircle, AlertCircle, Clock, ChefHat, Zap } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { LogOut, ShieldCheck, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
 import { UserProfile } from '../../types';
-import { validateQRForServing, serveOrderItemsAtomic } from '../../services/firestore-db';
-import { STATION_ID_BY_ITEM_ID, PREPARATION_STATIONS } from '../../constants';
+import { validateQRForServing } from '../../services/firestore-db';
 import QRScanner from '../../components/QRScanner';
 import { joeSounds } from '../../utils/audio';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import ServerConsoleWorkspace from './ServerConsoleWorkspace';
 
 interface Props {
   profile: UserProfile;
-  onLogout?: () => void;
+  onLogout: () => void;
   onOpenKitchen?: () => void;
 }
 
-type ScanState = 'IDLE' | 'SUCCESS' | 'ERROR' | 'COOKING';
-
 const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
-  const [selectedStation, setSelectedStation] = useState<string>('all');
-  const [scanState, setScanState] = useState<ScanState>('IDLE');
-  const [feedback, setFeedback] = useState<string>('');
-  const [studentName, setStudentName] = useState<string>('');
-  const [servedItems, setServedItems] = useState<string[]>([]);
-  
-  // 🥊 ASYNC LOCKS (Microsecond Precision)
+  const [hudState, setHudState] = useState<'IDLE' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [hudMessage, setHudMessage] = useState('');
+  const [hudPayload, setHudPayload] = useState<{ 
+     studentName: string; 
+     itemNames: string[];
+     customTitle?: string;
+     customFrameColor?: string;
+     customAvatarDecoration?: string;
+  } | null>(null);
+
+  const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+  const [isCameraOpen, setIsCameraOpen] = useState(true);
+  const [scanQueue, setScanQueue] = useState<string[]>([]);
   const isProcessingScannerRef = useRef(false);
   const lastScannedTokenRef = useRef<{ token: string; time: number } | null>(null);
 
+  useEffect(() => {
+    return joeSounds.subscribe(() => {
+       setAudioStatus(joeSounds.getMutedState());
+    });
+  }, []);
+
   const resetToIdle = useCallback((delay = 800) => {
     setTimeout(() => {
-      setScanState('IDLE');
-      setFeedback('');
-      setStudentName('');
-      setServedItems([]);
+      setHudState('IDLE');
+      setHudMessage('');
+      setHudPayload(null);
       isProcessingScannerRef.current = false;
     }, delay);
   }, []);
 
-  // ⚡ SUPERSONIC ZERO-WAIT SERVE ENGINE
   const processQRScan = useCallback(async (data: string) => {
     const now = Date.now();
     const token = data.trim();
-    
-    // 🛡️ [RAPID-DEBOUNCE]: Prevent double-scans of the same QR code while phone is held up (4000ms ttl)
+
     if (lastScannedTokenRef.current?.token === token && now - lastScannedTokenRef.current.time < 4000) return;
     if (isProcessingScannerRef.current) return;
-    
+
     isProcessingScannerRef.current = true;
     lastScannedTokenRef.current = { token, time: now };
 
     try {
-      // 🚀 [HYPER-CORE]: Unlock the scanner 1ms after DB results to permit "Rapid-Fire" multi-student intake
-      // Success modal stays up for visibility, but doesn't block the NEXT scan.
-      
       const { order, result } = await validateQRForServing(token, profile.uid, true); // true = autoServeReady
 
-      // ✅ CONSUMED = all fast-items were just served atomically RIGHT NOW → big success
-      // ✅ MANIFESTED = dynamic/prep items queued for kitchen → success (waiting)
-      // ✅ ALREADY_MANIFESTED = re-scan of prep order, kitchen still cooking → show success
       if (result === 'CONSUMED' || result === 'MANIFESTED' || result === 'ALREADY_MANIFESTED') {
-        setScanState('SUCCESS');
-        setStudentName(order.userName || 'Student');
-
-        // Show items that were just served (within 5s) or all served items for CONSUMED
         const justServed = order.items?.filter((i: any) =>
           i.status === 'SERVED' && (result === 'CONSUMED' || (Date.now() - (i.servedAt || 0) < 5000))
         ).map((i: any) => i.name) || [];
-        setServedItems(justServed);
 
-        // Haptic + Audio feedback for Success
-        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
-        joeSounds.stopAll();
+        // Fetch student customizations
+        let customTitle = '';
+        let customFrameColor = '';
+        let customAvatarDecoration = '';
+        try {
+          const userSnap = await getDoc(doc(db, "users", order.userId));
+          if (userSnap.exists()) {
+             const userData = userSnap.data();
+             customTitle = userData.customTitle || '';
+             customFrameColor = userData.customFrameColor || '';
+             customAvatarDecoration = userData.customAvatarDecoration || '';
+          }
+        } catch (e) {
+          console.error("Failed to load user decorations on counter scan HUD:", e);
+        }
+
         joeSounds.playServerScanSuccess();
+        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
 
-        // ⚡ RELEASE LOCK EARLY: Next student can be scanned immediately
+        setHudState('SUCCESS');
+        setHudPayload({
+          studentName: order.userName || 'Student',
+          itemNames: justServed.length > 0 ? justServed : ['Order Items'],
+          customTitle,
+          customFrameColor,
+          customAvatarDecoration
+        });
+
+        // Add order ID to scanQueue
+        setScanQueue(prev => {
+          if (prev.includes(order.id)) return prev;
+          return [...prev, order.id];
+        });
+
         isProcessingScannerRef.current = false;
+
+        // Transition from Scanner to Console View after a short delay
+        setTimeout(() => {
+          setIsCameraOpen(false);
+        }, 1500);
+
         resetToIdle(result === 'ALREADY_MANIFESTED' ? 3000 : 2000);
         return;
       }
 
-      // AWAITING_PAYMENT: rare edge case
-      setScanState('ERROR');
-      setFeedback('PAYMENT PENDING');
+      setHudState('ERROR');
+      setHudMessage('PAYMENT PENDING');
       if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
       joeSounds.stopAll();
       joeSounds.playErrorBuzzer();
@@ -87,7 +118,6 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       resetToIdle(1500);
 
     } catch (err: any) {
-      // Translate raw Firebase/internal error codes into human-readable messages
       const msg: string = err.message || '';
       let display = 'SCAN ERROR';
       if (msg.includes('ALREADY_CONSUMED') || msg.includes('ALREADY_SERVED'))  display = 'ALREADY SERVED';
@@ -97,8 +127,8 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       else if (msg.includes('PAYMENT'))                                         display = 'PAYMENT NOT VERIFIED';
       else if (msg.includes('EXPIRED'))                                         display = 'QR CODE EXPIRED';
 
-      setScanState('ERROR');
-      setFeedback(display);
+      setHudState('ERROR');
+      setHudMessage(display);
       if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
       joeSounds.stopAll();
       joeSounds.playErrorBuzzer();
@@ -107,85 +137,174 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
     }
   }, [profile.uid, resetToIdle]);
 
-  return (
-    <div className="h-[100dvh] w-screen bg-black overflow-hidden relative font-sans text-white select-none">
-      
-      {/* 🍱 HEADER / STATUS */}
-      <div className="absolute top-0 left-0 right-0 z-[150] bg-zinc-900/40 backdrop-blur-3xl border-b border-white/5 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-           <Zap className="w-5 h-5 text-emerald-400 fill-emerald-400" />
-           <div>
-             <h2 className="text-xs font-black uppercase tracking-widest text-white leading-none">Universal Scanner</h2>
-             <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mt-1 italic animate-pulse tracking-[0.2em]">Ready for Pickup</p>
-           </div>
-        </div>
-        <button onClick={onLogout} className="p-3 bg-white/5 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all active:scale-90">
-           <LogOut className="w-5 h-5" />
-        </button>
-      </div>
+  const handleAudioToggle = async () => {
+    if (audioStatus === 'Silent') {
+      await joeSounds.init();
+    } else {
+      joeSounds.toggleMute();
+    }
+  };
 
-      {/* 1. CAMERA FEED (Sonic Mode) */}
-      <div className="absolute inset-0 z-0">
+  // Switch to Server Console dashboard when scanner is closed
+  if (!isCameraOpen) {
+    return (
+      <div className="relative w-full h-[100dvh] bg-surface-lowest text-white select-none overflow-hidden">
+        <ServerConsoleWorkspace
+          scanQueue={scanQueue}
+          setScanQueue={setScanQueue}
+          setIsCameraOpen={setIsCameraOpen}
+          isMobile={false}
+        />
+        
+        {/* Floating exit/logout action available on Console dashboard */}
+        <button 
+          onClick={() => {
+            if (confirm('Are you sure you want to exit the serving counter?')) {
+              onLogout();
+            }
+          }}
+          className="absolute top-6 left-6 z-40 flex items-center justify-center w-10 h-10 rounded-full bg-zinc-950/80 hover:bg-zinc-900 border border-white/10 text-zinc-400 hover:text-white transition active:scale-95 cursor-pointer shadow-lg"
+          title="Exit Counter"
+        >
+          <LogOut className="w-5 h-5" />
+        </button>
+
+        {/* Floating Audio Toggle button in Console dashboard */}
+        <div className="absolute top-6 right-6 z-40 flex items-center gap-3">
+           <button 
+              onClick={handleAudioToggle}
+              className={`px-3.5 py-2 rounded-xl border flex items-center gap-1.5 text-[9px] font-mono font-black backdrop-blur-md transition active:scale-95 cursor-pointer shadow-lg ${
+                 audioStatus === 'Connected' 
+                    ? 'bg-brand-purple/20 border-brand-purple/40 text-brand-purple-light' 
+                    : audioStatus === 'Muted'
+                       ? 'bg-rose-500/25 border-rose-500/40 text-rose-400'
+                       : 'bg-amber-500/25 border-amber-500/40 text-amber-400'
+              }`}
+           >
+              {audioStatus === 'Connected' ? (
+                 <>
+                    <Volume2 className="w-3.5 h-3.5 text-brand-purple" />
+                    <span>AUDIO: CENTRAL ACTIVE</span>
+                 </>
+              ) : audioStatus === 'Muted' ? (
+                 <>
+                    <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                    <span>AUDIO: MUTED</span>
+                 </>
+              ) : (
+                 <>
+                    <VolumeX className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                    <span>AUDIO: SILENT (TAP TO WAKE)</span>
+                 </>
+              )}
+           </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div id="counter-serving-terminal" className="relative w-full h-[100dvh] bg-zinc-950 text-white select-none overflow-hidden">
+      
+      {/* 1. Immersive camera viewport */}
+      <div className="absolute inset-0 w-full h-full z-0">
         <QRScanner onScan={processQRScan} onClose={() => {}} />
       </div>
 
-      {/* 2. RAPID FEEDBACK ENGINE (HUD) */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
+      {/* 2. Floating exit/logout action */}
+      <button 
+        onClick={() => {
+          if (confirm('Are you sure you want to exit the scanning counter?')) {
+            onLogout();
+          }
+        }}
+        className="absolute top-6 left-6 z-40 flex items-center justify-center w-10 h-10 rounded-full bg-zinc-950/80 hover:bg-zinc-900 border border-white/10 text-zinc-400 hover:text-white transition active:scale-95 cursor-pointer shadow-lg"
+        title="Exit Scanner"
+      >
+        <LogOut className="w-5 h-5" />
+      </button>
 
-        {/* Scan Status Modal (Minimal) */}
-        {scanState !== 'IDLE' && (
-          <div className="flex flex-col items-center gap-6 animate-in zoom-in-50 duration-200">
-            
-            <div className={`w-40 h-40 rounded-[3rem] flex items-center justify-center shadow-2xl transition-colors duration-300 ${
-              scanState === 'SUCCESS' ? 'bg-emerald-500 shadow-emerald-500/60' : 
-              scanState === 'COOKING' ? 'bg-amber-500 shadow-amber-500/60' : 
-              'bg-red-600 shadow-red-600/60'
-            }`}>
-              {scanState === 'SUCCESS' ? <CheckCircle className="w-20 h-20 text-black" strokeWidth={3} /> : 
-               scanState === 'COOKING' ? <ChefHat className="w-20 h-20 text-black" strokeWidth={2.5} /> : 
-               <AlertCircle className="w-20 h-20 text-white" strokeWidth={3} />}
-            </div>
-
-            <div className="text-center bg-black/80 backdrop-blur-2xl px-12 py-8 rounded-[3rem] border border-white/10 shadow-3xl max-w-[85vw]">
-               <h3 className={`text-[10px] font-black uppercase tracking-[0.3em] mb-2 ${
-                 scanState === 'SUCCESS' ? 'text-emerald-400' : 'text-amber-400'
-               }`}>
-                 {scanState === 'SUCCESS' ? 'Order Served' : 'Handover Restricted'}
-               </h3>
-               <p className="text-4xl font-black italic tracking-tighter leading-none mb-4">
-                 {scanState === 'SUCCESS' ? studentName : feedback}
-               </p>
-               {scanState === 'SUCCESS' && servedItems.length > 0 && (
-                 <div className="flex flex-wrap justify-center gap-3 mt-4">
-                    {servedItems.map((item, idx) => (
-                      <span key={idx} className="px-5 py-2 bg-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                        {item}
-                      </span>
-                    ))}
-                 </div>
-               )}
-            </div>
-          </div>
-        )}
-
-        {/* Target Finder (Only visible when IDLE) */}
-        {scanState === 'IDLE' && (
-          <div className="relative opacity-20 transition-opacity">
-            <div className="w-80 h-80 rounded-[4rem] border-4 border-dashed border-white animate-[pulse_2s_infinite]" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-2 h-2 rounded-full bg-white shadow-[0_0_15px_white]" />
-            </div>
-          </div>
-        )}
+      {/* Floating Audio Toggle button at top right */}
+      <div className="absolute top-6 right-6 z-40 flex items-center gap-3">
+         <button 
+            onClick={handleAudioToggle}
+            className={`px-3.5 py-2 rounded-xl border flex items-center gap-1.5 text-[9px] font-mono font-black backdrop-blur-md transition active:scale-95 cursor-pointer shadow-lg ${
+               audioStatus === 'Connected' 
+                  ? 'bg-brand-purple/20 border-brand-purple/40 text-brand-purple-light' 
+                  : audioStatus === 'Muted'
+                     ? 'bg-rose-500/25 border-rose-500/40 text-rose-400'
+                     : 'bg-amber-500/25 border-amber-500/40 text-amber-400'
+            }`}
+         >
+            {audioStatus === 'Connected' ? (
+               <>
+                  <Volume2 className="w-3.5 h-3.5 text-brand-purple" />
+                  <span>AUDIO: CENTRAL ACTIVE</span>
+               </>
+            ) : audioStatus === 'Muted' ? (
+               <>
+                  <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                  <span>AUDIO: MUTED</span>
+               </>
+            ) : (
+               <>
+                  <VolumeX className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span>AUDIO: SILENT (TAP TO WAKE)</span>
+               </>
+            )}
+         </button>
       </div>
 
-      {/* 3. STATUS TAIL (Bottom UI) */}
-      <div className="absolute bottom-10 inset-x-0 flex justify-center z-20 pointer-events-none">
-        <div className="px-10 py-4 rounded-full bg-emerald-500/10 border border-emerald-500/30 backdrop-blur-xl flex items-center gap-3">
-          <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400" />
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400">Sonic Mode Active</p>
+      {/* 3. Verification Success Overlay */}
+      {hudState === 'SUCCESS' && hudPayload && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-[fade-in_0.2s_ease-out] pointer-events-none">
+          <div className="flex flex-col items-center text-center space-y-4 max-w-sm">
+            <div className={`w-20 h-20 rounded-full border-2 ${
+              hudPayload.customFrameColor || 'border-brand-purple/60'
+            } bg-brand-purple/20 flex items-center justify-center text-brand-purple relative shadow-[0_0_30px_rgba(183,109,255,0.25)] animate-[scale-in_0.3s_ease-out]`}>
+              <ShieldCheck className="w-10 h-10 text-brand-purple" />
+              {hudPayload.customAvatarDecoration && (
+                <span className="absolute -top-1 -right-1 text-lg animate-pulse">{hudPayload.customAvatarDecoration}</span>
+              )}
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono font-bold tracking-widest text-brand-purple uppercase">
+                Authorized
+              </span>
+              <h2 className="text-lg font-black text-white uppercase tracking-wide leading-tight">
+                {hudPayload.itemNames.join(', ')}
+              </h2>
+              <p className="text-zinc-200 text-xs font-bold uppercase font-mono flex items-center justify-center gap-1.5 mt-1">
+                <span>{hudPayload.studentName}</span>
+                {hudPayload.customTitle && (
+                  <span className="text-[9px] text-[#ddb7ff] bg-[#b76dff]/25 px-2 py-0.5 rounded-full font-black border border-[#b76dff]/40">
+                    {hudPayload.customTitle}
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* 4. Verification Error Overlay */}
+      {hudState === 'ERROR' && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-[fade-in_0.2s_ease-out] pointer-events-none">
+          <div className="flex flex-col items-center text-center space-y-4 max-w-sm">
+            <div className="w-20 h-20 rounded-full bg-red-500/20 border-2 border-red-500/60 flex items-center justify-center text-red-500 shadow-[0_0_30px_rgba(239,68,68,0.2)] animate-[scale-in_0.3s_ease-out]">
+              <AlertTriangle className="w-10 h-10 text-red-500" />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono font-bold tracking-widest text-red-400 uppercase">
+                Rejected
+              </span>
+              <p className="text-sm font-bold text-zinc-200 uppercase max-w-xs leading-relaxed">
+                {hudMessage}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

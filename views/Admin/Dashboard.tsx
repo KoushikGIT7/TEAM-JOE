@@ -36,7 +36,42 @@ import {
   getWalletAnalytics,
 } from '../../services/wallet';
 
-const COLORS = ['#0F9D58', '#34D399', '#FBBF24', '#6B7280', '#EF4444'];
+const COLORS = ['#b76dff', '#ddb7ff', '#FBBF24', '#6B7280', '#EF4444'];
+
+const compressImage = (base64Str: string, maxWidth = 500, maxHeight = 500, quality = 0.7): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
 
 interface AdminDashboardProps {
   profile: UserProfile;
@@ -446,9 +481,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
       {/* Financial Metrics — 2 cols on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {[
-          { label: 'Period Revenue', value: `₹${stats.periodRevenue.toLocaleString()}`, icon: DollarSign, color: 'bg-primary/10 text-primary', trend: `+${stats.periodOrders} orders` },
-          { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-green-50 text-green-600', trend: 'All Time' },
-          { label: 'Profit', value: `₹${stats.totalPnL.toLocaleString()}`, icon: TrendingUp, color: 'bg-accent/10 text-accent', trend: `${Math.round((stats.totalPnL / (stats.totalRevenue||1)) * 100)}% margin` },
+          { label: 'Period Revenue', value: `₹${stats.periodRevenue.toLocaleString()}`, icon: DollarSign, color: 'bg-brand-purple/10 text-brand-purple', trend: `+${stats.periodOrders} orders` },
+          { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-brand-purple/10 text-brand-purple', trend: 'All Time' },
+          { label: 'Profit', value: `₹${stats.totalPnL.toLocaleString()}`, icon: TrendingUp, color: 'bg-brand-purple-light/10 text-brand-purple-light', trend: `${Math.round((stats.totalPnL / (stats.totalRevenue||1)) * 100)}% margin` },
           { label: 'Avg Order', value: `₹${Math.round(stats.avgOrderValue)}`, icon: Zap, color: 'bg-cash/10 text-cash', trend: `${stats.totalOrders} total` },
         ].map((s, i) => (
           <div key={i} className="bg-white p-4 sm:p-6 rounded-[1.5rem] border border-black/5 shadow-sm">
@@ -496,15 +531,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
               <AreaChart data={stats.weeklyData}>
                 <defs>
                   <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0F9D58" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#0F9D58" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#b76dff" stopOpacity={0.15}/>
+                    <stop offset="95%" stopColor="#b76dff" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} width={40} />
                 <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} itemStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
-                <Area type="monotone" dataKey="revenue" stroke="#0F9D58" strokeWidth={3} fill="url(#revenueGrad)" />
+                <Area type="monotone" dataKey="revenue" stroke="#b76dff" strokeWidth={3} fill="url(#revenueGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1151,15 +1186,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                     <AreaChart data={reportData.revenueTrend || []}>
                       <defs>
                         <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#0F9D58" stopOpacity={0.2}/>
-                          <stop offset="95%" stopColor="#0F9D58" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#b76dff" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#b76dff" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="revenue" stroke="#0F9D58" strokeWidth={3} fill="url(#revGrad)" />
+                      <Area type="monotone" dataKey="revenue" stroke="#b76dff" strokeWidth={3} fill="url(#revGrad)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -1187,7 +1222,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                     <PieChart>
                       <Pie data={reportData.paymentSplit || []} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={4}>
                         {(reportData.paymentSplit || []).map((_: any, idx: number) => (
-                          <Cell key={idx} fill={['#0F9D58','#6366F1','#F59E0B'][idx % 3]} />
+                          <Cell key={idx} fill={['#b76dff','#6366F1','#F59E0B'][idx % 3]} />
                         ))}
                       </Pie>
                       <Tooltip />
@@ -1213,7 +1248,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: 'Pending Requests', value: walletAnalytics.pendingRequestsCount, color: 'bg-amber-50 text-amber-600', icon: '⏳' },
-            { label: 'Recharged Today', value: `₹${walletAnalytics.totalRechargedToday.toLocaleString()}`, color: 'bg-emerald-50 text-emerald-600', icon: '💳' },
+            { label: 'Recharged Today', value: `₹${walletAnalytics.totalRechargedToday.toLocaleString()}`, color: 'bg-primary/10 text-primary', icon: '💳' },
             { label: 'Total Revenue', value: `₹${walletAnalytics.totalRevenueAllTime.toLocaleString()}`, color: 'bg-blue-50 text-blue-600', icon: '🏦' },
           ].map((s, i) => (
             <div key={i} className="bg-white p-6 rounded-[1.5rem] border border-black/5 shadow-sm flex items-center gap-4">
@@ -1240,7 +1275,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                   onClick={() => setWalletRequestFilter(status)}
                   className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     walletRequestFilter === status
-                      ? status === 'pending' ? 'bg-amber-500 text-white' : status === 'approved' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
+                      ? status === 'pending' ? 'bg-amber-500 text-white' : status === 'approved' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-red-500 text-white'
                       : 'bg-gray-100 text-textSecondary hover:bg-gray-200'
                   }`}
                 >
@@ -1273,7 +1308,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                       <p className="font-black text-textMain">{req.studentName}</p>
                       <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
                         req.status === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                        req.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                        req.status === 'approved' ? 'bg-primary/10 text-primary border border-primary/20' :
                         'bg-red-50 text-red-600 border border-red-100'
                       }`}>{req.status}</span>
                     </div>
@@ -1309,7 +1344,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                           }
                         }}
                         disabled={!!walletActionLoading}
-                        className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200 active:scale-95 transition-all disabled:opacity-50"
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all disabled:opacity-50"
                       >
                         {walletActionLoading === req.id + '_approve' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
                         Approve
@@ -1419,7 +1454,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8 border-t border-dashed">
           <div className="space-y-6">
             <h4 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center gap-2">
-               <DollarSign className="w-4 h-4 text-primary" /> Financial Controls
+               <DollarSign className="w-4 h-4 text-brand-purple" /> Financial Controls
             </h4>
             <div className="grid grid-cols-2 gap-4">
                <div className="space-y-2">
@@ -1563,13 +1598,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         </div>
       </main>
 
-      {/* Mobile Bottom Tab Bar — only visible on mobile */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[120] bg-white/95 backdrop-blur-xl border-t border-black/5 flex items-center justify-around px-2 py-2 safe-area-pb">
+      {/* Mobile Bottom Tab Bar — scrollable on mobile to prevent overflow/clipping */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[120] bg-white/95 backdrop-blur-xl border-t border-black/5 flex items-center justify-start gap-4 px-4 py-2 pb-[env(safe-area-inset-bottom,12px)] overflow-x-auto hide-scrollbar select-none">
         {navItems.map(item => (
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-2xl transition-all ${
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-2xl transition-all shrink-0 ${
               activeTab === item.id
                 ? 'text-primary bg-primary/8'
                 : 'text-slate-400'
@@ -1584,24 +1619,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         {onOpenKitchen && (
           <button
             onClick={onOpenKitchen}
-            className="flex flex-col items-center gap-1 px-3 py-2 rounded-2xl text-amber-500"
+            className="flex flex-col items-center gap-1 px-3 py-2 rounded-2xl text-amber-500 shrink-0"
           >
             <ChefHat className="w-5 h-5" />
             <span className="text-[8px] font-black uppercase tracking-widest">Kitchen</span>
           </button>
         )}
+        <div className="w-4 shrink-0" />
       </nav>
 
       {/* Menu Modal */}
       {showMenuModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 sm:p-10">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMenuModal(false)} />
-          <div className="bg-white rounded-[3rem] w-full max-w-lg relative z-10 shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden">
-            <div className="p-8 border-b flex justify-between items-center">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg relative z-10 shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh]">
+            <div className="p-8 border-b flex justify-between items-center shrink-0">
               <h3 className="text-xl font-black uppercase tracking-tighter">{editingItem ? 'Edit Asset' : 'New Asset'}</h3>
               <button onClick={() => setShowMenuModal(false)} className="p-2 bg-gray-50 rounded-xl"><CloseIcon className="w-6 h-6" /></button>
             </div>
-            <div className="p-8 space-y-6">
+            <div className="p-8 space-y-6 overflow-y-auto flex-1 hide-scrollbar">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Name</label>
                 <input 
@@ -1694,10 +1730,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                         
                         // Convert to base64 data URL
                         const reader = new FileReader();
-                        reader.onloadend = () => {
+                        reader.onloadend = async () => {
                           const base64String = reader.result as string;
-                          setMenuForm({...menuForm, imageUrl: base64String});
-                          setImagePreview(base64String);
+                          try {
+                            const compressed = await compressImage(base64String);
+                            setMenuForm({...menuForm, imageUrl: compressed});
+                            setImagePreview(compressed);
+                          } catch (err) {
+                            setMenuForm({...menuForm, imageUrl: base64String});
+                            setImagePreview(base64String);
+                          }
                         };
                         reader.onerror = () => {
                           alert('Failed to read image file');
@@ -1726,7 +1768,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
                 </details>
               </div>
             </div>
-            <div className="p-8 pt-0">
+            <div className="p-8 border-t border-gray-100 bg-white shrink-0">
               <button 
                 onClick={handleSaveMenuItem}
                 className="w-full bg-primary text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all"

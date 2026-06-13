@@ -153,14 +153,20 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
   // 🍱 [REFILL-ENGINE] High-speed inventory increments
   const [stock, setStock] = useState<Record<string, number>>({});
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "inventory_meta"), (snap) => {
-      const map: any = {};
-      snap.docs.forEach(doc => {
-        const d = doc.data();
-        map[doc.id] = (d.totalStock || 0) - (d.consumed || 0);
-      });
-      setStock(map);
-    });
+    const unsub = onSnapshot(
+      collection(db, "inventory_meta"),
+      (snap) => {
+        const map: any = {};
+        snap.docs.forEach(doc => {
+          const d = doc.data();
+          map[doc.id] = (d.totalStock || 0) - (d.consumed || 0);
+        });
+        setStock(map);
+      },
+      (error) => {
+        console.warn(`[CookConsoleWorkspace:inventory_meta] Listener error: ${error.message}`);
+      }
+    );
     return () => unsub();
   }, []);
 
@@ -267,11 +273,11 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0a0a0c] overflow-hidden relative">
-      <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[100px] rounded-full pointer-events-none" />
+      <div className="absolute top-0 right-0 w-96 h-96 bg-brand-purple/10 blur-[100px] rounded-full pointer-events-none" />
 
       {lastAction && (
         <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50">
-          <div className="bg-emerald-500 text-white px-8 py-3 rounded-3xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-emerald-500/20 flex items-center gap-3">
+          <div className="bg-brand-purple text-white px-8 py-3 rounded-3xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-brand-purple/20 flex items-center gap-3">
             <Zap className="w-4 h-4 fill-current" />{lastAction}
           </div>
         </div>
@@ -292,10 +298,10 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
               {sortedItems.map((b, i) => (
                 <div
                   key={b.id}
-                  className={`${isMobile ? 'p-2 rounded-xl min-w-[120px]' : 'p-5 rounded-[1.5rem]'} border transition-all ${i === 0 ? 'bg-emerald-500/15 border-emerald-500/50 shadow-[0_0_25px_rgba(16,185,129,0.2)] ring-2 ring-emerald-500/20' : 'bg-white/[0.02] border-white/5 opacity-50'} ${b.status === 'PREPARING' ? 'animate-pulse' : ''}`}
+                  className={`${isMobile ? 'p-2 rounded-xl min-w-[120px]' : 'p-5 rounded-[1.5rem]'} border transition-all ${i === 0 ? 'bg-brand-purple/15 border-brand-purple/50 shadow-[0_0_25px_rgba(183,109,255,0.2)] ring-2 ring-brand-purple/20' : 'bg-white/[0.02] border-white/5 opacity-50'} ${b.status === 'PREPARING' ? 'animate-pulse' : ''}`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-emerald-500 font-black text-[9px] uppercase tracking-widest">{b.status}</span>
+                    <span className="text-brand-purple-light font-black text-[9px] uppercase tracking-widest">{b.status}</span>
                     <span className="text-white/20 text-[9px] font-mono">#{b.id.slice(-4).toUpperCase()}</span>
                   </div>
                   <h3 className="text-white font-black italic truncate text-sm">
@@ -312,7 +318,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
             <div className={`max-w-3xl mx-auto ${isPassive ? 'pointer-events-none' : ''}`}>
               <div className="flex items-center justify-between mb-8">
                 <div>
-                   <span className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[10px] mb-1 block">{focus.stationId} STATION</span>
+                   <span className="text-brand-purple-light font-black uppercase tracking-[0.3em] text-[10px] mb-1 block">{focus.stationId} STATION</span>
                    <h1 className="text-4xl lg:text-6xl font-black text-white uppercase italic tracking-tighter">
                      {focus.totalUnits}x {focus.itemName || 'Unnamed Item'}
                    </h1>
@@ -331,12 +337,12 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                 </div>
               </div>
 
-              <div className={`bg-white/[0.03] border border-white/10 rounded-[3rem] p-6 lg:p-10 ${focus.status === 'PREPARING' ? 'ring-4 ring-emerald-500/20 shadow-2xl' : ''}`}>
+              <div className={`bg-white/[0.03] border border-white/10 rounded-[3rem] p-6 lg:p-10 ${focus.status === 'PREPARING' ? 'ring-4 ring-brand-purple/20 shadow-2xl' : ''}`}>
                 <div className="space-y-4 mb-10 overflow-y-auto max-h-64 pr-2 custom-scrollbar">
                   {(focus.items || []).map((it: any, i: number) => (
                     <div key={`${focus.id}-${i}`} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.04] border border-white/10">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 font-black text-xs italic">
+                        <div className="w-10 h-10 rounded-full bg-brand-purple/10 flex items-center justify-center text-brand-purple-light font-black text-xs italic">
                           {it.quantity || 1}
                         </div>
                         <div>
@@ -344,15 +350,15 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                           <p className="text-[8px] font-black text-white/40 uppercase tracking-widest">Order ID: #{it.orderId.slice(-4).toUpperCase()}</p>
                         </div>
                       </div>
-                      <span className="text-emerald-500 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">READY TO PREP</span>
+                      <span className="text-brand-purple-light text-[10px] font-black uppercase tracking-widest bg-brand-purple/10 px-3 py-1.5 rounded-lg border border-brand-purple/20">READY TO PREP</span>
                     </div>
                   ))}
                 </div>
 
                 {isPassive ? (
                    <div className="py-12 text-center animate-in fade-in zoom-in slide-in-from-bottom-4 duration-700">
-                     <div className="inline-block px-10 py-4 bg-emerald-500/10 border border-emerald-500/30 rounded-full mb-6">
-                       <p className="text-emerald-500 font-black uppercase tracking-[0.5em] text-[12px] animate-pulse">LIVE PREPARATION IN PROGRESS</p>
+                     <div className="inline-block px-10 py-4 bg-brand-purple/10 border border-brand-purple/30 rounded-full mb-6">
+                       <p className="text-brand-purple-light font-black uppercase tracking-[0.5em] text-[12px] animate-pulse">LIVE PREPARATION IN PROGRESS</p>
                      </div>
                      <p className="text-white/10 font-black uppercase tracking-[0.2em] text-[9px]">Passive Mirror Terminal • ID: #{(focus?.stationId ?? 'GEN').toUpperCase()}</p>
                    </div>
@@ -380,7 +386,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                             className={`h-20 border rounded-2xl font-black text-2xl transition-all flex items-center justify-center active:scale-95 ${
                               isDisabled
                                 ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
-                                : 'bg-white/[0.05] hover:bg-emerald-500 text-white hover:text-black border-white/10'
+                                : 'bg-white/[0.05] hover:bg-brand-purple text-white hover:text-black border-white/10'
                             }`}
                           >
                             {num}x
@@ -392,7 +398,7 @@ const CookConsoleWorkspace: React.FC<CookConsoleWorkspaceProps> = ({
                     <button
                       onClick={() => handleFinalize(focus.id, focus.items, undefined, focus.status)}
                       disabled={!!processingMap[focus.id] || isOffline}
-                      className="h-24 w-full bg-emerald-500 text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-emerald-400 transition-all active:scale-[0.98] shadow-2xl shadow-emerald-500/20 disabled:opacity-50"
+                      className="h-24 w-full bg-brand-purple text-black rounded-[2.5rem] font-black text-xl uppercase italic tracking-tighter flex items-center justify-center gap-4 hover:bg-brand-purple-light transition-all active:scale-[0.98] shadow-2xl shadow-brand-purple/20 disabled:opacity-50"
                     >
                       {processingMap[focus.id]
                         ? <Loader2 className="w-8 h-8 animate-spin" />
@@ -443,7 +449,7 @@ const StationBar = ({
         );
       })}
       <div className="ml-auto flex items-center gap-2 shrink-0">
-        <span className={`w-2 h-2 rounded-full ${fallback ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
+        <span className={`w-2 h-2 rounded-full ${fallback ? 'bg-amber-500' : 'bg-brand-purple animate-pulse'}`} />
         <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">{fallback ? 'Fallback Sync' : 'WebSocket Live'}</span>
       </div>
     </div>

@@ -6,11 +6,13 @@ import SplashScreen from './components/SplashScreen';
 import { signInWithGoogle, signInAsGuest, signOut } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
 import { UserProfile } from './types';
-import { Bell, X } from 'lucide-react';
+import { Bell, X, Compass, Bolt, Trophy, ShoppingBag, Vault as VaultIcon, User } from 'lucide-react';
 import { joeSounds } from './utils/audio';
 import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
 import { initializeOneSignal, loginUser, logoutUser } from './services/onesignal';
 import { triggerOneSignalWebhook } from './services/onesignal-webhook';
+import { AppProvider, useApp } from './contexts/AppContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';
@@ -31,7 +33,13 @@ const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
 const QRView      = React.lazy(() => import('./views/Student/QRView'));
 const WalletView  = React.lazy(() => import('./views/Student/WalletView'));
 const AddMoneyView = React.lazy(() => import('./views/Student/AddMoneyView'));
-import { PrivacyPolicy, RefundPolicy, TermsAndConditions, ContactUs } from './views/Student/ComplianceView';
+const QuestsView   = React.lazy(() => import('./views/Student/QuestsView').then(m => ({ default: m.QuestsView })));
+const RankView     = React.lazy(() => import('./views/Student/RankView').then(m => ({ default: m.RankView })));
+const StoreView    = React.lazy(() => import('./views/Student/StoreView').then(m => ({ default: m.StoreView })));
+const VaultView    = React.lazy(() => import('./views/Student/VaultView').then(m => ({ default: m.VaultView })));
+const ProfileView  = React.lazy(() => import('./views/Student/ProfileView').then(m => ({ default: m.ProfileView })));
+
+import { PrivacyPolicy, RefundPolicy, TermsAndConditions, ContactUs, ComplianceView } from './views/Student/ComplianceView';
 
 type ViewState =
   | 'WELCOME'
@@ -43,8 +51,10 @@ type ViewState =
   | 'STUDENT_HOME'
   | 'ASSISTANT_SUPERVISOR_DASHBOARD';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const { user: authUser, profile: authProfile, loading: authLoading } = useAuth();
+  const { studentTab, setStudentTab, cart, orders } = useApp();
+  
   const [guestProfile, setGuestProfile] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('joe_guest_profile');
@@ -55,6 +65,7 @@ const App: React.FC = () => {
   const profile = authProfile || guestProfile;
   const { latestPulse, clearPulse } = useMarketingPulses(profile?.role || null);
   const [isInitializingGuest, setIsInitializingGuest] = useState(true);
+  const [showAddMoney, setShowAddMoney] = useState(false);
 
   // 🛠️ [SYSTEM-STABILITY] Background Maintenance (Leaders only)
   useMaintenanceWorker(profile?.uid || null, profile?.role || null);
@@ -87,7 +98,6 @@ const App: React.FC = () => {
       logoutUser();
     }
   }, [profile]);
-
 
   // Low Balance Push Notification Trigger
   useEffect(() => {
@@ -126,7 +136,6 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('WELCOME');
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
-  const [studentSubView, setStudentSubView] = useState<'HOME' | 'PAYMENT' | 'ORDERS' | 'QR' | 'WALLET' | 'ADD_MONEY'>('HOME');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [showCompliance, setShowCompliance] = useState<'privacy' | 'refund' | 'terms' | 'contact' | null>(null);
 
@@ -143,7 +152,19 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (authUser) requestNotificationPermission();
+    if (authUser) {
+      const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+      if (!promptStatus) {
+        // First time this device/browser has seen the permission prompt
+        setTimeout(() => {
+          requestNotificationPermission();
+          localStorage.setItem('joe_onesignal_prompt_status', 'shown');
+        }, 3000); // 3s delay — let the student settle into the app first
+      } else {
+        // Already prompted before — just register the token silently (no UI popup)
+        requestNotificationPermission();
+      }
+    }
   }, [authUser]);
 
   const getViewForRole = (r: UserProfile['role']): ViewState => {
@@ -201,10 +222,13 @@ const App: React.FC = () => {
       const { profile: newProfile } = await signInPromise;
       setView(getViewForRole(newProfile.role));
       
-      // Trigger OneSignal push consent after successful login
+      // Trigger push consent after successful login (only once per device)
       const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
       if (!promptStatus) {
-        setTimeout(() => requestNotificationPermission(), 2000);
+        setTimeout(() => {
+          requestNotificationPermission();
+          localStorage.setItem('joe_onesignal_prompt_status', 'shown');
+        }, 2000);
       }
     } catch (error: any) {
       console.error('❌ Google sign-in error:', error);
@@ -225,7 +249,7 @@ const App: React.FC = () => {
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
       localStorage.setItem('joe_guest_profile', JSON.stringify(gProfile));
-      setStudentSubView('HOME');
+      setStudentTab('HOME');
       setView('STUDENT_HOME');
     } catch (error) {
       console.error('❌ Guest login error:', error);
@@ -242,13 +266,16 @@ const App: React.FC = () => {
     setGuestProfile(null);
     localStorage.removeItem('joe_guest_profile');
     setView('WELCOME');
-    setStudentSubView('HOME');
+    setStudentTab('HOME');
     setActiveOrderId(null);
   };
 
   if (authLoading || isInitializingGuest || showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
+
+  // Active student order check for bottom tab badges
+  const activeOrderCount = orders.filter(o => o.orderStatus !== 'SERVED' && o.orderStatus !== 'COMPLETED' && o.orderStatus !== 'CANCELLED' && o.orderStatus !== 'REJECTED' && o.orderStatus !== 'ABANDONED').length;
 
   const renderView = () => {
     switch (view) {
@@ -302,91 +329,166 @@ const App: React.FC = () => {
         );
       case 'STUDENT_HOME':
         return (
-          <div className="h-full w-full">
-            {(() => {
-              switch (studentSubView) {
-                case 'HOME':
-                  return (
-                    <React.Suspense fallback={<FoodLoader />}>
-                    <HomeView
+          <NotificationProvider onViewOrder={(id) => { setActiveOrderId(id); setStudentTab('TRACKING'); }}>
+          <div className="min-h-screen bg-surface-lowest text-on-surface relative">
+            {/* Main scrollable body layouts */}
+            <section className="pb-28">
+              {studentTab === 'HOME' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <HomeView
+                    profile={profile!}
+                    onLogout={handleLogout}
+                    onProceed={() => setStudentTab('TRACKING')}
+                    onViewOrders={() => setStudentTab('VAULT')}
+                    onViewWallet={() => setStudentTab('WALLET')}
+                    onOpenCompliance={setShowCompliance}
+                    onViewQR={(id) => {
+                      setActiveOrderId(id);
+                      setStudentTab('TRACKING');
+                    }}
+                  />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'ORDERS' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <OrdersView
+                    profile={profile!}
+                    onBackToMenu={() => setStudentTab('HOME')}
+                    onNavigateToTracking={(id) => {
+                      setActiveOrderId(id);
+                      setStudentTab('TRACKING');
+                    }}
+                  />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'WALLET' && (
+                showAddMoney ? (
+                  <React.Suspense fallback={<FoodLoader />}>
+                    <AddMoneyView
                       profile={profile!}
-                      onLogout={handleLogout}
-                      onProceed={() => setStudentSubView('PAYMENT')}
-                      onViewOrders={() => setStudentSubView('ORDERS')}
-                      onViewWallet={() => setStudentSubView('WALLET')}
-                      onOpenCompliance={setShowCompliance}
-                      onViewQR={(id) => {
+                      onBack={() => setShowAddMoney(false)}
+                    />
+                  </React.Suspense>
+                ) : (
+                  <React.Suspense fallback={<FoodLoader />}>
+                    <WalletView
+                      profile={profile!}
+                      onBack={() => setStudentTab('HOME')}
+                      onAddMoney={() => setShowAddMoney(true)}
+                    />
+                  </React.Suspense>
+                )
+              )}
+
+              {studentTab === 'COMPLIANCE' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <ComplianceView onBackToMenu={() => setStudentTab('HOME')} />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'TRACKING' && (
+                cart.length > 0 ? (
+                  <React.Suspense fallback={<FoodLoader />}>
+                    <PaymentView
+                      profile={profile!}
+                      onBack={() => setStudentTab('HOME')}
+                      onSuccess={(id) => {
                         setActiveOrderId(id);
-                        setStudentSubView('QR');
+                        setStudentTab('TRACKING');
+                        // Trigger push consent after first order (only once per device)
+                        const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+                        if (!promptStatus) {
+                          setTimeout(() => {
+                            requestNotificationPermission();
+                            localStorage.setItem('joe_onesignal_prompt_status', 'shown');
+                          }, 2000);
+                        }
                       }}
                     />
                   </React.Suspense>
-                  );
-                case 'PAYMENT':
-                  return (
-                    <React.Suspense fallback={<FoodLoader />}>
-                      <PaymentView
-                        profile={profile!}
-                        onBack={() => setStudentSubView('HOME')}
-                        onSuccess={(id) => {
-                          setActiveOrderId(id);
-                          setStudentSubView('QR');
-                          // Trigger OneSignal push consent after successful order
-                          const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
-                          if (!promptStatus) {
-                            setTimeout(() => requestNotificationPermission(), 2000);
-                          }
-                        }}
-                      />
-                    </React.Suspense>
-                  );
-                case 'ORDERS':
-                  return (
-                    <React.Suspense fallback={<FoodLoader />}>
-                      <OrdersView
-                        profile={profile!}
-                        onBack={() => setStudentSubView('HOME')}
-                        onQROpen={(id) => {
-                          setActiveOrderId(id);
-                          setStudentSubView('QR');
-                        }}
-                      />
-                    </React.Suspense>
-                  );
-                case 'QR':
-                  return (
-                    <React.Suspense fallback={<FoodLoader />}>
-                      <QRView
-                        orderId={activeOrderId!}
-                        onBack={() => setStudentSubView('HOME')}
-                        onViewOrders={() => setStudentSubView('ORDERS')}
-                      />
-                    </React.Suspense>
-                  );
-                case 'WALLET':
-                  return (
-                    <React.Suspense fallback={<FoodLoader />}>
-                      <WalletView
-                        profile={profile!}
-                        onBack={() => setStudentSubView('HOME')}
-                        onAddMoney={() => setStudentSubView('ADD_MONEY')}
-                      />
-                    </React.Suspense>
-                  );
-                case 'ADD_MONEY':
-                  return (
-                    <React.Suspense fallback={<FoodLoader />}>
-                      <AddMoneyView
-                        profile={profile!}
-                        onBack={() => setStudentSubView('WALLET')}
-                      />
-                    </React.Suspense>
-                  );
-                default:
-                  return null;
-              }
-            })()}
+                ) : (
+                  <React.Suspense fallback={<FoodLoader />}>
+                    <QRView
+                      orderId={activeOrderId!}
+                      onBack={() => setStudentTab('HOME')}
+                      onViewOrders={() => setStudentTab('VAULT')}
+                    />
+                  </React.Suspense>
+                )
+              )}
+
+              {studentTab === 'QUESTS' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <QuestsView />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'RANK' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <RankView />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'STORE' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <StoreView />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'VAULT' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <VaultView />
+                </React.Suspense>
+              )}
+
+              {studentTab === 'PROFILE' && (
+                <React.Suspense fallback={<FoodLoader />}>
+                  <ProfileView onLogout={handleLogout} />
+                </React.Suspense>
+              )}
+            </section>
+
+            {/* Sticky bottom bar smartphone dock */}
+            <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50 bg-[#121824]/90 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-2 py-3 pb-[env(safe-area-inset-bottom,16px)] shadow-3xl rounded-t-3xl">
+              {[
+                { tab: 'HOME', label: 'Feed', icon: Compass },
+                { tab: 'QUESTS', label: 'Quests', icon: Bolt },
+                { tab: 'RANK', label: 'Rank', icon: Trophy },
+                { tab: 'STORE', label: 'Store', icon: ShoppingBag },
+                { tab: 'VAULT', label: 'Vault', icon: VaultIcon, badge: activeOrderCount > 0 },
+                { tab: 'PROFILE', label: 'Profile', icon: User },
+              ].map((item) => {
+                const IconComp = item.icon;
+                const isSelected = studentTab === item.tab;
+                return (
+                  <button
+                    key={item.tab}
+                    onClick={() => {
+                      setShowAddMoney(false);
+                      setStudentTab(item.tab as any);
+                    }}
+                    type="button"
+                    className={`flex-1 flex flex-col items-center gap-1 py-1 cursor-pointer transition-all ${
+                      isSelected ? 'text-brand-purple scale-105 font-bold' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="relative">
+                      <IconComp className="w-5.5 h-5.5 shrink-0" />
+                      {item.badge && (
+                        <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-brand-purple animate-ping" />
+                      )}
+                    </div>
+                    <span className="font-mono text-[8px] font-bold uppercase tracking-wider whitespace-nowrap">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
+          </NotificationProvider>
         );
       default:
         return <WelcomeView onGoogleLogin={handleGoogleLogin} onGuestLogin={handleGuestLogin} onStaffLogin={navigateToStaffLogin} onOpenCompliance={setShowCompliance} googleLoading={googleSignInLoading} guestLoading={guestLoading} />;
@@ -432,4 +534,10 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+export default function App() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
+  );
+}

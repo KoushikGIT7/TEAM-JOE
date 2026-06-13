@@ -1,164 +1,209 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, QrCode, CheckCircle2, Clock, AlertCircle, ShoppingBag, Receipt, ArrowRight } from 'lucide-react';
-import { UserProfile, Order } from '../../types';
+import { useApp } from '../../contexts/AppContext';
+import { useAuth } from '../../hooks/useAuth';
+import { Order } from '../../types';
 import { listenToAllUserOrders } from '../../services/firestore-db';
-import { getOrderStatusMessage, getOrderUIState, shouldShowQR, groupOrdersByStatus } from '../../utils/orderLifecycle';
-import FoodLoader from '../../components/Common/FoodLoader';
+import { getOrderStatusMessage, getOrderUIState, shouldShowQR } from '../../utils/orderLifecycle';
+import { 
+  ArrowLeft, Clock, ShoppingCart, CheckCircle2, 
+  RotateCcw, Sparkles, AlertCircle, Eye, Receipt, QrCode
+} from 'lucide-react';
 
 interface OrdersViewProps {
-  profile: UserProfile | null;
-  onBack: () => void;
+  profile?: any;
+  onBack?: () => void;
   onQROpen?: (orderId: string) => void;
+  onBackToMenu?: () => void;
+  onNavigateToTracking?: (orderId: string) => void;
 }
 
-const OrdersView: React.FC<OrdersViewProps> = ({ profile, onBack, onQROpen }) => {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+export const OrdersView: React.FC<OrdersViewProps> = ({ 
+  profile, 
+  onBack, 
+  onQROpen, 
+  onBackToMenu, 
+  onNavigateToTracking 
+}) => {
+  const { orders: contextOrders } = useApp();
+  const { profile: authProfile } = useAuth();
+  
+  const [orders, setOrders] = useState<Order[]>(contextOrders);
+  const [loading, setLoading] = useState(orders.length === 0);
+
+  const activeUserId = profile?.uid || authProfile?.uid;
 
   useEffect(() => {
-    if (!profile?.uid) return;
-    const unsub = listenToAllUserOrders(profile.uid, (data) => {
+    if (!activeUserId) {
+      setLoading(false);
+      return;
+    }
+    const unsub = listenToAllUserOrders(activeUserId, (data) => {
       const sorted = [...data].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setOrders(sorted);
       setLoading(false);
     });
     return unsub;
-  }, [profile?.uid]);
+  }, [activeUserId]);
 
-  const { active, scanned, completed } = groupOrdersByStatus(orders);
-
-  const OrderCard: React.FC<{ order: Order }> = ({ order }) => {
-    const uiState = getOrderUIState(order);
-    const canShowQR = shouldShowQR(order);
-    const statusMsg = getOrderStatusMessage(order);
-    const dateObj = new Date(order.createdAt);
-    const formattedDate = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    const formattedTime = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-    const getStatusColor = () => {
-      if (uiState === 'QR_ACTIVE') return 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse';
-      if (uiState === 'SCANNED' || uiState === 'COMPLETED' || order.orderStatus === 'SERVED') return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      if (uiState === 'REJECTED' || uiState === 'CANCELLED') return 'bg-rose-50 text-rose-600 border-rose-100';
-      return 'bg-amber-50 text-amber-600 border-amber-100';
-    };
-
-    const getItemBadge = (status: string) => {
-      switch (status) {
-        case 'SERVED': return <span className="text-[8px] font-black text-emerald-500 uppercase tracking-tighter flex items-center gap-0.5"><CheckCircle2 className="w-2" /> SERVED</span>;
-        case 'READY': return <span className="text-[8px] font-black text-blue-500 uppercase tracking-tighter animate-pulse">READY</span>;
-        case 'PREPARING': return <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter">COOKING</span>;
-        default: return <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">QUEUED</span>;
-      }
-    };
-
-    return (
-      <div 
-        className="bg-white rounded-[2rem] p-5 border border-slate-100 shadow-sm transition-all active:scale-[0.98] cursor-pointer hover:shadow-md"
-        onClick={() => canShowQR && onQROpen?.(order.id)}
-      >
-        <div className="flex justify-between items-start mb-5 pb-4 border-b border-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
-              <Receipt className="w-6 h-6 text-slate-400" />
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-0.5 italic">Order Verified</p>
-              <h4 className="text-base font-black text-slate-800 tracking-tighter leading-none">#{order.id.slice(-8).toUpperCase()}</h4>
-            </div>
-          </div>
-          <div className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${getStatusColor()}`}>
-            {statusMsg}
-          </div>
-        </div>
-
-        {/* Dynamic Items List */}
-        <div className="space-y-3 mb-6">
-          {(order.items || []).map((item, idx) => (
-            <div key={idx} className="flex justify-between items-start">
-              <div className="flex flex-col">
-                <span className="text-xs font-black text-slate-700 leading-none">{item.quantity}x {item.name}</span>
-                <div className="mt-1">{getItemBadge(item.status)}</div>
-              </div>
-              <span className="font-black text-slate-400 text-[10px]">₹{item.price * item.quantity}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between pt-5 border-t border-dashed border-slate-200">
-          <div className="flex flex-col">
-             <span className="text-[9px] font-black uppercase text-slate-300 tracking-wider">Total Amount</span>
-             <span className="text-xl font-black italic text-slate-900 leading-none mt-1">₹{order.totalAmount || 0}</span>
-             <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">
-               {formattedDate} • {formattedTime}
-             </p>
-          </div>
-          {canShowQR ? (
-            <button 
-              onClick={(e) => { e.stopPropagation(); onQROpen?.(order.id); }}
-              className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-[1.2rem] font-black text-[10px] uppercase tracking-widest active:scale-90 transition-all shadow-lg shadow-primary/20"
-            >
-              <QrCode className="w-4 h-4" /> View Token
-            </button>
-          ) : (
-            <div className="flex flex-col items-end gap-1">
-               <div className="px-3 py-1 bg-emerald-50 text-emerald-500 rounded-lg font-black text-[8px] uppercase tracking-widest border border-emerald-100 flex items-center gap-1">
-                 Verified <CheckCircle2 className="w-2.5" />
-               </div>
-               {order.paymentType && (
-                 <span className="text-[8px] font-black text-slate-300 uppercase">{order.paymentType} Payment</span>
-               )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
+  const handleBack = () => {
+    if (onBack) onBack();
+    else if (onBackToMenu) onBackToMenu();
   };
 
-  if (loading) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
+  const handleTrack = (orderId: string) => {
+    if (onQROpen) onQROpen(orderId);
+    else if (onNavigateToTracking) onNavigateToTracking(orderId);
+  };
+
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case 'QUEUED':
+        return 'bg-amber-400/10 border-amber-400/30 text-amber-300';
+      case 'COOKING':
+      case 'IN_PROGRESS':
+        return 'bg-yellow-400/10 border-yellow-400/30 text-yellow-300 animate-pulse';
+      case 'READY':
+        return 'bg-brand-green/20 border-brand-green/45 text-brand-green font-bold animate-pulse';
+      case 'SERVED':
+      case 'COMPLETED':
+        return 'bg-white/5 border-white/5 text-zinc-500';
+      case 'CANCELLED':
+      case 'REJECTED':
+        return 'bg-red-500/10 border-red-500/25 text-red-400';
+      default:
+        return 'bg-white/5 border-white/5 text-zinc-400';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 max-w-md mx-auto relative overflow-x-hidden flex flex-col font-sans border-x border-slate-100 shadow-2xl">
-      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-6 border-b border-slate-100 flex items-center gap-4">
-        <button onClick={onBack} className="w-11 h-11 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all">
-          <ArrowLeft className="w-5 h-5 text-slate-600" />
+    <div className="min-h-screen bg-surface-lowest pb-24 text-on-surface max-w-md mx-auto border-x border-white/5 shadow-2xl">
+      {/* App Bar Header */}
+      <header className="sticky top-0 z-50 flex items-center gap-3 px-5 h-16 w-full bg-surface-lowest/80 backdrop-blur-xl border-b border-white/5">
+        <button
+          onClick={handleBack}
+          className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:scale-95 transition-transform shrink-0 cursor-pointer"
+        >
+          <ArrowLeft className="w-5 h-5 text-brand-purple" />
         </button>
-        <h2 className="text-xl font-black text-slate-800 tracking-tighter">Receipts & Orders</h2>
-      </div>
+        <h1 className="font-display text-lg font-black text-white leading-none">
+          Receipts & History
+        </h1>
+      </header>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        {orders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center px-10">
-            <div className="w-24 h-24 bg-white rounded-[2.5rem] border border-slate-100 flex items-center justify-center mb-6 shadow-sm">
-              <ShoppingBag className="w-10 h-10 text-slate-200" />
+      {/* Main timeline listing */}
+      <main className="px-5 mt-4 space-y-4">
+        {loading ? (
+          <div className="text-center py-20">
+            <Sparkles className="w-10 h-10 text-brand-purple animate-spin mx-auto" />
+            <span className="text-xs font-mono text-zinc-400 mt-2 block">Syncing order timeline...</span>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="text-center py-20 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-surface-high flex items-center justify-center mx-auto border border-white/5">
+              <ShoppingCart className="w-6 h-6 text-brand-purple-light" />
             </div>
-            <h3 className="text-lg font-black text-slate-800 mb-2 tracking-tighter">Kitchen is quiet...</h3>
-            <p className="text-sm font-bold text-slate-400 max-w-[180px] mx-auto leading-relaxed">No orders found. Head to the menu to start your hunger journey.</p>
+            <div className="space-y-1">
+              <h3 className="font-display text-base font-bold text-white">"Kitchen is quiet..."</h3>
+              <p className="font-sans text-xs text-zinc-400 max-w-xs mx-auto mt-1 leading-relaxed">
+                No purchases logged yet. Head over to our smart menu to place your very first food request!
+              </p>
+            </div>
+            <button
+              onClick={handleBack}
+              className="px-5 py-2.5 bg-brand-purple hover:bg-brand-purple-light text-surface-lowest font-mono text-xs font-bold rounded-full transition-colors cursor-pointer"
+            >
+              ORDER MEALS NOW
+            </button>
           </div>
         ) : (
-          <div className="space-y-3">
-             {active.length > 0 && (
-               <div className="mb-2">
-                 <h2 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-1">Active ({active.length})</h2>
-                 <div className="space-y-3">{active.map(o => <OrderCard key={o.id} order={o} />)}</div>
-               </div>
-             )}
-             
-             {scanned.length > 0 && (
-               <div className="mb-2">
-                 <h2 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-1">Scanning ({scanned.length})</h2>
-                 <div className="space-y-3">{scanned.map(o => <OrderCard key={o.id} order={o} />)}</div>
-               </div>
-             )}
+          <div className="space-y-4">
+            {orders.map((order) => {
+              const active = order.orderStatus !== 'SERVED' && order.orderStatus !== 'COMPLETED' && order.orderStatus !== 'CANCELLED' && order.orderStatus !== 'REJECTED' && order.orderStatus !== 'ABANDONED';
+              const dateObj = new Date(order.createdAt);
+              const formattedDate = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+              const formattedTime = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+              const statusMsg = getOrderStatusMessage(order);
 
-             {completed.length > 0 && (
-               <div>
-                 <h2 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-1">History ({completed.length})</h2>
-                 <div className="space-y-3">{completed.map(o => <OrderCard key={o.id} order={o} />)}</div>
-               </div>
-             )}
+              return (
+                <div
+                  key={order.id}
+                  className={`p-4 rounded-2xl border transition-all ${
+                    order.serveFlowStatus === 'READY' 
+                      ? 'border-brand-green bg-brand-green-dark/5' 
+                      : 'glass-stroke glass-bg bg-[#171f33]/30'
+                  }`}
+                >
+                  {/* Card head: order numeric reference, timestamp */}
+                  <div className="flex justify-between items-start border-b border-white/5 pb-2.5">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-white tracking-widest uppercase">
+                          #{order.id.slice(-6).toUpperCase()}
+                        </span>
+                        <span className="font-mono text-[9px] text-zinc-600">•</span>
+                        <span className="font-mono text-[9px] text-zinc-400">
+                          {order.paymentType} • {order.paymentStatus}
+                        </span>
+                      </div>
+                      <span className="font-sans text-[10px] text-zinc-400 mt-1 block">
+                        {formattedDate} • {formattedTime}
+                      </span>
+                    </div>
+
+                    <span className={`px-2.5 py-1 rounded-md text-[9px] font-mono font-bold border leading-none uppercase ${getStatusStyle(order.orderStatus)}`}>
+                      {statusMsg}
+                    </span>
+                  </div>
+
+                  {/* Card body: list item summaries */}
+                  <div className="py-3.5 space-y-2 text-xs border-b border-white/5">
+                    {order.items.map((it, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-zinc-300">
+                        <span className="font-sans font-medium text-white/95">
+                          {it.quantity}x {it.name}
+                        </span>
+                        <span className="font-mono text-xs text-zinc-400">₹{(it.price * it.quantity).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Card bottom footer detail */}
+                  <div className="pt-2.5 flex justify-between items-center">
+                    <div className="flex flex-col">
+                      <span className="font-sans text-[9px] text-zinc-500 uppercase tracking-widest leading-none">
+                        Total debited
+                      </span>
+                      <span className="font-mono text-sm font-black text-brand-purple-light mt-1.5 leading-none">
+                        ₹{(order.totalAmount || 0).toFixed(2)}
+                      </span>
+                    </div>
+
+                    {active ? (
+                      <button
+                        onClick={() => handleTrack(order.id)}
+                        className="px-4 py-1.5 rounded-full bg-brand-purple hover:bg-brand-purple-light text-surface-lowest text-xs font-mono font-black tracking-wider flex items-center gap-1 active:scale-95 transition-transform cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        TRACK TOKEN
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1 text-[9.5px] font-mono text-brand-green font-bold select-none">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-brand-green" />
+                        HANDOVER DONE
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };

@@ -36,6 +36,8 @@
     "node_modules",
     "old_*.tsx",
     "old_*.ts",
-    "dist"
+    "dist",
+    "update_ui",
+    "src"
   ]
 }

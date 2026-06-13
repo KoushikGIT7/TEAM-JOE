@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChefHat, Zap, CheckCircle, PackageCheck } from 'lucide-react';
+import { ChefHat, CheckSquare, RefreshCw, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { listenToBatches, markBatchReady } from '../../services/firestore-db';
 import { PrepBatch, UserProfile } from '../../types';
+import { useApp } from '../../contexts/AppContext';
+import { joeSounds } from '../../utils/audio';
 
 interface CookViewProps {
   profile: UserProfile;
@@ -10,17 +12,30 @@ interface CookViewProps {
 }
 
 const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
+  const { menuItems } = useApp();
   const [batches, setBatches] = useState<PrepBatch[]>([]);
   const [processingItem, setProcessingItem] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [systemTime, setSystemTime] = useState('');
 
-  // ⏱️ Live clock — ticks every second so "Live Sync" is genuinely live
+  const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+
+  // Clock ticker
   useEffect(() => {
-    const tick = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(tick);
+    const interval = setInterval(() => {
+      setSystemTime(new Date().toLocaleTimeString());
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
+  // Audio subscription
+  useEffect(() => {
+    return joeSounds.subscribe(() => {
+       setAudioStatus(joeSounds.getMutedState());
+    });
+  }, []);
+
+  // Listen to live database batches
   useEffect(() => {
     const unsub = listenToBatches((live) => {
       // Display only QUEUED and PREPARING batches for the cook
@@ -48,14 +63,11 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
 
     if (itemBatches.length === 0) return;
 
-    // How many batches to mark ready:
-    // - count undefined → mark ALL (cook pressed "ALL (N)")
-    // - count = N → mark the N oldest batches (one per student order)
+    // How many batches to mark ready
     const toMark = count ? itemBatches.slice(0, count) : itemBatches;
 
     setProcessingItem(itemId);
     try {
-      // ⚡ Mark each batch ready in parallel — one READY per student order
       await Promise.all(toMark.map(batch => markBatchReady(batch.id)));
       if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
       setExpandedItemId(null);
@@ -69,7 +81,6 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
   const groupedItems = useMemo(() => {
     const itemMap: Record<string, { itemId: string, name: string, count: number, isPreparing: boolean }> = {};
 
-    // Only count QUEUED and PREPARING batches (active orders awaiting the cook)
     batches
       .filter(b => b.status === 'QUEUED' || b.status === 'PREPARING')
       .forEach(b => {
@@ -77,7 +88,6 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
         if (!itemMap[id]) {
           itemMap[id] = { itemId: id, name: b.itemName || 'Item', count: 0, isPreparing: false };
         }
-        // Each batch = 1 student order. Count batches, not internal quantity.
         itemMap[id].count += 1;
         if (b.status === 'PREPARING') itemMap[id].isPreparing = true;
       });
@@ -86,139 +96,216 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
   }, [batches]);
 
   return (
-    <div className="h-screen flex flex-col bg-black text-white overflow-hidden">
-      {/* HEADER */}
-      <header className="px-8 py-6 flex items-center justify-between border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent shrink-0">
-        <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-500/30 rounded-[1.5rem] flex items-center justify-center">
-            <ChefHat className="w-8 h-8 text-emerald-400" />
+    <div className="min-h-screen bg-zinc-950 text-white select-none overflow-y-auto pb-12">
+      
+      {/* Top sticky app bar */}
+      <header className="max-w-5xl mx-auto px-6 py-6 flex justify-between items-center border-b border-white/5 bg-zinc-950/85 backdrop-blur-md sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center">
+            <ChefHat className="w-6 h-6 text-purple-400" />
           </div>
           <div>
-            <h1 className="text-4xl font-black italic tracking-tighter">KITCHEN TERMINAL</h1>
-            <p className="text-emerald-400/60 font-black tracking-widest uppercase text-[10px] mt-1">Live Preparation Engine</p>
+            <span className="font-mono text-[9px] text-[#ef4444] bg-[#ef4444]/15 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1.5 animate-pulse w-fit mb-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+              KITCHEN DISPATCH TERMINAL LIVE
+            </span>
+            <h2 className="font-display text-base font-black text-white">
+              Cook Terminal Engine
+            </h2>
           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="text-right mr-6 hidden md:block">
-            <div className="text-3xl font-black font-mono">
-              {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </div>
-            <div className="text-gray-500 font-bold tracking-widest text-[10px] uppercase">Live Sync</div>
+
+        {/* Realtime clock ticker & logout */}
+        <div className="flex items-center gap-6">
+          <button 
+             onClick={async () => {
+                if (audioStatus === 'Silent') {
+                   await joeSounds.init();
+                } else {
+                   joeSounds.toggleMute();
+                }
+             }}
+             className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[9px] font-mono font-black transition active:scale-95 cursor-pointer ${
+                audioStatus === 'Connected' 
+                   ? 'bg-[#b76dff]/15 border-[#b76dff]/30 text-[#ddb7ff]' 
+                   : audioStatus === 'Muted'
+                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                      : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+             }`}
+          >
+             {audioStatus === 'Connected' ? (
+                <>
+                   <Volume2 className="w-3.5 h-3.5 text-[#ddb7ff]" />
+                   <span>AUDIO: CENTRAL ACTIVE</span>
+                </>
+             ) : audioStatus === 'Muted' ? (
+                <>
+                   <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                   <span>AUDIO: MUTED</span>
+                </>
+             ) : (
+                <>
+                   <VolumeX className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                   <span>AUDIO: SILENT (TAP TO WAKE)</span>
+                </>
+             )}
+          </button>
+
+          <div className="text-right">
+            <span className="font-mono text-xs text-[#ddb7ff] font-extrabold block">
+              {systemTime || 'CLOCK INITIATING...'}
+            </span>
+            <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest leading-none">
+              REALTIME LOG SYNC
+            </span>
           </div>
+          <div className="h-10 w-[1px] bg-white/5" />
           {onBack && (
-            <button onClick={onBack} className="px-6 py-3 bg-white/5 rounded-xl font-bold hover:bg-white/10 active:scale-95 transition-all">
+            <button onClick={onBack} className="px-4 py-2 border border-white/10 bg-white/5 hover:bg-white/10 rounded-xl font-mono text-[10px] font-bold tracking-wider text-zinc-300 hover:text-white transition active:scale-95 cursor-pointer">
               DASHBOARD
             </button>
           )}
-          <button onClick={onLogout} className="px-6 py-3 bg-red-500/10 text-red-400 rounded-xl font-bold hover:bg-red-500/20 active:scale-95 transition-all">
-            LOGOUT
+          <button onClick={onLogout} className="p-3 bg-white/5 hover:bg-rose-500/10 border border-white/10 hover:border-rose-500/20 rounded-xl text-zinc-400 hover:text-rose-500 transition-all cursor-pointer">
+            <LogOut className="w-5 h-5" />
           </button>
         </div>
       </header>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+      {/* Main demand visual dashboard */}
+      <main className="max-w-5xl mx-auto px-6 mt-8">
         {groupedItems.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center opacity-40">
-            <PackageCheck className="w-32 h-32 mb-8 text-white/20" />
-            <h2 className="text-4xl font-black tracking-tighter">ALL CLEAR</h2>
-            <p className="mt-2 tracking-widest uppercase text-sm font-bold">Waiting for new orders...</p>
+          // All clear view
+          <div className="text-center py-24 border border-white/5 bg-zinc-900/10 rounded-3xl space-y-4 max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-full bg-brand-purple/15 border border-brand-purple/20 flex items-center justify-center mx-auto text-brand-purple">
+              <CheckSquare className="w-8 h-8" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-display text-base font-extrabold text-white">"ALL CLEAR!"</h3>
+              <p className="font-sans text-xs text-zinc-500 max-w-xs mx-auto leading-relaxed">
+                Outstanding orders cleared. Take a sip of tea. Cooking queues update automatically.
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {groupedItems.map((item) => {
-              const isProcessing = processingItem === item.itemId;
-              const isExpanded = expandedItemId === item.itemId;
-              
-              return (
-                <div
-                  key={item.itemId}
-                  className={`relative overflow-hidden rounded-[3rem] bg-[#0a0a0c] border-4 ${
-                     isExpanded ? 'border-emerald-500 shadow-[0_0_60px_rgba(16,185,129,0.3)] scale-[1.02]' : 'border-white/5 hover:border-emerald-500/30'
-                  } p-8 flex flex-col justify-between aspect-square transition-all duration-300 z-10 ${isExpanded ? 'z-20' : ''}`}
-                >
-                  {/* Background Pulse / Ripple */}
-                  {item.isPreparing && !isProcessing && !isExpanded && (
-                      <div className="absolute inset-0 bg-emerald-500/5 animate-pulse" />
-                  )}
-                  {isProcessing && (
-                      <div className="absolute inset-0 bg-emerald-500/20 animate-pulse" />
-                  )}
+          <div className="space-y-6">
+            <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 px-4 py-3 rounded-2xl">
+              <span className="font-bold">Batch Mode Enabled:</span>
+              <p>Orders are bundled automatically per meal type to help you prepare food efficiently.</p>
+            </div>
 
-                  {/* Header Row */}
-                  <div className="flex justify-between items-start z-10 w-full mb-4">
-                    <div className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] uppercase tracking-widest font-bold text-white/60">
-                      KITCHEN STATION
-                    </div>
-                    {isProcessing ? (
-                       <Zap className="w-8 h-8 text-emerald-400 animate-bounce" />
-                    ) : isExpanded ? (
-                       <button onClick={() => setExpandedItemId(null)} className="w-12 h-12 rounded-full border-2 border-white/10 bg-white/5 flex items-center justify-center hover:bg-red-500/20 hover:border-red-400 transition-all active:scale-95">
-                          <span className="font-bold text-gray-400">✕</span>
-                       </button>
-                    ) : (
-                       <div className="w-12 h-12 rounded-full border-2 border-white/10 bg-white/5 flex items-center justify-center">
-                          <CheckCircle className="w-6 h-6 text-white/20" />
-                       </div>
+            {/* Cooking demand blocks grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              {groupedItems.map((item) => {
+                const isSelected = expandedItemId === item.itemId;
+                const isProcessing = processingItem === item.itemId;
+                const menuItem = menuItems.find(m => m.id === item.itemId);
+                const imageUrl = menuItem?.imageUrl || '';
+
+                return (
+                  <div 
+                    key={item.itemId}
+                    className={`rounded-3xl overflow-hidden border transition-all duration-300 relative ${
+                      isSelected 
+                        ? 'border-brand-purple/50 shadow-2xl shadow-brand-purple/5 scale-[1.02]' 
+                        : 'border-white/5 bg-zinc-900/20 hover:border-white/10'
+                    }`}
+                  >
+                    {/* Background processing strobe */}
+                    {isProcessing && (
+                      <div className="absolute inset-0 bg-brand-purple/10 animate-pulse z-0" />
                     )}
-                  </div>
 
-                  {/* Body Content */}
-                  {isExpanded ? (
-                     <div className="flex-1 flex flex-col z-10 animate-in fade-in zoom-in-95 duration-200">
-                        <div className="text-center mb-4">
-                           <h3 className="text-xl font-black uppercase text-white truncate px-2">{item.name}</h3>
-                           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 mt-1">Dispense Quantity</p>
+                    {/* Cover image header */}
+                    <div className="relative h-32 overflow-hidden select-none z-10">
+                      {imageUrl ? (
+                        <img className="w-full h-full object-cover" alt={item.name} src={imageUrl} />
+                      ) : (
+                        <div className="w-full h-full bg-zinc-900 flex items-center justify-center text-zinc-600 font-mono text-xs">
+                          NO PREVIEW IMAGE
                         </div>
-                        <div className="grid grid-cols-3 gap-3 flex-1 pb-2">
-                           {[1, 2, 3, 4, 5].map(num => (
-                              <button 
-                                key={num}
-                                disabled={!!processingItem || num > item.count}
-                                onClick={() => handleMarkReady(item.itemId, num)}
-                                className={`rounded-2xl flex items-center justify-center text-2xl font-black transition-all ${
-                                   num > item.count 
-                                   ? 'bg-transparent border border-white/5 text-white/5 cursor-not-allowed' 
-                                   : 'bg-white/5 hover:bg-emerald-500 border border-white/10 hover:border-emerald-400 text-white hover:text-black active:scale-90'
-                                }`}
-                              >
-                                +{num}
-                              </button>
-                           ))}
-                           <button 
-                             disabled={!!processingItem}
-                             onClick={() => handleMarkReady(item.itemId)}
-                             className="bg-emerald-500 hover:bg-emerald-400 border border-emerald-400 rounded-2xl flex items-center justify-center text-[10px] font-black text-black active:scale-90 transition-all uppercase tracking-widest shadow-[0_0_30px_rgba(16,185,129,0.3)] flex-col gap-1"
-                           >
-                             <CheckCircle className="w-5 h-5 mx-auto" />
-                             ALL ({item.count})
-                           </button>
-                        </div>
-                     </div>
-                  ) : (
-                     <button 
-                        onClick={() => {
-                           if (item.count === 1) handleMarkReady(item.itemId);
-                           else setExpandedItemId(item.itemId);
-                        }}
-                        className="flex-1 flex flex-col justify-end items-start text-left group-hover:translate-x-2 transition-transform z-10"
-                     >
-                        <div className="flex items-end gap-3">
-                           <span className="text-7xl lg:text-8xl font-black italic tracking-tighter leading-none">{item.count}</span>
-                           <span className="text-3xl font-black italic opacity-40 mb-2">x</span>
-                        </div>
-                        <h3 className="text-3xl lg:text-4xl font-black uppercase tracking-tight text-white/90 leading-tight mt-2">
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
+                      
+                      {/* Big circle volume badge count */}
+                      <div className="absolute bottom-3 left-3 bg-purple-600 text-white px-3 py-1 rounded-full font-mono font-black text-xs shadow-md">
+                        {item.count}x PREP DEMAND
+                      </div>
+                    </div>
+
+                    <div className="p-5 space-y-4 relative z-10">
+                      <div>
+                        <h3 className="font-display font-extrabold leading-tight text-white text-lg truncate">
                           {item.name}
                         </h3>
-                     </button>
-                  )}
-                </div>
-              );
-            })}
+                        <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-wider">
+                          Active cooking tickets: {item.count}
+                        </span>
+                      </div>
+
+                      {/* Expand segments triggers */}
+                      {isSelected ? (
+                        <div className="space-y-2.5 pt-3 border-t border-white/5 font-mono">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[9px] text-zinc-400 block font-bold uppercase">
+                              Dispatch Ready Counter Qty:
+                            </span>
+                            <button onClick={() => setExpandedItemId(null)} className="text-[10px] text-rose-400 hover:text-rose-300 font-bold uppercase transition">
+                              Cancel
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {/* Increment options based on count scope */}
+                            {Array.from({ length: Math.min(item.count, 5) }, (_, i) => i + 1).map(num => (
+                              <button
+                                key={num}
+                                disabled={isProcessing}
+                                onClick={() => handleMarkReady(item.itemId, num)}
+                                className="px-3 py-1.5 text-[10px] rounded-lg font-bold bg-brand-purple hover:bg-brand-purple-light text-white cursor-pointer shrink-0 disabled:opacity-40 transition"
+                              >
+                                +{num} READY
+                              </button>
+                            ))}
+                            <button
+                              disabled={isProcessing}
+                              onClick={() => handleMarkReady(item.itemId)}
+                              className="px-3 py-1.5 text-[10px] rounded-lg font-bold bg-purple-600 hover:bg-purple-500 text-white cursor-pointer shrink-0 disabled:opacity-40 transition"
+                            >
+                              ALL ({item.count})
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="pt-3 border-t border-white/5 flex gap-2">
+                          {item.count === 1 ? (
+                            <button
+                              disabled={isProcessing}
+                              onClick={() => handleMarkReady(item.itemId)}
+                              className="w-full h-10 rounded-xl bg-brand-purple hover:bg-brand-purple-light text-white font-mono text-[10px] font-bold tracking-wider flex items-center justify-center cursor-pointer transition disabled:opacity-40"
+                            >
+                              DISPATCH READY
+                            </button>
+                          ) : (
+                            <button
+                              disabled={isProcessing}
+                              onClick={() => setExpandedItemId(item.itemId)}
+                              className="w-full h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-mono text-[10px] font-bold tracking-wider flex items-center justify-center gap-1.5 cursor-pointer border border-white/5 transition"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
+                              BATCH SPLIT ACTIONS
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </main>
+
     </div>
   );
 };

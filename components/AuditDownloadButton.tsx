@@ -372,7 +372,7 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({
       className={`${base} bg-[#0A192F] text-white hover:bg-slate-800 ${className}`}
     >
       {status === 'success' ? (
-        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <CheckCircle2 className="w-4 h-4 text-brand-purple-light" />
       ) : (
         <FileText className="w-4 h-4 text-[#D4AF37]" />
       )}

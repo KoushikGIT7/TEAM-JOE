@@ -1,13 +1,17 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ChevronLeft, CheckCircle2, ChefHat, Clock, Check, PackageCheck, AlertCircle, ArrowLeft, ShoppingBag, Lock } from 'lucide-react';
+import { useApp } from '../../contexts/AppContext';
 import { QRCodeSVG } from 'qrcode.react';
 import { listenToOrder } from '../../services/firestore-db';
-import { Order, CartItem } from '../../types';
-import { shouldShowQR } from '../../utils/orderLifecycle';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { generateQRPayloadSync } from '../../services/qr';
-import FoodLoader from '../../components/Common/FoodLoader';
+import { Lock, CheckCircle2, ArrowLeft, RefreshCw, Sparkles, ShoppingBag, AlertCircle } from 'lucide-react';
+import { Order, CartItem } from '../../types';
 
 interface QRViewProps {
   orderId: string;
@@ -16,11 +20,12 @@ interface QRViewProps {
 }
 
 const ITEM_COLOR_MAP: Record<string, { color: string; label: string; emoji: string }> = {
-  'BKT01': { color: '#94A3B8', label: 'IDLI (2PCS)',   emoji: '⚪' }, // Grey-White
-  'BKT03': { color: '#F97316', label: 'MASALA DOSA',  emoji: '🟠' }, // Saffron
-  'BKT06': { color: '#D946EF', label: 'ONION DOSA',   emoji: '🟣' }, // Purple
-  'BKT04': { color: '#22C55E', label: 'SET DOSA',     emoji: '🟢' }, // Green
+  'BKT01': { color: '#94A3B8', label: 'IDLI (2PCS)',   emoji: '⚪' },
+  'BKT03': { color: '#F97316', label: 'MASALA DOSA',  emoji: '🟠' },
+  'BKT06': { color: '#D946EF', label: 'ONION DOSA',   emoji: '🟣' },
+  'BKT04': { color: '#22C55E', label: 'SET DOSA',     emoji: '🟢' },
   'BKT10': { color: '#F43F5E', label: 'BREAD OMELETTE', emoji: '🔴' },
+  'BKT11': { color: '#b76dff', label: '2 IDLI + 2 MIRCHI', emoji: '🍽️' },
   'LCH01': { color: '#EAB308', label: 'PLATE MEAL',   emoji: '🟡' },
   'BEV01': { color: '#3B82F6', label: 'CHAI / TEA',   emoji: '🔵' },
   'BEV02': { color: '#3B82F6', label: 'COFFEE',       emoji: '🔵' },
@@ -36,130 +41,9 @@ const getItemBadge = (item: CartItem): 'SERVED' | 'READY' | 'COOKING' | 'QUEUED'
   return 'QUEUED';
 };
 
+export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
+  const { menuItems } = useApp();
 
-interface RichQRCardProps {
-  qrString: string;
-  activeItem: CartItem;
-  isVisible: boolean;
-  isServed: boolean;
-  isMissed: boolean;
-  itemConfig: any;
-  isOrderPaid: boolean;
-}
-
-const RichQRCard: React.FC<RichQRCardProps> = ({
-  qrString, activeItem, isVisible, isServed, isMissed, itemConfig, isOrderPaid
-}) => {
-  const badge = getItemBadge(activeItem);
-  const qty = activeItem.quantity ?? 1;
-  
-  const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
-  
-  // 🛡️ [STRICT-KITCHEN-LOCK]: All items require READY status. Fast items are READY by default.
-  const qrUnlocked = isVisible && !isMissed && !isAlreadyServed && (badge === 'READY') && isOrderPaid;
-
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative p-2 rounded-[3.5rem] transition-all duration-700">
-        
-        {/* ⚡ SONIC LASER BORDER (Item Color Linked) */}
-        {qrUnlocked && (
-          <div className="laser-container" style={{ '--laser-color': itemConfig.color } as any}>
-            <div className="laser-line" />
-            <div className="laser-mask" />
-          </div>
-        )}
-
-        <div className={`relative w-[280px] h-[280px] rounded-[3rem] overflow-hidden bg-white shadow-sm border border-gray-100 flex items-center justify-center z-10 transition-all duration-700`}>
-          
-          {/* ⚡ LASER SCAN LINE */}
-          {qrUnlocked && (
-            <div className="absolute inset-x-0 h-0.5 bg-emerald-500/20 blur-[1px] z-30 animate-scan pointer-events-none" />
-          )}
-
-          {qrUnlocked && (
-            <div className={`transition-all duration-700 bg-white p-5 rounded-3xl contrast-[1.25] ${qrUnlocked ? 'opacity-100 blur-0 scale-100' : 'opacity-5 blur-2xl scale-95 pointer-events-none'}`}>
-              <QRCodeSVG value={qrString} size={230} level="M" fgColor="#000000" bgColor="#FFFFFF" />
-            </div>
-          )}
-
-          {/* 🛡️ LIVE SECURITY TICK (Anti-Screenshot) */}
-          {qrUnlocked && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-white/80 backdrop-blur-md px-3 py-1 rounded-full border border-black/5 shadow-sm">
-               <span className="text-[10px] font-mono font-black text-slate-900 tracking-widest whitespace-nowrap">
-                 {(new Date()).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                 <span className="opacity-30 ml-1">.{(Date.now() % 1000).toString().padStart(3, '0').slice(0, 1)}s</span>
-               </span>
-            </div>
-          )}
-
-          {qrUnlocked && (
-            <div className="absolute bottom-4 right-4 z-20">
-              <div className="text-white text-sm font-black px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5" style={{ background: itemConfig.color }}>
-                <span className="text-[10px] opacity-70">QTY</span>
-                <span className="text-base leading-none">{qty}</span>
-              </div>
-            </div>
-          )}
-
-          {!qrUnlocked && !isServed && !isMissed && !isAlreadyServed && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white animate-in fade-in duration-500">
-               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center ${!isOrderPaid ? 'bg-rose-50' : 'bg-slate-50'}`}>
-                 {!isOrderPaid ? <AlertCircle className="w-10 h-10 text-rose-500" /> : <Lock className="w-10 h-10 text-slate-400 animate-pulse" />}
-               </div>
-               <div className="text-center px-6">
-                 <p className="text-lg font-black text-slate-900 tracking-tight">{!isOrderPaid ? 'Payment Pending' : 'Preparing Your Food'}</p>
-                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5 italic">{!isOrderPaid ? 'Awaiting Cashier Approval' : 'QR Locked Until Preparation Complete'}</p>
-               </div>
-            </div>
-          )}
-
-          {(isAlreadyServed || isServed) && !isMissed && (
-            <div className="absolute inset-0 bg-white flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500 z-40">
-              <div className="w-24 h-24 bg-emerald-50 rounded-[40%] flex items-center justify-center mb-4">
-                 <CheckCircle2 className="w-12 h-12 text-emerald-500" />
-              </div>
-              <p className="text-lg font-black text-slate-900 tracking-tighter uppercase leading-none italic">Handover Complete</p>
-              <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-2">{itemConfig.label} Served</p>
-            </div>
-          )}
-
-          {isMissed && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/98 z-30 animate-in fade-in duration-500">
-              <AlertCircle className="w-14 h-14 text-amber-500" />
-              <p className="text-sm font-black text-gray-800 uppercase tracking-widest">Window Missed</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className={`mt-6 px-6 py-3 rounded-full flex items-center gap-4 transition-all duration-700 shadow-lg ${qrUnlocked ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-50'}`} style={{ background: qrUnlocked ? itemConfig.color : (isAlreadyServed ? '#10b981' : '#f1f5f9') }}>
-        <span className="text-xl">{isAlreadyServed ? '✅' : itemConfig.emoji}</span>
-        <div className="flex flex-col">
-          <p className={`text-xs font-black uppercase tracking-[0.1em] ${qrUnlocked || isAlreadyServed ? 'text-white' : 'text-gray-400'}`}>
-            {isAlreadyServed ? 'Order Collected' : itemConfig.label}
-          </p>
-          <p className={`text-[9px] font-bold ${qrUnlocked || isAlreadyServed ? 'text-white/80' : 'text-gray-400'}`}>
-            {isAlreadyServed ? 'Proceed to next section if any' : (qrUnlocked ? `Fresh & Ready for Scan` : (!isOrderPaid ? 'Awaiting Cashier Approval' : 'Order Confirmed - Being Prepared'))}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ItemDotByQR: React.FC<{ item: CartItem; isActive: boolean; onClick: () => void }> = ({ item, isActive, onClick }) => {
-  const config = getItemConfig(item.id);
-  return (
-    <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all ${isActive ? 'scale-110' : 'scale-90 opacity-60'}`}>
-      <div className={`w-14 h-14 rounded-2xl border-4 flex items-center justify-center text-xl transition-all ${isActive ? 'shadow-lg border-gray-900 bg-white' : 'border-gray-100 bg-gray-50'}`} style={{ borderColor: isActive ? config.color : undefined }}>
-        {item.status === 'SERVED' || item.status === 'COMPLETED' ? <Check className="w-6 h-6 text-green-500" /> : config.emoji}
-      </div>
-    </button>
-  );
-};
-
-const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   const [order, setOrder] = useState<Order | null>(() => {
     try {
       const opt = sessionStorage.getItem('joe_optimistic_order');
@@ -170,6 +54,7 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     } catch {}
     return null;
   });
+
   const [liveItems, setLiveItems] = useState<any[]>(() => {
     try {
       const opt = sessionStorage.getItem('joe_optimistic_order');
@@ -180,29 +65,64 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
     } catch {}
     return [];
   });
+
   const [loading, setLoading] = useState(!order);
-  const [flashState, setFlashState] = useState<'GREEN' | 'RED' | null>(null);
   const [activeItemIdx, setActiveItemIdx] = useState(0);
-  const [tick, setTick] = useState(0);
+  const [tickerTime, setTickerTime] = useState('');
 
   const isMounted = useRef(true);
-  const prevItemsRef = useRef<any[] | null>(null);
 
   useEffect(() => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
-  // 🛡️ [STRICT-ROUTE-LOCK]: Boot user if payment is not valid
+  // Secure rotating milliseconds ticker
   useEffect(() => {
-    if (!loading && order) {
-      if (order.paymentStatus !== 'SUCCESS' && order.paymentStatus !== 'VERIFIED') {
-        alert('Payment verification required.');
-        onBack();
-      }
-    }
-  }, [loading, order, onBack]);
+    let active = true;
+    const updateTime = () => {
+      if (!active) return;
+      const now = new Date();
+      const secs = now.getSeconds().toString().padStart(2, '0');
+      const ms = Math.floor(now.getMilliseconds() / 10).toString().padStart(2, '0');
+      setTickerTime(`SECURE TICKET SECS: ${secs}:${ms}`);
+      requestAnimationFrame(updateTime);
+    };
+    updateTime();
+    return () => { active = false; };
+  }, []);
 
+  // Real-time order doc updates
+  useEffect(() => {
+    if (!orderId) return;
+    return listenToOrder(orderId, (data) => {
+      if (!isMounted.current) return;
+      if (data) {
+        setOrder(data);
+        setLoading(false);
+      }
+    });
+  }, [orderId]);
+
+  // Real-time item subcollection updates
+  useEffect(() => {
+    if (!orderId) return;
+    const q = query(collection(db, 'orders', orderId, 'items'));
+    return onSnapshot(
+      q,
+      (snap) => {
+        if (!isMounted.current) return;
+        if (!snap.empty) {
+          setLiveItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }
+      },
+      (error) => {
+        console.warn(`[QRView:items] Live items listener stopped: ${error.message}`);
+      }
+    );
+  }, [orderId]);
+
+  // Merge items data
   const items = useMemo(() => {
     if (!order) return [];
     return (order.items || []).map(root => {
@@ -212,156 +132,250 @@ const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders }) => {
   }, [order, liveItems]);
 
   const isFullyServed = useMemo(() => items.length > 0 && items.every(it => it.status === 'SERVED' || it.status === 'COMPLETED'), [items]);
-  const qrVisible = !!order && (shouldShowQR(order) || items.some(i => i.status === 'READY'));
   const isDone = isFullyServed || order?.orderStatus === 'COMPLETED' || order?.orderStatus === 'SERVED';
   const isMissed = order?.orderStatus === 'MISSED';
 
+  // Back to menu redirect once order is complete
   useEffect(() => {
-    if (!qrVisible || isDone) return;
-    const interval = setInterval(() => setTick(t => t + 1), 100);
-    return () => clearInterval(interval);
-  }, [qrVisible, isDone]);
-
-  useEffect(() => {
-    if (!orderId) return;
-    return listenToOrder(orderId, (data) => {
-      if (!isMounted.current) return;
-      // 🛡️ Guard against the initial local snapshot returning null while the
-      // background createOrder transaction is still in-flight.
-      if (data) {
-        setOrder(data);
-        setLoading(false);
-      }
-    });
-  }, [orderId]);
-
-  useEffect(() => {
-    if (!orderId) return;
-    const q = query(collection(db, 'orders', orderId, 'items'));
-    return onSnapshot(q, (snap) => {
-      if (!isMounted.current) return;
-      if (!snap.empty) {
-        setLiveItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      }
-    });
-  }, [orderId]);
-
-  const activeColors = useMemo(() => {
-    if (!order) return ['#3b82f6'];
-    const colors: string[] = [];
-    items.forEach(it => {
-      if (it.status === 'READY') {
-        const config = getItemConfig(it.id);
-        if (!colors.includes(config.color)) colors.push(config.color);
-      }
-    });
-    return colors.length > 0 ? colors : ['#3b82f6'];
-  }, [order, items]);
-
-  useEffect(() => {
-    if (items.length === 0 || !prevItemsRef.current) {
-      prevItemsRef.current = items;
-      return;
+    if (isDone) {
+      const timer = setTimeout(() => {
+        onBack();
+      }, 3000);
+      return () => clearTimeout(timer);
     }
-    
-    let gotReady = false;
-    items.forEach(it => {
-      const prev = prevItemsRef.current!.find(p => p.id === it.id);
-      if (prev && prev.status !== 'READY' && it.status === 'READY') gotReady = true;
-    });
+  }, [isDone, onBack]);
 
-    if (gotReady) {
-      setFlashState('GREEN');
-      if ('vibrate' in navigator) navigator.vibrate([50, 50, 150]);
-      // Male voice removed as requested
-      setTimeout(() => setFlashState(null), 2500);
-    }
-    prevItemsRef.current = items;
-  }, [items, isFullyServed]);
-
-  // 🧭 [AUTOMATIC-TRANSITION-ENGINE]: Redirect once 100% fulfilled
-  useEffect(() => {
-    if (isFullyServed) {
-       const timer = setTimeout(() => {
-          onBack(); 
-       }, 3000);
-       return () => clearTimeout(timer);
-    }
-  }, [isFullyServed, onBack]);
-
-  if (loading || !order) return <div className="h-screen w-full flex items-center justify-center bg-white"><FoodLoader /></div>;
+  if (loading || !order) {
+    return (
+      <div className="min-h-screen bg-surface-lowest flex flex-col items-center justify-center p-6 text-center text-on-surface max-w-md mx-auto border-x border-white/5 shadow-2xl">
+        <Sparkles className="w-12 h-12 text-brand-purple mb-4 animate-spin" />
+        <h3 className="font-display text-lg font-bold">Connecting...</h3>
+      </div>
+    );
+  }
 
   const activeItem = items[activeItemIdx] || items[0];
+  if (!activeItem) return null;
+
+  const itemConfig = getItemConfig(activeItem.id);
+  const badge = getItemBadge(activeItem);
+  const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
+  const isOrderPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
+  // QR unlocks when:
+  //   (a) cashier confirmed cash payment → qrStatus becomes 'ACTIVE', OR
+  //   (b) kitchen marks item READY (for pre-paid orders)
+  // It stays locked only when payment is pending OR item is already served.
+  const isQRActive = order.qrStatus === 'ACTIVE' || order.qr?.status === 'ACTIVE';
+  const qrUnlocked = !isMissed && !isAlreadyServed && isOrderPaid && (isQRActive || badge === 'READY');
 
   return (
-    <div className="min-h-screen w-full max-w-md mx-auto flex flex-col bg-white overflow-x-hidden font-sans select-none relative">
-      <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-50 p-6 border-b border-slate-50 flex items-center justify-between">
-        <button onClick={onBack} disabled={isFullyServed} className="w-11 h-11 bg-white border border-slate-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all">
-          <ArrowLeft className="w-5 h-5 text-slate-600" />
-        </button>
-        <div className="flex flex-col items-center">
-           <h2 className="text-[10px] font-black uppercase text-slate-300 tracking-[0.2em] mb-0.5">Serving Token</h2>
-           <p className="text-sm font-black text-slate-800 tracking-tighter">#{order.id.slice(-8).toUpperCase()}</p>
-        </div>
-        <button onClick={onViewOrders} className="w-11 h-11 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all text-slate-400">
-           <ShoppingBag className="w-5 h-5" />
-        </button>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-6">
-        {isFullyServed ? (
-          <div className="flex flex-col items-center justify-center animate-in zoom-in fade-in duration-700">
-             <div className="w-40 h-40 bg-emerald-50 rounded-[40%] flex items-center justify-center mb-8 shadow-2xl shadow-emerald-500/10">
-                <CheckCircle2 className="w-20 h-20 text-emerald-500" />
-             </div>
-             <h3 className="text-4xl font-black text-slate-900 tracking-tight leading-none text-center">Meals Served!</h3>
-             <p className="text-base font-bold text-slate-400 mt-4 text-center px-8">Your entire order has been successfully picked up. Enjoy your meal!</p>
-             <p className="text-[10px] uppercase font-black text-emerald-500 mt-12 tracking-[0.2em] animate-pulse">Auto-redirecting in 3s...</p>
+    <div className="min-h-screen bg-surface-lowest pb-24 text-on-surface max-w-md mx-auto border-x border-white/5 shadow-2xl">
+      {/* App Bar Header */}
+      <header className="sticky top-0 z-50 flex justify-between items-center px-5 h-16 w-full bg-surface-lowest/80 backdrop-blur-xl border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            disabled={isFullyServed}
+            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:scale-95 transition-transform cursor-pointer disabled:opacity-50"
+          >
+            <ArrowLeft className="w-5 h-5 text-brand-purple" />
+          </button>
+          <div className="flex flex-col">
+            <span className="font-mono text-[9px] tracking-widest text-brand-purple-light uppercase leading-none">ACTIVE SERVINGS</span>
+            <h1 className="font-display font-black text-white text-md mt-1 leading-none">Token QR</h1>
           </div>
-        ) : (
-          <RichQRCard 
-            qrString={generateQRPayloadSync(order, activeItem.id)}
-            activeItem={activeItem}
-            isVisible={qrVisible}
-            isServed={isDone}
-            isMissed={isMissed}
-            itemConfig={getItemConfig(activeItem.id)}
-            isOrderPaid={order?.paymentStatus === 'SUCCESS' || order?.paymentStatus === 'VERIFIED'}
-          />
+        </div>
+
+        <div className="flex items-center gap-2 bg-surface-high border border-white/5 px-4 py-1.5 rounded-full select-none">
+          <span className="font-mono text-xs font-black text-brand-purple-light tracking-widest uppercase">
+            {order.tokenNumber ? `#${order.tokenNumber}` : `#${order.id.slice(-6).toUpperCase()}`}
+          </span>
+        </div>
+      </header>
+
+      {/* Main token display */}
+      <main className="px-5 mt-6 space-y-6">
+        {/* Carousel indicators if multiple items */}
+        {items.length > 1 && !isFullyServed && (
+          <section className="space-y-2 select-none">
+            <p className="font-mono text-[9px] text-zinc-500 text-center tracking-widest uppercase">
+              Tapping indexes switch token codes
+            </p>
+            <div className="flex justify-center gap-2 py-1 bg-surface-high/30 rounded-2xl border border-white/5 p-2 overflow-x-auto hide-scrollbar">
+              {items.map((it, idx) => {
+                const details = menuItems.find(m => m.id === it.id);
+                const isServed = it.status === 'SERVED' || it.status === 'COMPLETED';
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setActiveItemIdx(idx)}
+                    className={`px-3 py-1.5 rounded-full border text-xs font-mono font-bold flex items-center gap-1.5 active:scale-95 transition-transform cursor-pointer shrink-0 ${
+                      activeItemIdx === idx
+                        ? 'border-brand-purple bg-brand-purple/10 text-brand-purple-light'
+                        : 'border-white/5 bg-white/5 hover:bg-white/10 text-zinc-400'
+                    }`}
+                  >
+                    <span>{details?.name.split(' ')[0]}</span>
+                    {isServed ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-green font-black" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-purple" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         )}
-      </div>
 
-      {items.length > 1 && !isFullyServed && (
-        <div className="px-6 py-6 border-t border-gray-50 bg-gray-50/30 overflow-x-auto">
-          <div className="flex items-center justify-center gap-5">
-            {items.map((item, idx) => (
-              <ItemDotByQR key={idx} item={item} isActive={activeItemIdx === idx} onClick={() => setActiveItemIdx(idx)} />
-            ))}
+        {/* Token Card Base */}
+        <section className="flex flex-col items-center">
+          <div 
+            className={`p-4 rounded-[2.5rem] bg-surface-mid w-full max-w-[300px] aspect-[0.85/1] flex flex-col justify-between border transition-all relative overflow-hidden ${
+              qrUnlocked ? 'border-white/10' : 'border-white/5 shadow-2xl'
+            }`}
+            style={{
+              boxShadow: qrUnlocked ? `0 0 25px ${(itemConfig.color || '#b76dff')}25` : undefined
+            }}
+          >
+            
+            {/* Countdown seconds milliseconds ticker */}
+            <div className="flex justify-between items-center bg-surface-lowest/50 backdrop-blur-md border border-white/5 px-3 py-1 rounded-full z-10 w-full select-none">
+              <span className="font-mono text-[8px] font-black tracking-widest text-brand-purple-light">
+                {tickerTime}
+              </span>
+              <RefreshCw className="w-2.5 h-2.5 text-brand-purple animate-spin" />
+            </div>
+
+            {/* QR block or locker state */}
+            <div className="relative w-full aspect-square flex items-center justify-center p-2 z-10 select-none">
+              
+              {/* ⚡ SONIC LASER BORDER (Item Color Linked) */}
+              {qrUnlocked && (
+                <div 
+                  className="laser-container" 
+                  style={{ 
+                    '--laser-color': itemConfig.color || '#b76dff',
+                    filter: `drop-shadow(0 0 10px ${itemConfig.color || '#b76dff'}) drop-shadow(0 0 3px ${itemConfig.color || '#b76dff'})`
+                  } as React.CSSProperties}
+                >
+                  <div className="laser-line" />
+                  <div className="laser-mask" style={{ background: '#ffffff' }} />
+                </div>
+              )}
+
+              <div className={`relative w-full h-full rounded-[2.8rem] overflow-hidden bg-white flex items-center justify-center z-10 transition-all duration-700 p-4 border border-gray-100 shadow-inner`}>
+                {isFullyServed || isAlreadyServed ? (
+                  <div className="flex flex-col items-center justify-center text-center p-4">
+                    <div className="w-16 h-16 rounded-full bg-brand-green/10 border border-brand-green flex items-center justify-center mb-2 animate-bounce">
+                      <CheckCircle2 className="w-10 h-10 text-brand-green" />
+                    </div>
+                    <span className="font-display font-black text-slate-800 uppercase text-sm">
+                      Handover Complete!
+                    </span>
+                    <span className="font-sans text-[10px] text-zinc-400 mt-1 leading-none">
+                      Hope to see you soon
+                    </span>
+                  </div>
+                ) : isMissed ? (
+                  <div className="flex flex-col items-center justify-center text-center p-4">
+                    <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500 flex items-center justify-center mb-2 animate-pulse">
+                      <AlertCircle className="w-10 h-10 text-red-500" />
+                    </div>
+                    <span className="font-display font-black text-red-600 uppercase text-sm">
+                      Window Missed
+                    </span>
+                  </div>
+                ) : !qrUnlocked ? (
+                  // Locked state — show reason
+                  <div className="absolute inset-0 bg-surface-lowest/90 backdrop-blur-md border border-white/10 flex flex-col items-center justify-center p-4 rounded-[2rem] z-20">
+                    <div className="w-11 h-11 rounded-full bg-brand-purple-dark/30 border border-brand-purple/40 flex items-center justify-center mb-2">
+                      <Lock className="w-5 h-5 text-brand-purple animate-pulse" />
+                    </div>
+                    <h4 className="font-display font-bold text-xs text-brand-purple-light uppercase text-center tracking-wider leading-relaxed">
+                      {!isOrderPaid
+                        ? 'Payment Pending'
+                        : badge === 'READY'
+                          ? 'Scan Ready'
+                          : 'Preparing Your Food'}
+                    </h4>
+                    <p className="font-sans text-[9px] text-zinc-400 max-w-[80%] text-center leading-normal mt-1.5">
+                      {!isOrderPaid
+                        ? 'Waiting for cashier to confirm your cash payment.'
+                        : 'Your QR token unlocks once the cashier confirms payment or chef marks items READY.'}
+                    </p>
+                  </div>
+                ) : (
+                  // Full QR Code Display
+                  <div className="relative w-full h-full p-2 bg-white flex items-center justify-center rounded-xl overflow-hidden">
+                    <QRCodeSVG 
+                      value={generateQRPayloadSync(order, activeItem.id)} 
+                      size={200} 
+                      level="M" 
+                      fgColor="#000000" 
+                      bgColor="#FFFFFF" 
+                    />
+                    {/* Sliding laser beam scanner effect */}
+                    <div className="absolute inset-x-0 h-0.5 bg-brand-purple shadow-[0_0_8px_#b76dff] z-30 animate-scan pointer-events-none" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom branding footer */}
+            <div className="text-center z-10 w-full pt-1.5 border-t border-white/5 font-mono text-[8px] text-zinc-500 select-none">
+              VERIFIED TICKET COMS • DIGITAL PILOT NO# 8842
+            </div>
+
           </div>
+        </section>
+
+        {/* Selected Item detail panel */}
+        <section className="glass-bg glass-stroke p-4 rounded-2xl flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl overflow-hidden bg-surface-mid shrink-0 flex items-center justify-center">
+            <img 
+              className="w-full h-full object-cover" 
+              alt={activeItem.name} 
+              src={menuItems.find(m => m.id === activeItem.id || m.name === activeItem.name)?.imageUrl || activeItem.imageUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(activeItem.name)}`} 
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                const menuDetail = menuItems.find(m => m.name === activeItem.name || m.id === activeItem.id);
+                if (menuDetail?.imageUrl && target.src !== menuDetail.imageUrl) {
+                  target.src = menuDetail.imageUrl;
+                } else {
+                  target.src = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(activeItem.name)}`;
+                }
+              }}
+            />
+          </div>
+          <div className="flex-grow min-w-0">
+            <div className="flex justify-between items-center">
+              <span className="font-mono text-[9px] text-brand-purple tracking-widest uppercase">
+                {activeItem.category}
+              </span>
+              <span className="font-mono text-xs text-brand-green font-bold uppercase leading-none">
+                {activeItem.status}
+              </span>
+            </div>
+            <h3 className="font-display font-extrabold text-xs text-white truncate mt-1">
+              {activeItem.quantity}x {activeItem.name}
+            </h3>
+            <p className="font-sans text-[10px] text-on-surface-variant mt-0.5">
+              Total price: ₹{(activeItem.price * activeItem.quantity).toFixed(2)}
+            </p>
+          </div>
+        </section>
+
+        {/* Action button */}
+        <div className="pt-2 select-none">
+          <button 
+            onClick={onViewOrders}
+            className="w-full py-4.5 bg-[#171f33]/60 hover:bg-white/5 text-white border border-white/10 rounded-full text-xs font-mono font-bold tracking-widest active:scale-95 transition-all cursor-pointer text-center"
+          >
+            Review All Receipts
+          </button>
         </div>
-      )}
-
-      <div className="px-6 pb-12 pt-4">
-        <button 
-          onClick={() => { if (onViewOrders) onViewOrders(); else onBack(); }}
-          className="w-full py-5 bg-gray-900 text-white rounded-[2rem] text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-gray-200"
-        >
-          {onViewOrders ? 'Review All Orders' : 'Back to Menu'}
-        </button>
-      </div>
-
-      {isDone && (
-         <div className="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
-           <div className="w-40 h-40 bg-green-50 rounded-[3.5rem] flex items-center justify-center mb-10">
-             <CheckCircle2 className="w-20 h-20 text-green-500" />
-           </div>
-           <h2 className="text-4xl font-black text-gray-900 mb-4 tracking-tighter">Meal Served!</h2>
-           <p className="text-gray-400 font-bold text-center leading-relaxed max-w-xs mb-10 text-balance">
-             Successfully handed over at the counter. Thank you!
-           </p>
-           <button onClick={onBack} className="w-full py-5 bg-green-600 text-white rounded-[2rem] text-xs font-black uppercase tracking-widest shadow-lg">Done</button>
-         </div>
-      )}
+      </main>
     </div>
   );
 };

@@ -68,6 +68,7 @@ const docToRechargeRequest = (id: string, data: any): WalletRechargeRequest => (
   reviewedBy: data.reviewedBy,
   reviewedAt: data.reviewedAt ? toMillis(data.reviewedAt) : undefined,
   rejectionNote: data.rejectionNote,
+  utrNumber: data.utrNumber || '',
 });
 
 const docToTransaction = (id: string, data: any): WalletTransaction => ({
@@ -219,7 +220,8 @@ export const submitRechargeRequest = async (
   uid: string,
   studentName: string,
   amount: number,
-  screenshotUrl: string
+  screenshotUrl: string,
+  utr?: string
 ): Promise<string> => {
   if (!uid) throw new Error('User not authenticated');
   if (amount <= 0) throw new Error('Amount must be greater than 0');
@@ -230,6 +232,7 @@ export const submitRechargeRequest = async (
     studentName,
     amount,
     screenshotUrl,
+    utrNumber: utr || '',
     status: 'pending' as RechargeStatus,
     createdAt: serverTimestamp(),
     reviewedBy: null,
@@ -338,6 +341,10 @@ export const rejectRechargeRequest = async (
     throw new Error(`Cannot reject: request is already '${snap.data().status}'`);
   }
 
+  const reqData = snap.data();
+  const rejectedUid: string = reqData.uid;
+  const rejectedAmount: number = reqData.amount;
+
   await updateDoc(requestRef, {
     status: 'rejected' as RechargeStatus,
     reviewedBy: rejectedBy,
@@ -346,6 +353,11 @@ export const rejectRechargeRequest = async (
   });
 
   console.log(`[WALLET] Recharge rejected: ${requestId} by ${rejectedBy}`);
+  triggerOneSignalWebhook(
+    rejectedUid,
+    '❌ Recharge Request Declined',
+    `Your top-up of ₹${rejectedAmount} was declined.${note ? ` Reason: ${note}` : ' Please contact the cashier.'}`
+  );
 };
 
 // ─── WRITE: DEDUCT WALLET FOR ORDER ─────────────────────────────────────────

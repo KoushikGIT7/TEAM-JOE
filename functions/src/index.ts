@@ -5,51 +5,79 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATION EVENTS
+// ─────────────────────────────────────────────────────────────────────────────
 type NotificationEvent =
   | "PAYMENT_SUCCESS"
   | "PAYMENT_REJECTED"
+  | "CASH_ORDER_PLACED"
+  | "KITCHEN_COOKING"
   | "FULL_ORDER_READY"
-  | "ORDER_COLLECTED";
+  | "QR_SCANNED_SERVED"
+  | "ORDER_COLLECTED"
+  | "WALLET_RECHARGED"
+  | "WALLET_RECHARGE_REJECTED";
 
-/**
- * 🚀 [BACKEND-NOTIFY] Sends targeted FCM push notifications to a student's active devices.
- * Prunes dead tokens on delivery failure to maintain zero bloat.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// sendNotification — FCM multicast with dead-token pruning
+// ─────────────────────────────────────────────────────────────────────────────
 async function sendNotification(
   userId: string,
   event: NotificationEvent,
   orderId: string,
   orderData: any
 ): Promise<void> {
-  // 1. Determine title and body based on event and paymentType
   let title = "";
   let body = "";
 
-  if (event === "PAYMENT_SUCCESS") {
-    if (orderData.paymentType === "UPI") {
-      title = "Payment Confirmed";
-      body = "Your order has been placed successfully.";
-    } else {
-      // CASH order confirmed/approved by Cashier
-      title = "Order Confirmed";
-      body = "Your order has been accepted and is being prepared.";
-    }
-  } else if (event === "PAYMENT_REJECTED") {
-    title = "Order Rejected";
-    body = "Your order could not be accepted. Please contact the cashier.";
-  } else if (event === "FULL_ORDER_READY") {
-    title = "Order Ready for Pickup";
-    body = "Your order is ready at the counter.";
-  } else if (event === "ORDER_COLLECTED") {
-    title = "Order Completed";
-    body = "Your order has been successfully collected.";
-  } else {
-    // Unknown or unsupported event
-    return;
+  switch (event) {
+    case "PAYMENT_SUCCESS":
+      if (orderData.paymentType === "UPI" || orderData.paymentType === "WALLET") {
+        title = "✅ Payment Confirmed";
+        body = "Your order has been placed. We're getting it ready!";
+      } else {
+        title = "✅ Cash Confirmed — QR Unlocked!";
+        body = "Show your QR code at the counter to collect your order.";
+      }
+      break;
+    case "PAYMENT_REJECTED":
+      title = "❌ Order Rejected";
+      body = "Your order could not be accepted. Please contact the cashier.";
+      break;
+    case "CASH_ORDER_PLACED":
+      title = "💵 Cash Order Received";
+      body = `Order #${orderId.slice(-4).toUpperCase()} is waiting for cashier confirmation. Please pay at the counter.`;
+      break;
+    case "KITCHEN_COOKING":
+      title = "🍳 Kitchen is Cooking!";
+      body = `Order #${orderId.slice(-4).toUpperCase()} is being prepared. Sit tight!`;
+      break;
+    case "FULL_ORDER_READY":
+      title = "🍽️ Order Ready for Pickup!";
+      body = `Order #${orderId.slice(-4).toUpperCase()} is ready at the counter. Come collect it now!`;
+      break;
+    case "QR_SCANNED_SERVED":
+      title = "🎉 Order Handed Over!";
+      body = `Order #${orderId.slice(-4).toUpperCase()} has been served. Enjoy your meal! Bon appétit 🎊`;
+      break;
+    case "ORDER_COLLECTED":
+      title = "✅ Order Completed";
+      body = "Your order has been successfully collected. See you next time!";
+      break;
+    case "WALLET_RECHARGED":
+      title = "💰 Wallet Recharged!";
+      body = `₹${orderData.amount || ''} has been added to your JOE Wallet. Updated balance ready.`;
+      break;
+    case "WALLET_RECHARGE_REJECTED":
+      title = "❌ Recharge Rejected";
+      body = `Your recharge of ₹${orderData.amount || ''} was declined. Please contact the cashier.`;
+      break;
+    default:
+      return;
   }
 
-  // 2. Fetch user's FCM tokens from Firestore
+  // Fetch FCM tokens from Firestore
   const userRef = db.collection("users").doc(userId);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
@@ -59,106 +87,85 @@ async function sendNotification(
 
   const userData = userSnap.data()!;
   const tokens: string[] = userData.fcmTokens || [];
-  if (userData.fcmToken) {
-    tokens.push(userData.fcmToken); // Fallback for legacy single token field
-  }
+  if (userData.fcmToken) tokens.push(userData.fcmToken); // legacy field fallback
 
-  // Deduplicate and filter out empty strings
   const uniqueTokens = Array.from(new Set(tokens.filter(t => typeof t === 'string' && t.trim() !== '')));
-
   if (uniqueTokens.length === 0) {
-    functions.logger.info(`[FCM-INFO] No registered FCM tokens for user ${userId}. Skipping push.`);
+    functions.logger.info(`[FCM-INFO] No FCM tokens for user ${userId}. Skipping push.`);
     return;
   }
-
-  const payload = {
-    notification: {
-      title,
-      body,
-    },
-    data: {
-      orderId,
-      event,
-    },
-  };
 
   functions.logger.info(`[FCM] Sending ${event} to user ${userId} (${uniqueTokens.length} devices)`);
 
   try {
     const response = await admin.messaging().sendEachForMulticast({
       tokens: uniqueTokens,
-      notification: payload.notification,
-      data: payload.data,
+      notification: { title, body },
+      data: { orderId, event },
+      android: {
+        priority: "high",
+        notification: { channelId: "joe_orders", sound: "default" }
+      },
+      apns: {
+        payload: { aps: { sound: "default", badge: 1 } }
+      }
     });
 
     const tokensToRemove: string[] = [];
     response.responses.forEach((res, index) => {
       if (!res.success) {
-        const err = res.error;
-        if (err) {
-          const code = err.code;
-          functions.logger.warn(`[FCM-SEND-ERROR] Token error at index ${index} (${uniqueTokens[index]}): ${code}`);
-          if (
-            code === "messaging/invalid-registration-token" ||
-            code === "messaging/registration-token-not-registered"
-          ) {
-            tokensToRemove.push(uniqueTokens[index]);
-          }
+        const code = res.error?.code;
+        functions.logger.warn(`[FCM-SEND-ERROR] Token[${index}]: ${code}`);
+        if (
+          code === "messaging/invalid-registration-token" ||
+          code === "messaging/registration-token-not-registered"
+        ) {
+          tokensToRemove.push(uniqueTokens[index]);
         }
       }
     });
 
-    // Prune invalid/unregistered tokens from the database
     if (tokensToRemove.length > 0) {
-      functions.logger.info(`[FCM-CLEANUP] Pruning ${tokensToRemove.length} stale tokens for user ${userId}`);
+      functions.logger.info(`[FCM-CLEANUP] Pruning ${tokensToRemove.length} stale tokens for ${userId}`);
       await userRef.update({
         fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToRemove),
         lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
   } catch (err) {
-    functions.logger.error(`[FCM-ERROR] Multicast failed for order ${orderId}`, err);
+    functions.logger.error(`[FCM-ERROR] Multicast failed for ${orderId}`, err);
   }
 }
 
-/**
- * 🛡️ [IDEMPOTENCY] Returns true if the event key was already sent.
- * Uses notificationEvents map on the order document.
- */
-async function markEventSent(
-  orderId: string,
-  event: string
-): Promise<boolean> {
+// ─────────────────────────────────────────────────────────────────────────────
+// markEventSent — Idempotency guard via Firestore transaction
+// ─────────────────────────────────────────────────────────────────────────────
+async function markEventSent(orderId: string, event: string): Promise<boolean> {
   const ref = db.collection("orders").doc(orderId);
-
   let alreadySent = false;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) return;
     const sentEvents: Record<string, number> = snap.data()?.notificationEvents || {};
-    if (sentEvents[event]) {
-      alreadySent = true;
-      return;
-    }
-    tx.update(ref, {
-      [`notificationEvents.${event}`]: Date.now(),
-    });
+    if (sentEvents[event]) { alreadySent = true; return; }
+    tx.update(ref, { [`notificationEvents.${event}`]: Date.now() });
   });
   return alreadySent;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔥 CLOUD FUNCTION: onOrderWrite — Watches ALL order-level state changes
-// Triggers: PAYMENT_SUCCESS, PAYMENT_REJECTED, FULL_ORDER_READY, ORDER_COLLECTED
+// onOrderWrite — watches ALL order-level state changes
+// Triggers: PAYMENT_SUCCESS, PAYMENT_REJECTED, CASH_ORDER_PLACED,
+//           KITCHEN_COOKING, FULL_ORDER_READY, QR_SCANNED_SERVED, ORDER_COLLECTED
 // ─────────────────────────────────────────────────────────────────────────────
 export const onOrderWrite = functions
   .firestore.document("orders/{orderId}")
   .onWrite(async (change, context) => {
     const before = change.before.exists ? change.before.data()! : null;
-    const after = change.after.exists ? change.after.data()! : null;
+    const after  = change.after.exists  ? change.after.data()!  : null;
     const orderId = context.params.orderId;
 
-    if (!after) return; // Document deleted — ignore
+    if (!after) return;
     if (!after.userId) {
       functions.logger.warn(`[NOTIFY-WARN] Missing userId on order ${orderId}`);
       return;
@@ -166,154 +173,173 @@ export const onOrderWrite = functions
 
     const studentId: string = after.userId;
 
-    // ── PAYMENT SUCCESS / CASHIER APPROVED ──────────────────────────────────────
-    const wasNotPaid = !before || (before.paymentStatus !== "SUCCESS" && before.paymentStatus !== "VERIFIED");
-    const isNowPaid = after.paymentStatus === "SUCCESS" || after.paymentStatus === "VERIFIED";
+    // ── 1. CASH ORDER PLACED (student placed cash order, waiting for cashier) ──
+    const wasCreated = !before;
+    const isCash = after.paymentType === "CASH";
+    if (wasCreated && isCash && after.paymentStatus === "PENDING") {
+      const dup = await markEventSent(orderId, "CASH_ORDER_PLACED");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] CASH_ORDER_PLACED for ${orderId}`);
+        await sendNotification(studentId, "CASH_ORDER_PLACED", orderId, after);
+      }
+      return;
+    }
+
+    // ── 2. PAYMENT SUCCESS / CASHIER APPROVED ──────────────────────────────────
+    const wasNotPaid  = !before || (before.paymentStatus !== "SUCCESS" && before.paymentStatus !== "VERIFIED");
+    const isNowPaid   = after.paymentStatus === "SUCCESS" || after.paymentStatus === "VERIFIED";
     if (wasNotPaid && isNowPaid) {
-      const duplicate = await markEventSent(orderId, "PAYMENT_SUCCESS");
-      if (!duplicate) {
-        functions.logger.info(`[NOTIFY] PAYMENT_SUCCESS queued for order ${orderId}`);
+      const dup = await markEventSent(orderId, "PAYMENT_SUCCESS");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] PAYMENT_SUCCESS for ${orderId}`);
         await sendNotification(studentId, "PAYMENT_SUCCESS", orderId, after);
-      } else {
-        functions.logger.info(`[NOTIFY-WARN] Duplicate PAYMENT_SUCCESS skipped for order ${orderId}`);
       }
       return;
     }
 
-    // ── PAYMENT REJECTED ────────────────────────────────────────────────────
+    // ── 3. PAYMENT REJECTED ────────────────────────────────────────────────────
     const wasNotRejected = !before || (before.paymentStatus !== "REJECTED" && before.orderStatus !== "REJECTED");
-    const isNowRejected = after.paymentStatus === "REJECTED" || after.orderStatus === "REJECTED";
+    const isNowRejected  = after.paymentStatus === "REJECTED"  || after.orderStatus === "REJECTED";
     if (wasNotRejected && isNowRejected) {
-      const duplicate = await markEventSent(orderId, "PAYMENT_REJECTED");
-      if (!duplicate) {
-        functions.logger.info(`[NOTIFY] PAYMENT_REJECTED sent for order ${orderId}`);
+      const dup = await markEventSent(orderId, "PAYMENT_REJECTED");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] PAYMENT_REJECTED for ${orderId}`);
         await sendNotification(studentId, "PAYMENT_REJECTED", orderId, after);
-      } else {
-        functions.logger.info(`[NOTIFY-WARN] Duplicate PAYMENT_REJECTED skipped for order ${orderId}`);
       }
       return;
     }
 
-    // ── FULL ORDER READY ────────────────────────────────────────────────────
+    // ── 4. KITCHEN COOKING (kitchenStatus transitions to COOKING) ──────────────
+    const wasNotCooking = !before || before.kitchenStatus !== "COOKING";
+    const isNowCooking  = after.kitchenStatus === "COOKING";
+    if (wasNotCooking && isNowCooking) {
+      const dup = await markEventSent(orderId, "KITCHEN_COOKING");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] KITCHEN_COOKING for ${orderId}`);
+        await sendNotification(studentId, "KITCHEN_COOKING", orderId, after);
+      }
+      return;
+    }
+
+    // ── 5. FULL ORDER READY ────────────────────────────────────────────────────
     const wasNotReady = !before || before.serveFlowStatus !== "READY";
-    const isNowReady = after.serveFlowStatus === "READY";
+    const isNowReady  = after.serveFlowStatus === "READY";
     if (wasNotReady && isNowReady) {
-      const duplicate = await markEventSent(orderId, "FULL_ORDER_READY");
-      if (!duplicate) {
-        functions.logger.info(`[NOTIFY] FULL_ORDER_READY sent for order ${orderId}`);
+      const dup = await markEventSent(orderId, "FULL_ORDER_READY");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] FULL_ORDER_READY for ${orderId}`);
         await sendNotification(studentId, "FULL_ORDER_READY", orderId, after);
-      } else {
-        functions.logger.info(`[NOTIFY-WARN] Duplicate FULL_ORDER_READY skipped for order ${orderId}`);
       }
       return;
     }
 
-    // ── ORDER COLLECTED ─────────────────────────────────────────────────────
+    // ── 6. QR SCANNED / SERVED (server scans QR, food handed over) ────────────
+    const wasNotServed = !before || (before.qrState !== "CONSUMED" && before.qrState !== "MANIFESTED");
+    const isNowServed  = after.qrState === "CONSUMED" || after.qrState === "MANIFESTED";
+    if (wasNotServed && isNowServed) {
+      const dup = await markEventSent(orderId, "QR_SCANNED_SERVED");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] QR_SCANNED_SERVED for ${orderId}`);
+        await sendNotification(studentId, "QR_SCANNED_SERVED", orderId, after);
+      }
+      return;
+    }
+
+    // ── 7. ORDER FULLY COMPLETED ───────────────────────────────────────────────
     const wasNotCompleted = !before || (before.orderStatus !== "COMPLETED" && before.serveFlowStatus !== "SERVED");
-    const isNowCompleted = after.orderStatus === "COMPLETED" || after.serveFlowStatus === "SERVED";
+    const isNowCompleted  = after.orderStatus === "COMPLETED" || after.serveFlowStatus === "SERVED";
     if (wasNotCompleted && isNowCompleted) {
-      const duplicate = await markEventSent(orderId, "ORDER_COLLECTED");
-      if (!duplicate) {
-        functions.logger.info(`[NOTIFY] ORDER_COLLECTED sent for order ${orderId}`);
+      const dup = await markEventSent(orderId, "ORDER_COLLECTED");
+      if (!dup) {
+        functions.logger.info(`[NOTIFY] ORDER_COLLECTED for ${orderId}`);
         await sendNotification(studentId, "ORDER_COLLECTED", orderId, after);
-      } else {
-        functions.logger.info(`[NOTIFY-WARN] Duplicate ORDER_COLLECTED skipped for order ${orderId}`);
       }
       return;
     }
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔥 CLOUD FUNCTION: onItemWrite — Watches item subcollection (No-op FCM)
+// onRechargeWrite — watches wallet_recharge_requests for approve/reject events
+// ─────────────────────────────────────────────────────────────────────────────
+export const onRechargeWrite = functions
+  .firestore.document("wallet_recharge_requests/{reqId}")
+  .onWrite(async (change, context) => {
+    const before = change.before.exists ? change.before.data()! : null;
+    const after  = change.after.exists  ? change.after.data()!  : null;
+    if (!after) return;
+
+    const userId = after.uid;
+    if (!userId) return;
+
+    const wasPending  = !before || before.status === "pending";
+    const isApproved  = after.status === "approved";
+    const isRejected  = after.status === "rejected";
+
+    if (wasPending && isApproved) {
+      functions.logger.info(`[NOTIFY] WALLET_RECHARGED for user ${userId}`);
+      await sendNotification(userId, "WALLET_RECHARGED", context.params.reqId, after);
+    } else if (wasPending && isRejected) {
+      functions.logger.info(`[NOTIFY] WALLET_RECHARGE_REJECTED for user ${userId}`);
+      await sendNotification(userId, "WALLET_RECHARGE_REJECTED", context.params.reqId, after);
+    }
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// onItemWrite — item subcollection (no-op FCM — handled via onOrderWrite)
 // ─────────────────────────────────────────────────────────────────────────────
 export const onItemWrite = functions
   .firestore.document("orders/{orderId}/items/{itemId}")
-  .onWrite(async (change, context) => {
-    // 🔕 [FCM-SILENCE] FIRST_ITEM_READY pushes have been disabled to prevent spam.
-    // Real-time foreground status tracking is handled via Firestore listeners.
-    return;
-  });
+  .onWrite(async () => { return; });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔥 CLOUD FUNCTION: processHardwareScan — Endpoint for IoT Hardware Scanners
+// processHardwareScan — IoT hardware scanner endpoint
 // ─────────────────────────────────────────────────────────────────────────────
 export const processHardwareScan = functions.https.onRequest(async (req, res) => {
-  // CORS enabled so web-based test harnesses and direct REST clients can ping it safely
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "POST");
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return;
-  }
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
 
   try {
     const { orderId, scannerType } = req.body;
-    
-    if (!orderId) {
-      res.status(400).json({ error: "Missing orderId" });
-      return;
-    }
+    if (!orderId) { res.status(400).json({ error: "Missing orderId" }); return; }
 
-    // 1. Fetch Order
     const orderRef = db.collection("orders").doc(orderId);
     const orderSnap = await orderRef.get();
-    
-    if (!orderSnap.exists) {
-      throw new Error("ORDER_NOT_FOUND");
-    }
-    
+    if (!orderSnap.exists) throw new Error("ORDER_NOT_FOUND");
+
     const order = orderSnap.data()!;
-    
     if (order.paymentStatus !== "SUCCESS" && order.paymentStatus !== "VERIFIED") {
       throw new Error("PAYMENT_NOT_VERIFIED");
     }
 
-    // 2. Fetch Items in Subcollection
     const itemsSnap = await orderRef.collection("items").get();
-    if (itemsSnap.empty) {
-      throw new Error("NO_ITEMS_FOUND");
-    }
+    if (itemsSnap.empty) throw new Error("NO_ITEMS_FOUND");
 
     const items = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // 3. Filter Items based on Scanner Type Logic
-    // - STATIC scanners serve FAST_ITEMs that are PENDING.
-    // - DYNAMIC scanners serve PREPARATION_ITEMs that are READY.
     let targetItems: any[] = [];
     if (scannerType === "STATIC") {
       targetItems = items.filter((i: any) => (i.orderType === "FAST_ITEM" || !i.orderType) && i.status === "PENDING");
     } else if (scannerType === "DYNAMIC") {
       targetItems = items.filter((i: any) => i.orderType === "PREPARATION_ITEM" && i.status === "READY");
     } else {
-      // Default: Try to serve anything that is READY or a PENDING FAST_ITEM
-      targetItems = items.filter((i: any) => 
+      targetItems = items.filter((i: any) =>
         i.status === "READY" || ((i.orderType === "FAST_ITEM" || !i.orderType) && i.status === "PENDING")
       );
     }
 
-    if (targetItems.length === 0) {
-      // Meaning the student is in the wrong line, or food is still cooking, or already served.
-      throw new Error("NOTHING_TO_SERVE_OR_WRONG_LINE");
-    }
+    if (targetItems.length === 0) throw new Error("NOTHING_TO_SERVE_OR_WRONG_LINE");
 
-    // 4. Execute Atomic Batch Update to mark items as SERVED
     const batch = db.batch();
     let totalItemsServed = 0;
-
     targetItems.forEach((item: any) => {
-      const itemRef = orderRef.collection("items").doc(item.id);
-      batch.update(itemRef, { 
-        status: "SERVED", 
-        servedAt: Date.now() 
-      });
+      batch.update(orderRef.collection("items").doc(item.id), { status: "SERVED", servedAt: Date.now() });
       totalItemsServed++;
     });
 
-    // Also update order status if all items are now served
-    const allItemsAreNowServed = items.every((i: any) => 
+    const allItemsAreNowServed = items.every((i: any) =>
       i.status === "SERVED" || targetItems.some(ti => ti.id === i.id)
     );
-
     if (allItemsAreNowServed) {
       batch.update(orderRef, { orderStatus: "COMPLETED", serveFlowStatus: "SERVED" });
     } else {
@@ -321,20 +347,10 @@ export const processHardwareScan = functions.https.onRequest(async (req, res) =>
     }
 
     await batch.commit();
-
-    functions.logger.info(`[HARDWARE-SCAN] Success: orderId=${orderId}, itemsServed=${totalItemsServed}`, { targetItems: targetItems.map(i => i.id) });
-
-    // HTTP 200 causes the scanner to short-beep and flash GREEN.
-    res.status(200).json({ 
-      success: true, 
-      message: "SERVED", 
-      itemsServed: totalItemsServed,
-      allItemsCompleted: allItemsAreNowServed 
-    });
-    
+    functions.logger.info(`[HARDWARE-SCAN] Success: orderId=${orderId}, itemsServed=${totalItemsServed}`);
+    res.status(200).json({ success: true, message: "SERVED", itemsServed: totalItemsServed, allItemsCompleted: allItemsAreNowServed });
   } catch (error: any) {
     functions.logger.error(`[HARDWARE-SCAN] Rejected: ${error.message}`);
-    // HTTP 403 causes the scanner to 3-beep and flash RED.
     res.status(403).json({ error: error.message });
   }
 });

@@ -109,7 +109,7 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
         <div className="flex items-center gap-4">
             <div className="text-right mr-2 hidden sm:block">
                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Station Status</p>
-                <p className="text-sm font-black text-green-500">OPTIMIZED</p>
+                <p className="text-sm font-black text-primary">OPTIMIZED</p>
             </div>
             <div className="w-12 h-12 rounded-[1.2rem] bg-primary/20 flex items-center justify-center border border-primary/30">
                 <Flame className="w-6 h-6 text-primary animate-pulse" />
@@ -170,7 +170,7 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
                         <button 
                             disabled={!!updatingSlot}
                             onClick={() => handleUpdateSlot(group.slot, 'READY')}
-                            className="flex-[1.5] h-18 rounded-3xl bg-green-600 hover:bg-green-500 text-white font-black uppercase tracking-widest text-sm shadow-xl shadow-green-900/20 transition-all active:scale-95 flex items-center justify-center gap-3"
+                            className="flex-[1.5] h-18 rounded-3xl bg-brand-purple hover:bg-brand-purple-light text-white font-black uppercase tracking-widest text-sm shadow-xl shadow-brand-purple/20 transition-all active:scale-95 flex items-center justify-center gap-3"
                         >
                             {updatingSlot === group.slot ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Bell className="w-5 h-5" /> Mark Ready</>}
                         </button>
@@ -229,15 +229,15 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
           <section>
             <div className="flex items-center justify-between mb-6 px-2">
               <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-green-500" /> Ready to Serve
+                  <div className="w-2 h-2 rounded-full bg-brand-purple" /> Ready to Serve
               </h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {sections.READY.map(group => (
-                  <div key={group.slot} className="bg-green-950/20 border border-green-500/20 rounded-[2rem] p-6 opacity-60">
+                  <div key={group.slot} className="bg-brand-purple/10 border border-brand-purple/20 rounded-[2rem] p-6 opacity-60">
                       <div className="flex items-center justify-between mb-4">
-                          <span className="text-sm font-black text-green-500">{formatSlotLabel(group.slot)} Slot</span>
-                          <CheckCircle2 className="w-5 h-5 text-green-500" />
+                          <span className="text-sm font-black text-brand-purple">{formatSlotLabel(group.slot)} Slot</span>
+                          <CheckCircle2 className="w-5 h-5 text-brand-purple" />
                       </div>
                       <div className="space-y-2">
                           {group.items.map(item => (
@@ -268,7 +268,7 @@ const KitchenView: React.FC<KitchenViewProps> = ({ onBack, lang: initialLang = '
               </div>
               <div className="w-px h-8 bg-white/5" />
               <div className="text-center">
-                  <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-1">Served</p>
+                  <p className="text-[10px] font-black text-brand-purple uppercase tracking-widest mb-1">Served</p>
                   <p className="text-2xl font-black italic">{sections.READY.length}</p>
               </div>
           </div>

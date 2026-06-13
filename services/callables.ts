@@ -16,6 +16,7 @@ if (import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === "true
 
 export const createOrderCallable = httpsCallable<
   {
+    id?: string;
     userId?: string;
     userName?: string;
     items: Array<{ id: string; name: string; price: number; quantity: number; [k: string]: unknown }>;

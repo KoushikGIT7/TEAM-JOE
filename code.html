@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BENTO.EXE | MENU</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@100..900&family=Plus+Jakarta+Sans:wght@100..900&family=Space+Grotesk:wght@100..900&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-container": "#7701d0",
+                    "error": "#ffb4ab",
+                    "secondary": "#dcb8ff",
+                    "tertiary-fixed-dim": "#ffb1c3",
+                    "surface-dim": "#131313",
+                    "primary-fixed-dim": "#abd600",
+                    "surface-container": "#201f1f",
+                    "tertiary-fixed": "#ffd9e0",
+                    "tertiary": "#ffffff",
+                    "secondary-fixed-dim": "#dcb8ff",
+                    "secondary-fixed": "#efdbff",
+                    "inverse-primary": "#506600",
+                    "inverse-on-surface": "#313030",
+                    "primary": "#ffffff",
+                    "on-secondary-fixed": "#2c0051",
+                    "on-tertiary-container": "#c6005d",
+                    "on-surface-variant": "#c4c9ac",
+                    "surface-tint": "#abd600",
+                    "error-container": "#93000a",
+                    "surface": "#131313",
+                    "surface-container-low": "#1c1b1b",
+                    "on-background": "#e5e2e1",
+                    "surface-variant": "#353534",
+                    "on-primary": "#283500",
+                    "on-secondary-fixed-variant": "#6700b5",
+                    "on-error-container": "#ffdad6",
+                    "on-primary-fixed": "#161e00",
+                    "on-tertiary-fixed-variant": "#8f0041",
+                    "on-secondary-container": "#dcb7ff",
+                    "on-primary-container": "#556d00",
+                    "inverse-surface": "#e5e2e1",
+                    "primary-fixed": "#c3f400",
+                    "on-secondary": "#480081",
+                    "primary-container": "#c3f400",
+                    "on-tertiary-fixed": "#3f0019",
+                    "on-tertiary": "#66002c",
+                    "surface-container-highest": "#353534",
+                    "outline": "#8e9379",
+                    "on-error": "#690005",
+                    "tertiary-container": "#ffd9e0",
+                    "surface-container-lowest": "#0e0e0e",
+                    "surface-container-high": "#2a2a2a",
+                    "surface-bright": "#3a3939",
+                    "on-surface": "#e5e2e1",
+                    "background": "#131313",
+                    "outline-variant": "#444933",
+                    "on-primary-fixed-variant": "#3c4d00"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "lg": "32px",
+                    "gutter": "12px",
+                    "md": "24px",
+                    "sm": "16px",
+                    "base": "4px",
+                    "xs": "8px",
+                    "margin-mobile": "16px",
+                    "xl": "48px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Bricolage Grotesque"],
+                    "headline-md": ["Bricolage Grotesque"],
+                    "label-sm": ["Space Grotesk"],
+                    "label-bold": ["Space Grotesk"],
+                    "body-md": ["Plus Jakarta Sans"],
+                    "body-lg": ["Plus Jakarta Sans"],
+                    "headline-lg": ["Bricolage Grotesque"],
+                    "headline-lg-mobile": ["Bricolage Grotesque"]
+            },
+            "fontSize": {
+                    "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "800"}],
+                    "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "1", "fontWeight": "500"}],
+                    "label-bold": ["14px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "1.2", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            padding: 16px;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 0px;
+            width: 0px;
+        }
+        .active-tab {
+            background-color: #c3f400;
+            color: #161e00;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md min-h-screen pb-32">
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface/5 backdrop-blur-xl border-b border-white/10 flex justify-between items-center px-margin-mobile h-16">
+<div class="flex items-center gap-xs">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim tracking-tighter">BENTO.EXE</span>
+</div>
+<div class="flex items-center gap-md">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A professional headshot of a young Gen Z adult with stylish lighting. The person has a friendly expression and is posed against a neutral, dark studio background. The aesthetic is clean and modern, fitting for a tech-focused profile avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxENSwnLC8xxswJwJShEAq7xq5ILsegOwwH_TtywJXkPc6YemYUDwKaXt3K3-lB6Bo0Iq5NFEUeGkWENbvu7DuqKT3rNu254TKbC0m43EyXnP-cgkInRlmeBdmDNInfP83NoRrWlV7MRxfidLhANGvzubtTJNRkz9YQ0939Y4v0EAC_FRhH_VhfegpF2p1wH_gQkqzonoAelWqIF9ce4HTEoYsvCCp211eIBFtoiISc0NAw8MgpM5-p70_65l2n2JFkNCEk2bvRRDR"/>
+</div>
+<button class="text-primary-fixed-dim hover:opacity-80 active:scale-95 transition-transform">
+<span class="material-symbols-outlined">shopping_cart</span>
+</button>
+</div>
+</header>
+<main class="pt-20">
+<!-- Brand Title Section -->
+<div class="px-margin-mobile mb-md">
+<h1 class="font-display-lg text-display-lg text-primary-fixed-dim uppercase">MENU</h1>
+<p class="font-body-md text-on-surface-variant max-w-[80%]">Hyper-local canteen favorites, served at peak vibration.</p>
+</div>
+<!-- Filter Categories -->
+<div class="flex gap-xs overflow-x-auto px-margin-mobile py-base custom-scrollbar no-scrollbar sticky top-16 z-40 bg-background/80 backdrop-blur-sm">
+<button class="active-tab px-md py-xs rounded-full font-label-bold text-label-bold transition-all duration-200">ALL</button>
+<button class="bg-surface-container-high/40 text-on-surface-variant px-md py-xs rounded-full font-label-bold text-label-bold hover:text-primary transition-all duration-200">BREAKFAST</button>
+<button class="bg-surface-container-high/40 text-on-surface-variant px-md py-xs rounded-full font-label-bold text-label-bold hover:text-primary transition-all duration-200">LUNCH</button>
+<button class="bg-surface-container-high/40 text-on-surface-variant px-md py-xs rounded-full font-label-bold text-label-bold hover:text-primary transition-all duration-200">SIPS</button>
+</div>
+<!-- Bento Menu Grid -->
+<div class="bento-grid">
+<!-- Item 1: Idly -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative group">
+<div class="absolute top-2 right-2 z-10">
+<span class="bg-tertiary-fixed-dim text-on-tertiary-fixed font-label-bold text-[10px] px-xs py-[2px] rounded-full uppercase">Top Rated</span>
+</div>
+<div class="aspect-square relative">
+<img class="w-full h-full object-cover" data-alt="A high-impact, cinematic close-up of three steaming hot, fluffy white idlies placed on a vibrant green banana leaf. Tiny droplets of water and steam rise from the food. The background is a moody, dark canteen setting with neon green light reflections on the textured surfaces. Professional food photography style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAGjmTOzX-ZK90FHW3aZbs83WIG0hg-JxnYn3brxSd82L-DD8c7WRPboz2uFFJ65L-E9TcJdSFAYPZbqyPYg19Cn8JMfNtXv-iEEMxYGQ0e9-RQOa6im4oj0DFqsd5ZZepH5ou6reQOEz0OmuquXFVzOBAHXrIyvQRVaRjB7aZK8lhOIAucxMbnzyz6x4ZtAqirMpPtWyIR9IHWWrXa2l7iX5HnGXVNKZR9oVogMk-ZOTEIvB02UulxiyPYdq25INxYfdMbfyku6c5F"/>
+<div class="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent"></div>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Idly (3 pcs)</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Cloud-soft rice cakes with spice-kick sambar.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹45</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 2: Masala Dosa -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative md:row-span-2">
+<div class="aspect-[3/4] relative">
+<img class="w-full h-full object-cover" data-alt="A crispy, golden brown Masala Dosa rolled elegantly on a steel plate. The texture of the crepe is highly detailed with visible crunch and buttery sheen. Next to it are small stainless steel bowls containing coconut chutney and red sambar. The lighting is cinematic, coming from the side to emphasize the golden texture against a dark charcoal background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCHzNBQX5n-Fd44XtsiH4FYMDtndi1u3ugAG4LZsw_C_X3E-SpD0LooRULzwIjtSe9CXasEu5oJhW7WfB8IYisS9xEQxpoNFeXGA2GFq5OUZ5pIaR_DozGK_4A9QSHaUdR_wJ3P45wwMvLqYN6IurBnIjFgteo72IH64NpCS7cbF_aovdi8J6CKilG9CVl2xlFLstrYUSPnCpPbLKtx41OOXqUP8rztAV2mtnJmJF7Cj5oTV9Se0h_578GmHne-3041_IM-s-uxXLc8"/>
+<div class="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent"></div>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Masala Dosa</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Golden crunch shell filled with spiced potato mash.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹80</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 3: Lemon Rice -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative">
+<div class="aspect-square relative">
+<img class="w-full h-full object-cover" data-alt="Bright yellow lemon rice garnished with crunchy peanuts, curry leaves, and mustard seeds. The dish is presented in a modern bento container with sharp edges. The lighting uses neon lime and deep purple tones to create a high-energy, digital-native dining aesthetic. The grains of rice are perfectly separated and vibrant." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA5ZyBB0ic7IuMaKveTVxFOOFbziGA-6GVOTyD14bLxWIt8oTucY4xBi32T1M6sXb3Et1Szpf5jaQpYn7Y0seWPJ1sn4cjv0dhdCwVaDo12cwuW6Nc_mZo74pq2QmvbIEtl2BWCYu3WNZarnjFy8ydzCi5GnALo4J3WS2jWD9BxqEesOe0LGAv_ZQEx8ScVNdlhZT_5T5Jou7-DQr4drgtK7QqUFpv1IdIs1UwcN8Z5m6WWuWBADtlxA92MpZ_WkN1JArXtWNj49k7B"/>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Lemon Rice</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Zesty rice punch with peanuts for that crunch.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹60</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 4: Full Meals (Featured 2x1) -->
+<div class="col-span-2 glass-card rounded-xl overflow-hidden flex flex-row relative h-48">
+<div class="w-1/2 h-full relative">
+<img class="w-full h-full object-cover" data-alt="A massive South Indian Thali meal presented on a round silver platter. It features multiple small bowls of curries, dal, rasam, and yogurt surrounding a large portion of white rice and a crispy papadum. The scene is shot from a top-down perspective with high contrast and rich, warm colors. Neon green accents highlight the edges of the plate." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBvbX745cJLaLucDlt9PGkRPkIavVm3PD21VfKHwAOUMTyDKSGze9WTHtZzWPCz8vJbfv-WGphRUF2yzNYs8JHHvsPkk9knFmj390je_1hWsKxjht5vekhUyPMCKfE2T5c6FIsjG5fFfcMCvJz6deysNW2nM9J1JJiSkdTJMG0xC5c8PLYfuRtPhPAAIB9lCeb_a8NPstgK4Vmfqn8VJpKlUIdBG6nO0rqfyiPk3UrJHXB4jkfJHCzzycPc4HYWXn20ayvX0Wa5JSv8"/>
+</div>
+<div class="w-1/2 p-sm flex flex-col justify-between bg-surface-container-low">
+<div>
+<div class="flex justify-between items-start">
+<h3 class="font-headline-md text-headline-md text-white">Full Meals</h3>
+<span class="bg-tertiary-fixed-dim text-on-tertiary-fixed font-label-bold text-[10px] px-xs py-[2px] rounded-full">HUGE</span>
+</div>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">The absolute unit. Rice, Sambar, 3 Veggies, Curd & more.</p>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹120</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 5: Gobi Rice -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative">
+<div class="aspect-square relative">
+<img class="w-full h-full object-cover" data-alt="Fiery red Gobi Manchurian cauliflower florets tossed with fried rice in a wok. Steam is billowing from the dish. The lighting is intense and dramatic, with deep shadows and glowing highlights on the saucy cauliflower pieces. The setting is a dark, modern kitchen with a focus on movement and heat." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9MDAnulkBgeRNs3bWtCwPms709gbVpkNpWfuG5YGnO4570Oce0_WNbDbZ7sXzJOu9Dl8jFelKLI0pA49vhn5ELPZEmNCFupAZlZLIXqVXmKsSxKITJp5dReze-YE_wG96OkDznXl4bjAdsh9CstD6L_zQta5_PZR-aufNR6-GA33-sxb6kZjM_CyJ0ip01dKgHsAq57VrwMFi1Y8-bh5WFrtrHIaaavXo5h4ubwDHjM5xP9pvNWnnQpoUbJc4wVrEbfmJ0HJ3jmL-"/>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Gobi Rice</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Street-style cauliflower fire tossed in fried rice.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹90</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 6: Noodles -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative">
+<div class="aspect-square relative">
+<img class="w-full h-full object-cover" data-alt="Stir-fried noodles with crisp vegetables being lifted by chopsticks. The noodles have a glossy, savory coating. The background is a blurred dark-mode restaurant interior with cyberpunk-style neon signage in the distance. The focus is sharp on the texture of the noodles and the steam." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD5dz2kVPIfEas3MrIryGKD5O-eujDS9fwgFgl0-2ZNum00BVp-ilAkLXnwxwFiNP-eOjfakK_oN65lHgjNhaeoIpvjQyvgjD62lxqnAOToy9R8OpAQhjcwz0_H5qeYYo5gWcBAd8YNHuJMze7gfPSUibQlvxVzjYMxRcp_wH9yWEYkt1xedMQnZNB90JojHEnEq0sj-OrP6jYiuZ6TH0PYXvjCTT5lj2peL8mC0WSd5GsKvJmM34dBDQrgysH3m-iTDLmWYLRjz22Z"/>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Noodles</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Wok-tossed strands with crunchy garden veggies.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹85</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 7: Poori -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative">
+<div class="aspect-square relative">
+<img class="w-full h-full object-cover" data-alt="Two perfectly puffed-up, golden-brown pooris served with a side of yellow potato bhaji. The pooris look light and airy. The lighting is soft but vibrant, emphasizing the oily sheen and crisp edges. Presented on a textured ceramic dark plate to create a premium canteen vibe." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDs3hT4iPyH69UwE2K9G8JI0LBTOltsBMvDY0S_T1ZztAGFNe2M22n1mNu11syyBjQuVAzfkftZEWOMamqiQ9pakqSkSLK6D1WtFyKSpLHFVowYMuXIsj3lRMPtQwltx1tcaV6YKAVY3rl2PsV8gZ7FVk5nNX0Upz4ffjzNBwcTleUyDfPUlyztkPsngeMUUPmKvlhy28AIHe_7vdxB0EZ_ohhT5lcGD8CwRlOuTvm0dLz4-ApYXAqkC6tJ10AM8d4BYFykK1N734Gr"/>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Poori</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Golden puffs served with spiced potato bhaji.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹55</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 8: Chapati -->
+<div class="glass-card rounded-xl overflow-hidden flex flex-col relative">
+<div class="aspect-square relative">
+<img class="w-full h-full object-cover" data-alt="Soft, hand-rolled chapatis stacked neatly with visible charred spots from the griddle. A small dollop of butter is melting on the top layer. The lighting is warm and domestic, contrasted against the cool dark-mode UI elements. The image focuses on the softness and authentic texture of the flatbread." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDgfKKAZxugVfV3zQQuGsxSzg5KKSHN1ruW6ilUk2fbnD10OXfoAwuKxB8Th7EqstwwBxTMruyooZIPQ6x3y7qkIPC8o4KI8VE9oTfE6ntAE7Z7qgwN3FBbeyDD4GQDD3n4Zh2p_IuXo8BkFdVFpMVy9s3qKwIPEZdJalQYZ3SGjoHnc9xNw9GrG3Gk_BRfIXdd6V9ymxWDSDQXRMUB_THwMyFANuC2Zj6weSHZhWAGMt78G70YABHD9ikJfxh4LWJPZQYOdCvzfnWN"/>
+</div>
+<div class="p-sm flex flex-col justify-between flex-grow">
+<div>
+<h3 class="font-headline-md text-headline-md text-white">Chapati</h3>
+<p class="font-body-md text-on-surface-variant text-[12px] leading-tight mt-xs">Soft, whole-wheat flatbreads. Home-style comfort.</p>
+</div>
+<div class="flex justify-between items-center mt-md">
+<span class="font-display-lg text-headline-md text-primary-fixed-dim">₹40</span>
+<button class="bg-primary-fixed-dim text-on-primary w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-4 left-4 right-4 rounded-xl z-50 bg-surface/10 backdrop-blur-md shadow-xl bg-surface-container-high/40 border border-white/5 flex justify-around items-center p-xs w-full max-w-[calc(100%-2rem)] mx-auto">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-lg px-xs py-base scale-105 active:scale-98 transition-all duration-200" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-bold text-label-bold mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary active:scale-98 transition-all duration-200" href="#">
+<span class="material-symbols-outlined">search</span>
+<span class="font-label-bold text-label-bold mt-1">Search</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary active:scale-98 transition-all duration-200" href="#">
+<span class="material-symbols-outlined">receipt_long</span>
+<span class="font-label-bold text-label-bold mt-1">Orders</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary active:scale-98 transition-all duration-200" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-bold text-label-bold mt-1">Profile</span>
+</a>
+</nav>
+<script>
+        // Micro-interactions for buttons
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const icon = this.querySelector('.material-symbols-outlined');
+                if (icon && icon.innerText === 'add') {
+                    icon.innerText = 'check';
+                    this.classList.remove('bg-primary-fixed-dim');
+                    this.classList.add('bg-secondary-container', 'text-on-secondary-container');
+                    setTimeout(() => {
+                        icon.innerText = 'add';
+                        this.classList.add('bg-primary-fixed-dim');
+                        this.classList.remove('bg-secondary-container', 'text-on-secondary-container');
+                    }, 2000);
+                }
+            });
+        });
+
+        // Category switching logic
+        const categoryButtons = document.querySelectorAll('.custom-scrollbar button');
+        categoryButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                categoryButtons.forEach(b => {
+                    b.classList.remove('active-tab');
+                    b.classList.add('bg-surface-container-high/40', 'text-on-surface-variant');
+                });
+                btn.classList.add('active-tab');
+                btn.classList.remove('bg-surface-container-high/40', 'text-on-surface-variant');
+            });
+        });
+    </script>
+</body></html>

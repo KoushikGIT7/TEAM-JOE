@@ -46,8 +46,8 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
         {/* HEADER */}
         <div className="flex items-center justify-between mb-8">
            <div className="flex items-center gap-4">
-              <div className="bg-emerald-500/20 p-3 rounded-2xl">
-                 <Camera className="w-6 h-6 text-emerald-400" />
+              <div className="bg-brand-purple/20 p-3 rounded-2xl">
+                 <Camera className="w-6 h-6 text-brand-purple-light" />
               </div>
               <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">Sonic Scanner</h2>
            </div>
@@ -86,10 +86,10 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
            {/* Custom Target Overlay */}
            <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40" />
            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 border-2 border-white/50 rounded-[2rem] pointer-events-none shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-              <div className="absolute -top-1 -left-1 w-12 h-12 border-t-8 border-l-8 border-emerald-500 rounded-tl-3xl shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
-              <div className="absolute -top-1 -right-1 w-12 h-12 border-t-8 border-r-8 border-emerald-500 rounded-tr-3xl shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
-              <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-8 border-l-8 border-emerald-500 rounded-bl-3xl shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
-              <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-8 border-r-8 border-emerald-500 rounded-br-3xl shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
+              <div className="absolute -top-1 -left-1 w-12 h-12 border-t-8 border-l-8 border-brand-purple rounded-tl-3xl shadow-[0_0_20px_rgba(183,109,255,0.5)]" />
+              <div className="absolute -top-1 -right-1 w-12 h-12 border-t-8 border-r-8 border-brand-purple rounded-tr-3xl shadow-[0_0_20px_rgba(183,109,255,0.5)]" />
+              <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-8 border-l-8 border-brand-purple rounded-bl-3xl shadow-[0_0_20px_rgba(183,109,255,0.5)]" />
+              <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-8 border-r-8 border-brand-purple rounded-br-3xl shadow-[0_0_20px_rgba(183,109,255,0.5)]" />
            </div>
         </div>
 

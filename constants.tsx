@@ -6,39 +6,41 @@ export const DEFAULT_FOOD_IMAGE = 'https://images.unsplash.com/photo-16303832498
 
 export const INITIAL_MENU: MenuItem[] = [
   // --- 🍵 BEVERAGES ---
-  { id: 'BEV01', name: 'Masala Tea',       price: 10, costPrice: 4,  category: 'Beverages', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Masala_Chai.JPG/640px-Masala_Chai.JPG', active: true },
-  { id: 'BEV02', name: 'Filter Coffee',    price: 10, costPrice: 4,  category: 'Beverages', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/South_Indian_Filter_Coffee.jpg/640px-South_Indian_Filter_Coffee.jpg', active: true },
-  { id: 'BEV03', name: 'Hot Boost',        price: 15, costPrice: 6,  category: 'Beverages', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/A_small_cup_of_coffee.JPG/640px-A_small_cup_of_coffee.JPG', active: true },
-  { id: 'BEV04', name: 'Badam Milk',       price: 15, costPrice: 7,  category: 'Beverages', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Badam_Milk.jpg/640px-Badam_Milk.jpg', active: true },
-  { id: 'BEV05', name: 'Ginger Coffee',    price: 15, costPrice: 6,  category: 'Beverages', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/A_small_cup_of_coffee.JPG/640px-A_small_cup_of_coffee.JPG', active: true },
-  { id: 'BEV06', name: 'Spiced Buttermilk', price: 10, costPrice: 3, category: 'Beverages', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Chaas.jpg/640px-Chaas.jpg', active: true },
+  { id: 'BEV01', name: 'Masala Tea',        price: 10, costPrice: 4,  category: 'Beverages', imageUrl: '/assets/menu/tea.png', active: true },
+  { id: 'BEV02', name: 'Filter Coffee',     price: 10, costPrice: 4,  category: 'Beverages', imageUrl: '/assets/menu/coffee.png', active: true },
+  { id: 'BEV03', name: 'Hot Boost',         price: 15, costPrice: 6,  category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&q=80', active: true },
+  { id: 'BEV04', name: 'Badam Milk',        price: 15, costPrice: 7,  category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&q=80', active: true },
+  { id: 'BEV05', name: 'Ginger Coffee',     price: 15, costPrice: 6,  category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&q=80', active: true },
+  { id: 'BEV06', name: 'Spiced Buttermilk', price: 10, costPrice: 3,  category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=400&q=80', active: true },
 
   // --- 🥞 BREAKFAST (TIFFIN) ---
-  { id: 'BKT01', name: 'Idli (2pcs)',           price: 20, costPrice: 8,  category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Idli_Sambar.JPG/640px-Idli_Sambar.JPG', active: true },
-  { id: 'BKT02', name: 'Tomato Bath',           price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/South_Indian_Tomato_Rice.jpg/640px-South_Indian_Tomato_Rice.jpg', active: true },
-  { id: 'BKT03', name: 'Masala Dosa',           price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Dosa_at_Sree_Krishna_Inn.jpg/640px-Dosa_at_Sree_Krishna_Inn.jpg', active: true },
-  { id: 'BKT04', name: 'Set Dosa (3pcs)',        price: 40, costPrice: 16, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=400&q=80', active: true },
-  { id: 'BKT05', name: 'Lemon Rice',             price: 30, costPrice: 10, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Lemon_rice.jpg/640px-Lemon_rice.jpg', active: true },
-  { id: 'BKT06', name: 'Onion Dosa',             price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Dosa_with_chutney.jpg/640px-Dosa_with_chutney.jpg', active: true },
-  { id: 'BKT07', name: 'Medu Vada (1pc)',        price: 10, costPrice: 4,  category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Medu_vada_%281%29.jpg/640px-Medu_vada_%281%29.jpg', active: true },
-  { id: 'BKT08', name: 'Poha',                  price: 25, costPrice: 10, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Poha_with_chutney.jpg/640px-Poha_with_chutney.jpg', active: true },
-  { id: 'BKT09', name: 'Upma',                  price: 25, costPrice: 10, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Upma.jpg/640px-Upma.jpg', active: true },
-  { id: 'BKT10', name: 'Bread Omelette',        price: 45, costPrice: 18, category: 'Breakfast', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Bread_Omelette.jpg/640px-Bread_Omelette.jpg', active: true },
+  { id: 'BKT01', name: 'Idli (2pcs)',              price: 20, costPrice: 8,  category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=400&q=80', active: true },
+  { id: 'BKT02', name: 'Tomato Bath',              price: 30, costPrice: 12, category: 'Breakfast', imageUrl: '/assets/menu/tomato_bath.png', active: true },
+  { id: 'BKT03', name: 'Masala Dosa',              price: 30, costPrice: 12, category: 'Breakfast', imageUrl: '/assets/menu/masala_dosa.png', active: true },
+  { id: 'BKT04', name: 'Set Dosa (3pcs)',          price: 40, costPrice: 16, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=400&q=80', active: true },
+  { id: 'BKT05', name: 'Lemon Rice',               price: 30, costPrice: 10, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1645177628172-a6a4a5d0b06d?w=400&q=80', active: true },
+  { id: 'BKT06', name: 'Onion Dosa',               price: 30, costPrice: 12, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&q=80', active: true },
+  { id: 'BKT07', name: 'Medu Vada (1pc)',          price: 10, costPrice: 4,  category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&q=80', active: true },
+  { id: 'BKT08', name: 'Poha',                     price: 25, costPrice: 10, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80', active: true },
+  { id: 'BKT09', name: 'Upma',                     price: 25, costPrice: 10, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1605197161470-b0b57b56fc3b?w=400&q=80', active: true },
+  { id: 'BKT10', name: 'Bread Omelette',           price: 45, costPrice: 18, category: 'Breakfast', imageUrl: 'https://images.unsplash.com/photo-1510693206972-df098062cb71?w=400&q=80', active: true },
+  { id: 'BKT11', name: '2 Idli + 2 Mirchi',       price: 35, costPrice: 14, category: 'Breakfast', imageUrl: '/assets/menu/idli_mirchi.jpg', active: true },
+  { id: 'BKT12', name: 'Idli Vada (2 Idli + 1 Vada)', price: 35, costPrice: 14, category: 'Breakfast', imageUrl: '/assets/menu/idli_vada.png', active: true },
 
   // --- 🍟 SNACKS ---
-  { id: 'SNK01', name: 'Onion Pakoda (3pcs)', price: 20, costPrice: 8, category: 'Snacks', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Onion_pakora.jpg/640px-Onion_pakora.jpg', active: true },
-  { id: 'SNK02', name: 'Mirchi Bajji (1pc)',  price: 10, costPrice: 4, category: 'Snacks', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Mirchi_bajji.jpg/640px-Mirchi_bajji.jpg', active: true },
-  { id: 'SNK03', name: 'Samosa (1pc)',        price: 15, costPrice: 6, category: 'Snacks', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/Samosachutney.jpg/640px-Samosachutney.jpg', active: true },
-  { id: 'SNK04', name: 'Bread Pakoda',        price: 20, costPrice: 8, category: 'Snacks', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Bread_Pakora.jpg/640px-Bread_Pakora.jpg', active: true },
+  { id: 'SNK01', name: 'Onion Pakoda (3pcs)', price: 20, costPrice: 8,  category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=400&q=80', active: true },
+  { id: 'SNK02', name: 'Mirchi Bajji (1pc)',  price: 10, costPrice: 4,  category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80', active: true },
+  { id: 'SNK03', name: 'Samosa (1pc)',        price: 15, costPrice: 6,  category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80', active: true },
+  { id: 'SNK04', name: 'Bread Pakoda',        price: 20, costPrice: 8,  category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&q=80', active: true },
 
   // --- 🍚 LUNCH & EGG ---
-  { id: 'LCH01', name: 'Plate Meal',       price: 50, costPrice: 22, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/South-Indian-Thali.jpg/640px-South-Indian-Thali.jpg', active: true },
-  { id: 'LCH02', name: 'Egg Rice',         price: 60, costPrice: 28, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Egg_fried_rice.jpg/640px-Egg_fried_rice.jpg', active: true },
-  { id: 'LCH03', name: 'Jeera Rice',       price: 50, costPrice: 20, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Jeera_Rice.jpg/640px-Jeera_Rice.jpg', active: true },
-  { id: 'LCH04', name: 'Egg Bhurji',       price: 30, costPrice: 14, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Egg_bhurji%28anda_bhurji%29.jpg/640px-Egg_bhurji%28anda_bhurji%29.jpg', active: true },
-  { id: 'LCH05', name: 'Masala Omelette',  price: 40, costPrice: 18, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1510693206972-df098062cb71?w=400&q=80', active: true },
-  { id: 'LCH06', name: 'Veg Biryani',      price: 70, costPrice: 30, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Hyderabadi_Vegetable_Biryani.jpg/640px-Hyderabadi_Vegetable_Biryani.jpg', active: true },
-  { id: 'LCH07', name: 'Curd Rice',        price: 40, costPrice: 15, category: 'Lunch', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Curd_Rice.jpg/640px-Curd_Rice.jpg', active: true },
+  { id: 'LCH01', name: 'Plate Meal',      price: 50, costPrice: 22, category: 'Lunch', imageUrl: '/assets/menu/plate_meal.png', active: true },
+  { id: 'LCH02', name: 'Egg Rice',        price: 60, costPrice: 28, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&q=80', active: true },
+  { id: 'LCH03', name: 'Jeera Rice',      price: 50, costPrice: 20, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1645177628172-a6a4a5d0b06d?w=400&q=80', active: true },
+  { id: 'LCH04', name: 'Egg Bhurji',      price: 30, costPrice: 14, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1510693206972-df098062cb71?w=400&q=80', active: true },
+  { id: 'LCH05', name: 'Masala Omelette', price: 40, costPrice: 18, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1510693206972-df098062cb71?w=400&q=80', active: true },
+  { id: 'LCH06', name: 'Veg Biryani',     price: 70, costPrice: 30, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400&q=80', active: true },
+  { id: 'LCH07', name: 'Curd Rice',       price: 40, costPrice: 15, category: 'Lunch', imageUrl: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=400&q=80', active: true },
 ];
 
 export const CATEGORIES = ['Breakfast', 'Lunch', 'Snacks', 'Beverages'] as const;
