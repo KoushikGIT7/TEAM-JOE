@@ -1,7 +1,7 @@
-// 👻 [SERVICE-WORKER] JOE Background Messaging Service Worker
+// 👻 [SERVICE-WORKER] JOE Firebase Cloud Messaging Service Worker
 // This file MUST live in the 'public/' folder so that browsers can load it at '/firebase-messaging-sw.js'.
+// OneSignal uses its own dedicated OneSignalSDKWorker.js — do NOT import OneSignal here.
 
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
 
@@ -45,7 +45,6 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // If there's an open window, focus it
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
@@ -56,7 +55,6 @@ self.addEventListener('notificationclick', (event) => {
           return;
         }
       }
-      // If no window is open, open a new one
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }

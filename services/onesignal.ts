@@ -22,12 +22,12 @@ export const initializeOneSignal = async (): Promise<void> => {
   if (!initPromise) {
     initPromise = (async () => {
       try {
-        console.log('🔌 [ONESIGNAL] Initializing Web SDK with combined service worker...');
+        console.log('🔌 [ONESIGNAL] Initializing Web SDK...');
         await OneSignal.init({
           appId: ONESIGNAL_APP_ID,
           allowLocalhostAsSecureOrigin: true,
-          // Point to combined worker so only one root SW is registered
-          serviceWorkerPath: 'firebase-messaging-sw.js',
+          // OneSignal uses its own OneSignalSDKWorker.js at the root
+          // Do NOT override serviceWorkerPath — that causes SW conflicts with firebase-messaging-sw.js
           notifyButton: { enable: false } as any
         });
         isInitialized = true;
