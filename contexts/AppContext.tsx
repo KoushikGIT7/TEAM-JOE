@@ -500,6 +500,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- Checkout Action ---
   const placeOrder = async (paymentMethod: 'WALLET' | 'CASH', appliedDiscountAmount: number = 0, discountDetail?: string) => {
+    if (paymentMethod === 'CASH') {
+      return { success: false, error: 'Cash orders are disabled. Please pay online via your Prepaid Wallet.' };
+    }
     if (!user) return { success: false, error: 'User is not logged in.' };
     const subtotal = getCartTotal();
     if (subtotal <= 0) return { success: false, error: 'Your cart is empty' };
@@ -607,28 +610,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         setGuestMagicBoxProgress(prev => Math.min(3, prev + 1));
       } else {
-        if (paymentMethod === 'CASH') {
-          // Escrow pending points secure lock
-          await updateDoc(doc(db, "users", user.uid), {
-            escrowPoints: increment(orderedPoints),
-            frequency: increment(1)
-          });
-        } else {
-          // WALLET checkouts get their points instantly
-          const nextXp = studentXp + orderedXp;
-          const levelUp = nextXp >= 1000;
-          const nextLevel = levelUp ? studentLevel + 1 : studentLevel;
-          const remainingXp = levelUp ? nextXp - 1000 : nextXp;
-          const nextMagicBoxProgress = Math.min(3, magicBoxProgress + 1);
+        // WALLET checkouts get their points instantly
+        const nextXp = studentXp + orderedXp;
+        const levelUp = nextXp >= 1000;
+        const nextLevel = levelUp ? studentLevel + 1 : studentLevel;
+        const remainingXp = levelUp ? nextXp - 1000 : nextXp;
+        const nextMagicBoxProgress = Math.min(3, magicBoxProgress + 1);
 
-          await updateDoc(doc(db, "users", user.uid), {
-            points: increment(orderedPoints),
-            xp: remainingXp,
-            level: nextLevel,
-            magicBoxProgress: nextMagicBoxProgress,
-            frequency: increment(1)
-          });
-        }
+        await updateDoc(doc(db, "users", user.uid), {
+          points: increment(orderedPoints),
+          xp: remainingXp,
+          level: nextLevel,
+          magicBoxProgress: nextMagicBoxProgress,
+          frequency: increment(1)
+        });
       }
 
       // Check Quests progression
@@ -673,7 +668,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       triggerOneSignalWebhook(
         user.uid,
         '🎉 Order Received!',
-        `Token #${tokenLabel}: ${itemSummary}. ${paymentMethod === 'CASH' ? 'Show UPI screenshot to cashier.' : 'Your QR is ready.'}`,
+        `Token #${tokenLabel}: ${itemSummary}. Your QR is ready.`,
       ).catch(() => {});
 
       // 2. Alert ALL supervisors about the new order (tag-based broadcast)

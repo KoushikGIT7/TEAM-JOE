@@ -518,6 +518,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- Orders State Management ---
   const placeOrder = (paymentMethod: 'WALLET' | 'CASH', appliedDiscountAmount: number = 0, discountDetail?: string) => {
+    if (paymentMethod === 'CASH') {
+      return { success: false, error: 'Cash orders are disabled. Please pay online via your Prepaid Wallet.' };
+    }
     const subtotal = getCartTotal();
     if (subtotal <= 0) return { success: false, error: 'Your cart is empty' };
 

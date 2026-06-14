@@ -14,10 +14,6 @@ import { triggerOneSignalWebhook } from './services/onesignal-webhook';
 import { AppProvider, useApp } from './contexts/AppContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 
-// 🌐 Redirect www.kucafe.online to apex kucafe.online to match OneSignal's exact whitelisted origin
-if (typeof window !== 'undefined' && window.location.hostname === 'www.kucafe.online') {
-  window.location.replace('https://kucafe.online' + window.location.pathname + window.location.search);
-}
 
 // Views — Staff + Admin only; student portal removed
 import WelcomeView from './views/Student/WelcomeView';

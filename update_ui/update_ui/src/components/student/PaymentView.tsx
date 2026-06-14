@@ -28,7 +28,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
     orders
   } = useApp();
 
-  const [selectedMethod, setSelectedMethod] = useState<'WALLET' | 'UPI' | 'CASH'>('WALLET');
+  const [selectedMethod, setSelectedMethod] = useState<'WALLET' | 'UPI'>('WALLET');
   const [processingState, setProcessingState] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [errorMessage, setErrorMessage] = useState('');
   const [processingSubText, setProcessingSubText] = useState('');
@@ -377,28 +377,6 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
               </span>
             </div>
 
-            {/* Cash Selector Card */}
-            <div
-              onClick={() => setSelectedMethod('CASH')}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                selectedMethod === 'CASH'
-                  ? 'border-brand-purple bg-brand-purple/5'
-                  : 'glass-stroke glass-bg hover:bg-white/5'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                  <RotateCw className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-display font-bold text-xs text-white">Pay Cash At Cafeteria Counter</h4>
-                  <p className="font-sans text-[10px] text-on-surface-variant">Authorize and generate token; pay physically later</p>
-                </div>
-              </div>
-              <span className="text-[8px] font-mono font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full uppercase">
-                COUNTER CASH
-              </span>
-            </div>
           </div>
         </section>
 

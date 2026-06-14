@@ -29,20 +29,11 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
     orders
   } = useApp();
 
-  const [selectedMethod, setSelectedMethod] = useState<'WALLET' | 'CASH'>('WALLET');
+  const [selectedMethod] = useState<'WALLET'>('WALLET');
   const [processingState, setProcessingState] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [errorMessage, setErrorMessage] = useState('');
   const [processingSubText, setProcessingSubText] = useState('');
   const [createdOrderId, setCreatedOrderId] = useState('');
-
-  // Settle default method for guest to CASH since they don't have wallet balance
-  useEffect(() => {
-    if (isGuest) {
-      setSelectedMethod('CASH');
-    } else {
-      setSelectedMethod('WALLET');
-    }
-  }, [isGuest]);
 
   // -------------------------------------------------------------
   // JOE POINTS & TIER-BASED DISCOUNT SYSTEM LOGIC
@@ -320,67 +311,39 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
           <h3 className="font-display font-extrabold text-sm text-white">Choose Payment Method</h3>
 
           <div className="grid grid-cols-1 gap-2.5">
-            {/* Wallet Selector Card — only available for registered students */}
-            {!isGuest && (
-              <div
-                onClick={() => setSelectedMethod('WALLET')}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                  selectedMethod === 'WALLET'
-                    ? isInsufficient
-                      ? 'border-red-500/50 bg-red-500/5'
-                      : 'border-brand-purple bg-brand-purple/5'
-                    : 'glass-stroke glass-bg hover:bg-white/5'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    isInsufficient ? 'bg-red-500/10 text-red-400' : 'bg-brand-purple/10 text-brand-purple'
-                  }`}>
-                    <Wallet className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-display font-bold text-xs text-white">JOE Digital Wallet</h4>
-                    <p className="font-mono text-[10px] text-zinc-400">
-                      Current Balance: <strong className={isInsufficient ? 'text-red-400 font-black' : 'text-brand-green font-black'}>
-                        ₹{walletBalance.toFixed(2)}
-                      </strong>
-                    </p>
-                  </div>
-                </div>
-
-                {isInsufficient ? (
-                  <span className="bg-red-500/20 text-red-400 text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase">
-                    INSUFFICIENT
-                  </span>
-                ) : (
-                  <span className="bg-brand-green/20 text-brand-green text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase">
-                    ACTIVE
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Cash Selector Card */}
+            {/* Wallet Selector Card */}
             <div
-              onClick={() => setSelectedMethod('CASH')}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                selectedMethod === 'CASH'
-                  ? 'border-brand-purple bg-brand-purple/5'
-                  : 'glass-stroke glass-bg hover:bg-white/5'
+              className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${
+                isInsufficient
+                  ? 'border-red-500/50 bg-red-500/5'
+                  : 'border-brand-purple bg-brand-purple/5'
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                  <RotateCw className="w-5 h-5" />
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  isInsufficient ? 'bg-red-500/10 text-red-400' : 'bg-brand-purple/10 text-brand-purple'
+                }`}>
+                  <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-display font-bold text-xs text-white">Pay Cash At Cafeteria Counter</h4>
-                  <p className="font-sans text-[10px] text-zinc-400">Authorize and generate token; pay physically later</p>
+                  <h4 className="font-display font-bold text-xs text-white">JOE Digital Wallet</h4>
+                  <p className="font-mono text-[10px] text-zinc-400">
+                    Current Balance: <strong className={isInsufficient ? 'text-red-400 font-black' : 'text-brand-green font-black'}>
+                      ₹{walletBalance.toFixed(2)}
+                    </strong>
+                  </p>
                 </div>
               </div>
-              <span className="text-[8px] font-mono font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full uppercase">
-                COUNTER CASH
-              </span>
+ 
+              {isInsufficient ? (
+                <span className="bg-red-500/20 text-red-400 text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase">
+                  INSUFFICIENT
+                </span>
+              ) : (
+                <span className="bg-brand-green/20 text-brand-green text-[8px] font-mono font-black px-2 py-0.5 rounded-full uppercase">
+                  ACTIVE
+                </span>
+              )}
             </div>
           </div>
         </section>
