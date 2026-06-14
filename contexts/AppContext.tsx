@@ -12,6 +12,7 @@ import { getMenuOnce, listenToMenu, listenToSettings, updateSettings } from '../
 import { deductWalletForOrder, submitRechargeRequest, approveRechargeRequest, rejectRechargeRequest, listenToWalletSummary } from '../services/wallet';
 import { signOut as fbSignOut } from '../services/auth';
 import { joeSounds } from '../utils/audio';
+import { triggerOneSignalWebhook, triggerRolePush } from '../services/onesignal-webhook';
 
 const DEFAULT_QUESTS: Quest[] = [
   {
@@ -664,6 +665,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCart([]);
       setActiveOrderTrackId(optimisticOrderId);
       setStudentTab('TRACKING');
+
+      // ─── PUSH NOTIFICATIONS: Order Placed ─────────────────────────────
+      // 1. Confirm order receipt to the student (works even if they leave the browser)
+      const itemSummary = orderItems.map(i => `${i.quantity}x ${i.name}`).join(', ');
+      const tokenLabel = randTokenNum;
+      triggerOneSignalWebhook(
+        user.uid,
+        '🎉 Order Received!',
+        `Token #${tokenLabel}: ${itemSummary}. ${paymentMethod === 'CASH' ? 'Show UPI screenshot to cashier.' : 'Your QR is ready.'}`,
+      ).catch(() => {});
+
+      // 2. Alert ALL supervisors about the new order (tag-based broadcast)
+      triggerRolePush(
+        'assistant_supervisor',
+        '🔔 New Order Arrived!',
+        `Token #${tokenLabel} — ${itemSummary} (₹${total})`,
+      ).catch(() => {});
+      // ──────────────────────────────────────────────────────────────────
 
       return { success: true, orderId: optimisticOrderId };
     } catch (err: any) {

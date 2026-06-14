@@ -3,68 +3,84 @@ import { UserProfile } from '../types';
 
 const ONESIGNAL_APP_ID = '2ce03ee2-27d2-49b7-9fea-21c1f2f124cd';
 
+// Module-level flags — survive React re-renders and StrictMode double-invokes
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 let changeListeners: ((optedIn: boolean) => void)[] = [];
 
-// State caching to prevent redundant API operations causing 409 Conflicts
+// Cache to prevent redundant login/tag API calls
 let lastLoggedId: string | null = null;
 let lastSyncedTagsJson: string | null = null;
 
 /**
- * 🔔 Safe Client-Side OneSignal Initialization
- * Prevents multiple concurrent/duplicate SDK calls.
+ * 🔔 Safe OneSignal Initialization
+ *
+ * Handles:
+ *  - React StrictMode double-invoke (initPromise deduplication)
+ *  - "SDK already initialized" error (treated as success, not failure)
+ *  - logoutUser() called before init is ready (guarded by isInitialized flag)
  */
 export const initializeOneSignal = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
   if (isInitialized) return;
 
-  if (!initPromise) {
-    initPromise = (async () => {
-      try {
-        console.log('🔌 [ONESIGNAL] Initializing Web SDK...');
-        await OneSignal.init({
-          appId: ONESIGNAL_APP_ID,
-          allowLocalhostAsSecureOrigin: true,
-          // OneSignal uses its own OneSignalSDKWorker.js at the root
-          // Do NOT override serviceWorkerPath — that causes SW conflicts with firebase-messaging-sw.js
-          notifyButton: { enable: false } as any
-        });
-        isInitialized = true;
-        console.log('✅ [ONESIGNAL] Web SDK Initialized successfully.');
+  // Already in progress — return the same promise
+  if (initPromise) return initPromise;
 
-        // Trigger and register all deferred change listeners
-        const currentState = OneSignal.User.PushSubscription.optedIn ?? false;
-        for (const cb of changeListeners) {
-          try {
-            OneSignal.User.PushSubscription.addEventListener("change", (e: any) => {
-              if (e && e.current) {
-                cb(e.current.optedIn);
-              }
-            });
-            cb(currentState);
-          } catch (e) {
-            console.error("🔔 [OneSignal] Deferred listener registration error:", e);
-          }
-        }
-        changeListeners = []; // Clear queue
-      } catch (error) {
+  initPromise = (async () => {
+    try {
+      console.log('🔌 [ONESIGNAL] Initializing Web SDK...');
+      await OneSignal.init({
+        appId: ONESIGNAL_APP_ID,
+        allowLocalhostAsSecureOrigin: true,
+        notifyButton: { enable: false } as any
+      });
+      isInitialized = true;
+      console.log('✅ [ONESIGNAL] Web SDK Initialized.');
+    } catch (error: any) {
+      // "SDK already initialized" is NOT a real error — the SDK loaded via
+      // the page script tag before our module ran. Treat it as success.
+      const msg = error?.message || '';
+      if (
+        msg.includes('already initialized') ||
+        msg.includes('already been initialized') ||
+        msg.includes('SDK already')
+      ) {
+        isInitialized = true;
+        console.log('✅ [ONESIGNAL] SDK was already initialized (script tag). Adopting state.');
+      } else {
         console.error('❌ [ONESIGNAL] Initialization failed:', error);
-        initPromise = null; // Allow retry on failure
+        initPromise = null; // allow retry on genuine failures
+        return;
       }
-    })();
-  }
-  
+    }
+
+    // Register any deferred change listeners queued before init completed
+    try {
+      const currentState = OneSignal.User.PushSubscription.optedIn ?? false;
+      for (const cb of changeListeners) {
+        try {
+          OneSignal.User.PushSubscription.addEventListener('change', (e: any) => {
+            if (e?.current) cb(e.current.optedIn);
+          });
+          cb(currentState);
+        } catch (e) {
+          console.error('🔔 [OneSignal] Deferred listener error:', e);
+        }
+      }
+      changeListeners = [];
+    } catch (_) {}
+  })();
+
   return initPromise;
 };
 
 /**
- * 🏷️ Synchronize User Identity and tags to OneSignal
+ * 👤 Login / sync user identity to OneSignal
  */
 export const loginUser = async (uid: string, profile: UserProfile): Promise<void> => {
   if (typeof window === 'undefined') return;
 
-  // Build user tags for targeting segmentation
   const tags: Record<string, string> = {
     role: (profile.role || 'student').toLowerCase(),
     name: profile.name,
@@ -79,12 +95,11 @@ export const loginUser = async (uid: string, profile: UserProfile): Promise<void
 
   const tagsJson = JSON.stringify(tags);
 
-  // Avoid redundant login/tag synchronization calls if they haven't changed
-  if (lastLoggedId === uid && lastSyncedTagsJson === tagsJson) {
-    return;
-  }
+  // Skip if nothing changed
+  if (lastLoggedId === uid && lastSyncedTagsJson === tagsJson) return;
 
   await initializeOneSignal();
+  if (!isInitialized) return; // init genuinely failed, bail out
 
   try {
     if (lastLoggedId !== uid) {
@@ -94,78 +109,88 @@ export const loginUser = async (uid: string, profile: UserProfile): Promise<void
     }
 
     if (lastSyncedTagsJson !== tagsJson) {
-      console.log('🏷️ [ONESIGNAL] Synchronizing tags:', tags);
       await OneSignal.User.addTags(tags);
       lastSyncedTagsJson = tagsJson;
-      console.log('🏷️ [ONESIGNAL] Tags synchronized successfully.');
+      console.log('🏷️ [ONESIGNAL] Tags synced:', tags);
     }
   } catch (error) {
-    console.error('❌ [ONESIGNAL] Failed to identify user:', error);
+    console.error('❌ [ONESIGNAL] loginUser error:', error);
   }
 };
 
 /**
- * 🚪 Log out and clear user context
+ * 🚪 Logout — only runs if SDK is fully ready
  */
 export const logoutUser = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
-  await initializeOneSignal();
+
+  // Do NOT call initializeOneSignal() here — if there is no user, we don't
+  // want to boot the SDK just to log out a non-existent session.
+  // If init hasn't completed, there's no session to clear anyway.
+  if (!isInitialized) {
+    lastLoggedId = null;
+    lastSyncedTagsJson = null;
+    return;
+  }
+
+  // Only log out if we actually logged someone in
+  if (!lastLoggedId) return;
+
   try {
-    console.log('🚪 [ONESIGNAL] Logging out and clearing user aliases...');
+    console.log('🚪 [ONESIGNAL] Logging out user...');
     await OneSignal.logout();
     lastLoggedId = null;
     lastSyncedTagsJson = null;
   } catch (error) {
     console.error('❌ [ONESIGNAL] Logout error:', error);
+    // Still clear local state so we don't keep retrying
+    lastLoggedId = null;
+    lastSyncedTagsJson = null;
   }
 };
 
 /**
- * 🔒 Request Push Notification Permission
+ * 🔒 Request Push Permission
  */
 export const requestOneSignalPermission = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
   await initializeOneSignal();
+  if (!isInitialized) return;
   try {
-    console.log('🔔 [ONESIGNAL] Requesting push permission...');
     await OneSignal.Notifications.requestPermission();
   } catch (error) {
-    console.error('❌ [ONESIGNAL] Error requesting permission:', error);
+    console.error('❌ [ONESIGNAL] requestPermission error:', error);
   }
 };
 
 /**
- * 📊 Get current push subscription state (boolean)
+ * 📊 Get current subscription opt-in state
  */
 export const getPushSubscriptionState = (): boolean => {
   if (typeof window === 'undefined' || !isInitialized) return false;
   try {
     return OneSignal.User.PushSubscription.optedIn ?? false;
-  } catch (e) {
-    console.error("🔔 [OneSignal] Get opt-in state error:", e);
+  } catch (_) {
     return false;
   }
 };
 
 /**
- * ⚙️ Set push subscription state (Opt-In / Opt-Out)
+ * ⚙️ Opt in or out of push notifications
  */
 export const setPushSubscriptionState = async (enable: boolean): Promise<void> => {
   if (typeof window === 'undefined') return;
   await initializeOneSignal();
+  if (!isInitialized) return;
   try {
     if (enable) {
       const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
       if (permission === 'granted') {
-        // Browser already approved — just opt back into OneSignal
         await OneSignal.User.PushSubscription.optIn();
       } else if (permission === 'denied') {
-        // Hard-blocked — nothing we can do from JS, guide user to browser settings
-        console.warn('[OneSignal] Notifications are blocked in browser. User must unblock manually.');
+        console.warn('[OneSignal] Notifications blocked in browser — user must unblock manually.');
       } else {
-        // 'default' — ask the browser permission dialog
         await OneSignal.Notifications.requestPermission();
-        // After granting, also explicitly opt in
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           await OneSignal.User.PushSubscription.optIn();
         }
@@ -174,41 +199,41 @@ export const setPushSubscriptionState = async (enable: boolean): Promise<void> =
       await OneSignal.User.PushSubscription.optOut();
     }
   } catch (e) {
-    console.error('🔔 [OneSignal] Set opt-in state error:', e);
+    console.error('🔔 [OneSignal] setPushSubscriptionState error:', e);
   }
 };
 
 /**
- * 🔄 Register callback for subscription changes — returns an unsubscribe function
+ * 🔄 Register a subscription change listener — returns cleanup fn
  */
-export const addSubscriptionChangeListener = (callback: (optedIn: boolean) => void): (() => void) => {
+export const addSubscriptionChangeListener = (
+  callback: (optedIn: boolean) => void
+): (() => void) => {
   if (typeof window === 'undefined') return () => {};
 
   let internalHandler: ((e: any) => void) | null = null;
 
   const registerNow = () => {
     internalHandler = (e: any) => {
-      if (e && e.current) callback(e.current.optedIn);
+      if (e?.current) callback(e.current.optedIn);
     };
     try {
       OneSignal.User.PushSubscription.addEventListener('change', internalHandler);
     } catch (e) {
-      console.error('🔔 [OneSignal] Event listener registration error:', e);
+      console.error('🔔 [OneSignal] addEventListener error:', e);
     }
   };
 
   if (isInitialized) {
     registerNow();
   } else {
-    // Queue: will be registered once init completes
-    const wrappedCb = (optedIn: boolean) => {
+    // Queue until init completes
+    changeListeners.push((optedIn: boolean) => {
       callback(optedIn);
       registerNow();
-    };
-    changeListeners.push(wrappedCb);
+    });
   }
 
-  // Return cleanup so React useEffect can unsubscribe
   return () => {
     if (internalHandler) {
       try {
@@ -226,8 +251,10 @@ export const getPushSubscriptionId = (): string | undefined => {
   if (typeof window === 'undefined' || !isInitialized) return undefined;
   try {
     return OneSignal.User.PushSubscription.id;
-  } catch (e) {
-    console.error("🔔 [OneSignal] Get subscription ID error:", e);
+  } catch (_) {
     return undefined;
   }
 };
+
+// Re-export for backwards compatibility
+export const requestNotificationPermission = requestOneSignalPermission;
