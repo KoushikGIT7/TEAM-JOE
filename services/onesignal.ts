@@ -5,6 +5,7 @@ const ONESIGNAL_APP_ID = '2ce03ee2-27d2-49b7-9fea-21c1f2f124cd';
 
 // Module-level flags — survive React re-renders and StrictMode double-invokes
 let isInitialized = false;
+let isDomainRestricted = false;
 let initPromise: Promise<void> | null = null;
 let changeListeners: ((optedIn: boolean) => void)[] = [];
 
@@ -24,6 +25,7 @@ let lastLoggedSubscriptionId: string | null = null;
 export const initializeOneSignal = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
   if (isInitialized) return;
+  if (isDomainRestricted) return;
 
   // On localhost the OneSignal app is domain-locked to https://kucafe.online.
   // The SDK cannot subscribe devices on localhost anyway (no service worker scope).
@@ -92,6 +94,7 @@ export const initializeOneSignal = async (): Promise<void> => {
         // Domain restriction — this device/origin is not whitelisted in OneSignal dashboard
         // This is expected on staging/preview URLs. Push sending via REST API still works.
         console.warn('⚠️ [ONESIGNAL] Domain not whitelisted — SDK subscription disabled on this origin. REST push still works.');
+        isDomainRestricted = true;
         initPromise = null;
         return;
       } else {
