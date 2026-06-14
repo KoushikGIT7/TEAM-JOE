@@ -211,10 +211,25 @@ export const logoutUser = async (): Promise<void> => {
  */
 export const requestOneSignalPermission = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
+
+  // Request native permission synchronously first to preserve user gesture context!
+  try {
+    const currentPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+    if (currentPermission === 'default') {
+      console.log('🔔 Requesting native permission synchronously via user gesture...');
+      await Notification.requestPermission();
+    }
+  } catch (err) {
+    console.error('❌ Native request permission error:', err);
+  }
+
   await initializeOneSignal();
   if (!isInitialized) return;
   try {
-    await OneSignal.Notifications.requestPermission();
+    const currentPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+    if (currentPermission === 'granted') {
+      await OneSignal.User.PushSubscription.optIn();
+    }
   } catch (error) {
     console.error('❌ [ONESIGNAL] requestPermission error:', error);
   }
@@ -238,7 +253,36 @@ export const getPushSubscriptionState = (): boolean => {
 export const setPushSubscriptionState = async (enable: boolean): Promise<void> => {
   if (typeof window === 'undefined') return;
 
-  const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 4000));
+  // 1. Domain Check: OneSignal is restricted to kucafe.online. Alert user if on Netlify preview.
+  const isWhitelistedDomain = 
+    window.location.hostname === 'kucafe.online' || 
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1';
+
+  if (enable && !isWhitelistedDomain) {
+    alert(
+      "⚠️ OneSignal Domain Restriction\n\n" +
+      `Your current domain: ${window.location.origin}\n` +
+      "OneSignal Web Push is whitelisted only for: https://kucafe.online\n\n" +
+      "Please open and test the app via the live domain: https://kucafe.online"
+    );
+    return;
+  }
+
+  // 2. Request native permission synchronously first to preserve user gesture context!
+  if (enable) {
+    try {
+      const currentPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+      if (currentPermission === 'default') {
+        console.log('🔔 Requesting native permission synchronously via user gesture...');
+        await Notification.requestPermission();
+      }
+    } catch (err) {
+      console.error('❌ Native permission request error:', err);
+    }
+  }
+
+  const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 5000));
 
   const actionPromise = (async () => {
     await initializeOneSignal();
@@ -247,14 +291,10 @@ export const setPushSubscriptionState = async (enable: boolean): Promise<void> =
       if (enable) {
         const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
         if (permission === 'granted') {
+          console.log('🔔 Opting in to OneSignal push subscription...');
           await OneSignal.User.PushSubscription.optIn();
-        } else if (permission === 'denied') {
-          console.warn('[OneSignal] Notifications blocked in browser — user must unblock manually.');
         } else {
-          await OneSignal.Notifications.requestPermission();
-          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            await OneSignal.User.PushSubscription.optIn();
-          }
+          console.warn('[OneSignal] Cannot opt-in: permission is not granted:', permission);
         }
       } else {
         await OneSignal.User.PushSubscription.optOut();
