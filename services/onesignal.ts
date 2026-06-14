@@ -60,7 +60,7 @@ export const initializeOneSignal = async (): Promise<void> => {
           if (lastLoggedId) {
             try {
               console.log(`👤 [ONESIGNAL] Re-logging in user ${lastLoggedId} to bind new subscription ${newSubId}`);
-              await OneSignal.login(lastLoggedId);
+              await safeLoginWithRetry(lastLoggedId);
               lastLoggedSubscriptionId = newSubId || null;
             } catch (loginErr) {
               console.error('❌ [ONESIGNAL] Error linking new subscription on change:', loginErr);
@@ -122,6 +122,37 @@ export const initializeOneSignal = async (): Promise<void> => {
 };
 
 /**
+ * Safe retry wrappers to handle async OneSignal SDK bootstrapping issues
+ */
+const safeLoginWithRetry = async (uid: string, retries = 3, delayMs = 500): Promise<void> => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await OneSignal.login(uid);
+      console.log(`👤 [ONESIGNAL] Login successful on attempt #${attempt}`);
+      return;
+    } catch (err: any) {
+      console.warn(`⚠️ [ONESIGNAL] Login attempt #${attempt} failed (error details: ${err?.message || err}). Retrying...`);
+      if (attempt === retries) throw err;
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+};
+
+const safeAddTagsWithRetry = async (tags: Record<string, string>, retries = 3, delayMs = 500): Promise<void> => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await OneSignal.User.addTags(tags);
+      console.log(`🏷️ [ONESIGNAL] Tags sync successful on attempt #${attempt}`);
+      return;
+    } catch (err: any) {
+      console.warn(`⚠️ [ONESIGNAL] Tags sync attempt #${attempt} failed. Retrying...`);
+      if (attempt === retries) throw err;
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+};
+
+/**
  * 👤 Login / sync user identity to OneSignal
  */
 export const loginUser = async (uid: string, profile: UserProfile): Promise<void> => {
@@ -157,13 +188,13 @@ export const loginUser = async (uid: string, profile: UserProfile): Promise<void
   try {
     if (lastLoggedId !== uid || lastLoggedSubscriptionId !== currentSubId) {
       console.log(`👤 [ONESIGNAL] Logging in external_id: ${uid} (subscription: ${currentSubId})`);
-      await OneSignal.login(uid);
+      await safeLoginWithRetry(uid);
       lastLoggedId = uid;
       lastLoggedSubscriptionId = currentSubId;
     }
 
     if (lastSyncedTagsJson !== tagsJson) {
-      await OneSignal.User.addTags(tags);
+      await safeAddTagsWithRetry(tags);
       lastSyncedTagsJson = tagsJson;
       console.log('🏷️ [ONESIGNAL] Tags synced:', tags);
     }
