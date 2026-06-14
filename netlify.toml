@@ -24,3 +24,7 @@
 [dev]
   targetPort = 5174
   port = 8888
+
+# Rapido-style: check every 3 minutes for uncollected READY orders and send reminder push
+[functions."order-pickup-reminder"]
+  schedule = "*/3 * * * *"

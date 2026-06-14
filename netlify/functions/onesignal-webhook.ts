@@ -1,13 +1,14 @@
 import type { Handler } from '@netlify/functions';
 
 /**
- * OneSignal Push Notification Netlify Function
+ * OneSignal Push Notification — Netlify Serverless Function
  *
- * Supports two modes:
- *   1. userId  — sends to a specific user by external_id
- *   2. role    — broadcasts to all users tagged with that role (e.g. "assistant_supervisor")
+ * Body (POST JSON):
+ *   { userId?, role?, title, body, url? }
+ *   - userId → push to one specific user (include_external_user_ids)
+ *   - role   → broadcast to all users with that role tag (filters)
  *
- * Body: { userId?, role?, title, body, url? }
+ * Env required: ONESIGNAL_REST_API_KEY (set in Netlify dashboard)
  */
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -37,27 +38,26 @@ export const handler: Handler = async (event) => {
   }
 
   const APP_ID = '2ce03ee2-27d2-49b7-9fea-21c1f2f124cd';
+  const ICON_URL = 'https://kucafe.online/JeoLogoFinal.png';
 
-  // Build targeting: specific user OR all users with a given role tag
+  // Build targeting payload
   const targeting: Record<string, any> = userId
-    ? {
-        include_aliases: { external_id: [userId] },
-        target_channel: 'push',
-      }
-    : {
-        filters: [{ field: 'tag', key: 'role', relation: '=', value: role }],
-      };
+    ? { include_external_user_ids: [userId] }      // ✅ stable v1 API format
+    : { filters: [{ field: 'tag', key: 'role', relation: '=', value: role }] };
 
   const pushPayload = {
     app_id: APP_ID,
     headings: { en: title },
     contents: { en: body },
-    ...(url ? { url } : {}),
-    ...targeting,
-    // Always show notification even if app is in foreground
-    android_visibility: 1,
+    large_icon: ICON_URL,
+    chrome_web_icon: ICON_URL,
+    // High priority — shows immediately even on silent/battery-saver mode
     priority: 10,
-    ttl: 3600, // 1 hour TTL — order notifications expire if not delivered in time
+    android_visibility: 1,
+    // 1 hour TTL — discard if not delivered (order would be stale)
+    ttl: 3600,
+    url: url || 'https://kucafe.online',
+    ...targeting,
   };
 
   try {
@@ -77,8 +77,14 @@ export const handler: Handler = async (event) => {
       return { statusCode: response.status, body: JSON.stringify(data) };
     }
 
-    console.log(`[OneSignal] ✅ Push sent to ${userId || `role:${role}`} | recipients: ${data.recipients}`);
-    return { statusCode: 200, body: JSON.stringify({ success: true, recipients: data.recipients }) };
+    const recipients = data.recipients ?? 0;
+    console.log(`[OneSignal] ✅ Push sent to ${userId || `role:${role}`} | recipients: ${recipients}`);
+
+    if (recipients === 0) {
+      console.warn(`[OneSignal] ⚠️ 0 recipients. Device not subscribed or external_id not linked for: ${userId}`);
+    }
+
+    return { statusCode: 200, body: JSON.stringify({ success: true, recipients }) };
   } catch (error: any) {
     console.error('[OneSignal] Network error:', error?.message);
     return { statusCode: 500, body: 'Internal Server Error' };
