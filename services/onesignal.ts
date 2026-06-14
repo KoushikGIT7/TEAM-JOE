@@ -52,7 +52,7 @@ export const initializeOneSignal = async (): Promise<void> => {
       // Auto-opt-in if browser permission is already granted!
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         console.log('🔔 [ONESIGNAL] Permission is granted. Opting in to push subscription...');
-        await OneSignal.User.PushSubscription.optIn().catch(err => {
+        OneSignal.User.PushSubscription.optIn().catch(err => {
           console.warn('[ONESIGNAL] Auto opt-in failed:', err);
         });
       }
@@ -204,27 +204,34 @@ export const getPushSubscriptionState = (): boolean => {
  */
 export const setPushSubscriptionState = async (enable: boolean): Promise<void> => {
   if (typeof window === 'undefined') return;
-  await initializeOneSignal();
-  if (!isInitialized) return;
-  try {
-    if (enable) {
-      const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
-      if (permission === 'granted') {
-        await OneSignal.User.PushSubscription.optIn();
-      } else if (permission === 'denied') {
-        console.warn('[OneSignal] Notifications blocked in browser — user must unblock manually.');
-      } else {
-        await OneSignal.Notifications.requestPermission();
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+
+  const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 4000));
+
+  const actionPromise = (async () => {
+    await initializeOneSignal();
+    if (!isInitialized) return;
+    try {
+      if (enable) {
+        const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+        if (permission === 'granted') {
           await OneSignal.User.PushSubscription.optIn();
+        } else if (permission === 'denied') {
+          console.warn('[OneSignal] Notifications blocked in browser — user must unblock manually.');
+        } else {
+          await OneSignal.Notifications.requestPermission();
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            await OneSignal.User.PushSubscription.optIn();
+          }
         }
+      } else {
+        await OneSignal.User.PushSubscription.optOut();
       }
-    } else {
-      await OneSignal.User.PushSubscription.optOut();
+    } catch (e) {
+      console.error('🔔 [OneSignal] setPushSubscriptionState error:', e);
     }
-  } catch (e) {
-    console.error('🔔 [OneSignal] setPushSubscriptionState error:', e);
-  }
+  })();
+
+  await Promise.race([actionPromise, timeoutPromise]);
 };
 
 /**

@@ -20,63 +20,34 @@ export const requestNotificationPermission = async () => {
         if (permission === 'granted') {
             console.log('🔔 Notification permission granted.');
 
+            // Unregister any conflicting legacy FCM service worker to let OneSignal own background push
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (const reg of registrations) {
+                        if (reg.active && reg.active.scriptURL.includes('firebase-messaging-sw.js')) {
+                            const success = await reg.unregister();
+                            if (success) {
+                                console.log('🗑️ Conflicting legacy FCM Service Worker unregistered successfully.');
+                            }
+                        }
+                    }
+                } catch (swErr) {
+                    console.warn('Error cleaning up legacy service workers:', swErr);
+                }
+            }
+
             // Trigger OneSignal permission/registration to register OneSignal service worker
             try {
                 const { requestOneSignalPermission } = await import('./onesignal');
                 await requestOneSignalPermission();
             } catch (err) {
-                console.warn('[FCM] Failed to trigger OneSignal registration:', err);
+                console.warn('[OneSignal] Failed to trigger OneSignal registration:', err);
             }
             
-            // Register service worker explicitly to support PWA/mobile environments robustly
-            let registration: ServiceWorkerRegistration | undefined;
-            if ('serviceWorker' in navigator) {
-                registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-                console.log('✅ FCM Service Worker registered:', registration);
-
-                // Wait until the service worker is active and ready to prevent "no active Service Worker" AbortError
-                await navigator.serviceWorker.ready;
-
-                if (registration.installing) {
-                    const worker = registration.installing;
-                    await new Promise<void>((resolve) => {
-                        worker.addEventListener('statechange', function stateChangeHandler() {
-                            if (worker.state === 'activated') {
-                                worker.removeEventListener('statechange', stateChangeHandler);
-                                resolve();
-                            }
-                        });
-                    });
-                } else if (registration.waiting) {
-                    const worker = registration.waiting;
-                    await new Promise<void>((resolve) => {
-                        worker.addEventListener('statechange', function stateChangeHandler() {
-                            if (worker.state === 'activated') {
-                                worker.removeEventListener('statechange', stateChangeHandler);
-                                resolve();
-                            }
-                        });
-                    });
-                }
-
-                // A brief sleep to ensure the browser has fully registered the PushManager on the active worker
-                if (!registration.active) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                console.log('🚀 FCM Service Worker is active and ready.');
-            }
-
-            const token = await getToken(messaging, { 
-                vapidKey: VAPID_KEY,
-                serviceWorkerRegistration: registration
-            });
-
-            if (token) {
-                await registerFCMToken(token);
-                // Dispatch event so UI elements (like the HomeView Bell button) update instantly
-                window.dispatchEvent(new CustomEvent('joe_notif_granted'));
-                return token;
-            }
+            // Dispatch event so UI elements (like the HomeView Bell button) update instantly
+            window.dispatchEvent(new CustomEvent('joe_notif_granted'));
+            return 'granted';
         } else {
             console.warn('⚠️ Notification permission denied/dismissed:', permission);
         }
@@ -87,59 +58,25 @@ export const requestNotificationPermission = async () => {
 };
 
 /**
- * Save token to Firestore using arrayUnion for multi-device support
+ * Save token to Firestore (No-op since switching to OneSignal)
  */
 export const registerFCMToken = async (token: string) => {
-    const user = auth.currentUser;
-    if (!user) {
-        console.warn('[FCM-REGISTRY] Cannot save token: No authenticated user.');
-        return;
-    }
-    
-    try {
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-            fcmTokens: arrayUnion(token),
-            lastUpdated: serverTimestamp()
-        });
-        console.log('🚀 FCM Token registered in array successfully.');
-    } catch (e) {
-        console.error('Error saving FCM token:', e);
-    }
+    console.log('ℹ️ registerFCMToken is now a no-op (using OneSignal). ID:', token);
 };
 
 /**
- * Clear current FCM token from Firestore array (for logout cleanup)
+ * Clear current FCM token from Firestore (Clean up legacy FCM service workers instead)
  */
 export const clearFCMToken = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-    
-    try {
-        let registration: ServiceWorkerRegistration | undefined;
-        if ('serviceWorker' in navigator) {
-            registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
-        }
-
-        if (registration && registration.active) {
-            const token = await getToken(messaging, { 
-                vapidKey: VAPID_KEY,
-                serviceWorkerRegistration: registration
-            });
-
-            if (token) {
-                const userRef = doc(db, 'users', user.uid);
-                await updateDoc(userRef, {
-                    fcmTokens: arrayRemove(token),
-                    lastUpdated: serverTimestamp()
-                });
-                console.log('🗑️ Local FCM Token removed from array.');
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) {
+                if (reg.active && reg.active.scriptURL.includes('firebase-messaging-sw.js')) {
+                    await reg.unregister();
+                }
             }
-        } else {
-            console.log('ℹ️ No active Service Worker found during logout. Skipping token array removal.');
-        }
-    } catch (e) {
-        console.error('Error clearing FCM token during logout:', e);
+        } catch (_) {}
     }
 };
 
