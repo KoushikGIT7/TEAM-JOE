@@ -11,6 +11,7 @@ let changeListeners: ((optedIn: boolean) => void)[] = [];
 // Cache to prevent redundant login/tag API calls
 let lastLoggedId: string | null = null;
 let lastSyncedTagsJson: string | null = null;
+let lastLoggedSubscriptionId: string | null = null;
 
 /**
  * 🔔 Safe OneSignal Initialization
@@ -48,6 +49,27 @@ export const initializeOneSignal = async (): Promise<void> => {
       });
       isInitialized = true;
       console.log('✅ [ONESIGNAL] Web SDK Initialized.');
+
+      // Listen for subscription changes to automatically link the subscription to the active logged-in user!
+      try {
+        OneSignal.User.PushSubscription.addEventListener('change', async (e: any) => {
+          const newSubId = e?.current?.id;
+          const optedIn = e?.current?.optedIn;
+          console.log(`🔔 [ONESIGNAL] Subscription changed. optedIn: ${optedIn}, id: ${newSubId}`);
+          
+          if (lastLoggedId) {
+            try {
+              console.log(`👤 [ONESIGNAL] Re-logging in user ${lastLoggedId} to bind new subscription ${newSubId}`);
+              await OneSignal.login(lastLoggedId);
+              lastLoggedSubscriptionId = newSubId || null;
+            } catch (loginErr) {
+              console.error('❌ [ONESIGNAL] Error linking new subscription on change:', loginErr);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('[ONESIGNAL] Failed to add subscription change listener:', err);
+      }
 
       // Auto-opt-in if browser permission is already granted!
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -118,18 +140,26 @@ export const loginUser = async (uid: string, profile: UserProfile): Promise<void
   }
 
   const tagsJson = JSON.stringify(tags);
+  const currentSubId = getPushSubscriptionId() || null;
 
   // Skip if nothing changed
-  if (lastLoggedId === uid && lastSyncedTagsJson === tagsJson) return;
+  if (
+    lastLoggedId === uid &&
+    lastSyncedTagsJson === tagsJson &&
+    lastLoggedSubscriptionId === currentSubId
+  ) {
+    return;
+  }
 
   await initializeOneSignal();
   if (!isInitialized) return; // init genuinely failed, bail out
 
   try {
-    if (lastLoggedId !== uid) {
-      console.log(`👤 [ONESIGNAL] Logging in external_id: ${uid}`);
+    if (lastLoggedId !== uid || lastLoggedSubscriptionId !== currentSubId) {
+      console.log(`👤 [ONESIGNAL] Logging in external_id: ${uid} (subscription: ${currentSubId})`);
       await OneSignal.login(uid);
       lastLoggedId = uid;
+      lastLoggedSubscriptionId = currentSubId;
     }
 
     if (lastSyncedTagsJson !== tagsJson) {
@@ -154,6 +184,7 @@ export const logoutUser = async (): Promise<void> => {
   if (!isInitialized) {
     lastLoggedId = null;
     lastSyncedTagsJson = null;
+    lastLoggedSubscriptionId = null;
     return;
   }
 
@@ -165,11 +196,13 @@ export const logoutUser = async (): Promise<void> => {
     await OneSignal.logout();
     lastLoggedId = null;
     lastSyncedTagsJson = null;
+    lastLoggedSubscriptionId = null;
   } catch (error) {
     console.error('❌ [ONESIGNAL] Logout error:', error);
     // Still clear local state so we don't keep retrying
     lastLoggedId = null;
     lastSyncedTagsJson = null;
+    lastLoggedSubscriptionId = null;
   }
 };
 
