@@ -93,19 +93,24 @@ export const useOrderNotifications = (userId: string | null) => {
                     if (!sessionDedupeRef.current.has(dKey)) {
                         sessionDedupeRef.current.add(dKey);
 
-                        // Play chime on student device
-                        joeSounds.playPaymentConfirmed().catch(() => {});
-
-                        // TTS announcement on student device if app is open
+                        // Play chime and announce TTS 3 times sequentially
                         try {
                             const shortToken = data.tokenNumber || orderId.slice(-4).toUpperCase();
                             const speakText = `Token ${shortToken}, your food is ready at the counter.`;
-                            const utter = new SpeechSynthesisUtterance(speakText);
-                            utter.lang = 'en-IN';
-                            utter.rate = 0.85;
+                            
                             if (typeof window !== 'undefined' && window.speechSynthesis) {
                                 window.speechSynthesis.cancel();
-                                window.speechSynthesis.speak(utter);
+                                for (let i = 0; i < 3; i++) {
+                                    // Play the celebratory ping sound with offset matching speech pacing
+                                    setTimeout(() => {
+                                        joeSounds.playFoodReady().catch(() => {});
+                                    }, i * 3500);
+
+                                    const utter = new SpeechSynthesisUtterance(speakText);
+                                    utter.lang = 'en-IN';
+                                    utter.rate = 0.85;
+                                    window.speechSynthesis.speak(utter);
+                                }
                             }
                         } catch (_) {}
                     }

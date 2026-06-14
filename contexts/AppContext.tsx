@@ -671,11 +671,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         `Token #${tokenLabel}: ${itemSummary}. Your QR is ready.`,
       ).catch(() => {});
 
-      // 2. Alert ALL supervisors about the new order (tag-based broadcast)
+      // 2. Alert ALL supervisors about the new order (tag-based broadcast) in Telugu
       triggerRolePush(
         'assistant_supervisor',
-        '🔔 New Order Arrived!',
-        `Token #${tokenLabel} — ${itemSummary} (₹${total})`,
+        '🔔 కొత్త ఆర్డర్ వచ్చింది!',
+        `టోకెన్ #${tokenLabel} — ${itemSummary} (₹${total})`,
       ).catch(() => {});
       // ──────────────────────────────────────────────────────────────────
 

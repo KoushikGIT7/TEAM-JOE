@@ -4,7 +4,7 @@
  * Role: Monitor dynamic items, notify ready (FCM + QR Unlock), display static counts.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { listenToActiveSupervisorOrders } from '../../services/firestore-db';
 import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
@@ -64,6 +64,49 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
   const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [, setForceTick] = useState(0);
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const isFirstLoadRef = useRef(true);
+
+  // New Order Received Local Chime & Telugu TTS Alert
+  useEffect(() => {
+    if (activeOrders.length === 0) return;
+
+    if (isFirstLoadRef.current) {
+      activeOrders.forEach(o => knownOrderIdsRef.current.add(o.id));
+      isFirstLoadRef.current = false;
+      return;
+    }
+
+    activeOrders.forEach(o => {
+      if (!knownOrderIdsRef.current.has(o.id)) {
+        knownOrderIdsRef.current.add(o.id);
+
+        // Notify if the order was created recently (last 2 minutes)
+        if (Date.now() - o.createdAt < 120000) {
+          // Play local chime sound if not muted
+          if (audioStatus !== 'Muted') {
+            joeSounds.playIncomingAlert().catch(() => {});
+          }
+
+          // Telugu TTS announcement
+          try {
+            const rawToken = o.tokenNumber || o.id.slice(-4).toUpperCase();
+            const tokenSpeech = rawToken.replace('#', '');
+            const speakText = `కొత్త ఆర్డర్ వచ్చింది. టోకెన్ సంఖ్య ${tokenSpeech}.`;
+            const utter = new SpeechSynthesisUtterance(speakText);
+            utter.lang = 'te-IN';
+            utter.rate = 0.85;
+            
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+              window.speechSynthesis.speak(utter);
+            }
+          } catch (e) {
+            console.error("Supervisor TTS error:", e);
+          }
+        }
+      }
+    });
+  }, [activeOrders, audioStatus]);
 
   // Live Database Sync
   useEffect(() => {

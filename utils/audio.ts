@@ -195,8 +195,28 @@ class SoundService {
       await this.init();
       if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
+      // High-pitched celebratory ping (F5 -> A5)
+      this.tone(698.46, now,        0.15, 0.15, 'sine'); // F5
+      this.tone(880.00, now + 0.12, 0.35, 0.12, 'sine'); // A5
     } catch (e) {
       console.warn('[JOE Audio] Food ready sound blocked:', e);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 4.5. INCOMING ALERT — Played on supervisor dashboard when a new order is received
+  //    Sound: Double bright alert chime (G5 -> E5)
+  // ═══════════════════════════════════════════════════════
+  public async playIncomingAlert() {
+    if (this.isMuted) return;
+    try {
+      await this.init();
+      if (!this.ctx || this.isMuted) return;
+      const now = this.ctx.currentTime;
+      this.tone(783.99, now,        0.12, 0.15, 'sine'); // G5
+      this.tone(659.25, now + 0.12, 0.35, 0.15, 'sine'); // E5
+    } catch (e) {
+      console.warn('[JOE Audio] Incoming alert sound blocked:', e);
     }
   }
 
