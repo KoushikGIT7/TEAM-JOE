@@ -253,9 +253,11 @@ export const getPushSubscriptionState = (): boolean => {
 export const setPushSubscriptionState = async (enable: boolean): Promise<void> => {
   if (typeof window === 'undefined') return;
 
-  // 1. Domain Check: OneSignal is restricted to kucafe.online. Alert user if on Netlify preview.
+  // 1. Domain Check: OneSignal is restricted to kucafe.online and its subdomains (e.g. www.kucafe.online).
   const isWhitelistedDomain = 
     window.location.hostname === 'kucafe.online' || 
+    window.location.hostname === 'www.kucafe.online' ||
+    window.location.hostname.endsWith('.kucafe.online') ||
     window.location.hostname === 'localhost' || 
     window.location.hostname === '127.0.0.1';
 
