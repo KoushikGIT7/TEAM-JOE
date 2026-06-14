@@ -138,9 +138,7 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
   // Back to menu redirect once order is complete
   useEffect(() => {
     if (isDone) {
-      const timer = setTimeout(() => {
-        onBack();
-      }, 3000);
+      const timer = setTimeout(() => { onBack(); }, 3000);
       return () => clearTimeout(timer);
     }
   }, [isDone, onBack]);
@@ -161,12 +159,45 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
   const badge = getItemBadge(activeItem);
   const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
   const isOrderPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
-  // QR unlocks when:
-  //   (a) cashier confirmed cash payment → qrStatus becomes 'ACTIVE', OR
-  //   (b) kitchen marks item READY (for pre-paid orders)
-  // It stays locked only when payment is pending OR item is already served.
   const isQRActive = order.qrStatus === 'ACTIVE' || order.qr?.status === 'ACTIVE';
-  const qrUnlocked = !isMissed && !isAlreadyServed && isOrderPaid && (isQRActive || badge === 'READY');
+
+  // Supervisor has clicked "Notify Ready" → sets serveFlowStatus = 'READY' on the order
+  const supervisorNotified = order.serveFlowStatus === 'READY';
+
+  // Classify if this order has dynamic (live-prep) items — dosa, omelette, etc.
+  // These MUST stay locked until supervisor explicitly clicks "Notify Ready"
+  const isDynamicOrder = (order.items || []).some(it => {
+    const n = (it.name || '').toLowerCase();
+    const c = (it.category || '').toLowerCase();
+    if (c === 'beverages') return false;
+    return (
+      n.includes('dosa') ||
+      n.includes('omelette') ||
+      n.includes('egg') ||
+      n.includes('puri') ||
+      n.includes('vada') ||
+      n.includes('idli') ||
+      n.includes('roti') ||
+      n.includes('chapati')
+    );
+  });
+
+  // ═══ QR UNLOCK GATE ══════════════════════════════════════════════
+  //   DYNAMIC items (dosa/omelette/etc.):
+  //     ❌ LOCKED  → payment confirmed but supervisor has NOT clicked Notify Ready
+  //     ✅ UNLOCKED → supervisor clicked Notify Ready (serveFlowStatus === 'READY')
+  //
+  //   STATIC/FAST items (coffee, packaged, etc.):
+  //     ✅ UNLOCKED → payment confirmed and qrStatus is ACTIVE
+  // ════════════════════════════════════════════════════
+  const qrUnlocked =
+    !isMissed &&
+    !isAlreadyServed &&
+    isOrderPaid &&
+    (isDynamicOrder
+      ? supervisorNotified                 // dynamic: wait for supervisor
+      : isQRActive || badge === 'READY'    // static: payment confirmed = unlock
+    );
 
   return (
     <div className="min-h-screen bg-surface-lowest pb-24 text-on-surface max-w-md mx-auto border-x border-white/5 shadow-2xl">
@@ -287,7 +318,7 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
                     </span>
                   </div>
                 ) : !qrUnlocked ? (
-                  // Locked state — show reason
+                  // Locked state — explain exactly why
                   <div className="absolute inset-0 bg-surface-lowest/90 backdrop-blur-md border border-white/10 flex flex-col items-center justify-center p-4 rounded-[2rem] z-20">
                     <div className="w-11 h-11 rounded-full bg-brand-purple-dark/30 border border-brand-purple/40 flex items-center justify-center mb-2">
                       <Lock className="w-5 h-5 text-brand-purple animate-pulse" />
@@ -295,14 +326,16 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
                     <h4 className="font-display font-bold text-xs text-brand-purple-light uppercase text-center tracking-wider leading-relaxed">
                       {!isOrderPaid
                         ? 'Payment Pending'
-                        : badge === 'READY'
-                          ? 'Scan Ready'
+                        : isDynamicOrder
+                          ? 'Being Prepared'
                           : 'Preparing Your Food'}
                     </h4>
                     <p className="font-sans text-[9px] text-zinc-400 max-w-[80%] text-center leading-normal mt-1.5">
                       {!isOrderPaid
-                        ? 'Waiting for cashier to confirm your cash payment.'
-                        : 'Your QR token unlocks once the cashier confirms payment or chef marks items READY.'}
+                        ? 'Waiting for cashier to confirm your payment.'
+                        : isDynamicOrder
+                          ? 'Your QR unlocks the moment kitchen staff marks your food ready. You will get a push notification!'
+                          : 'Your QR token unlocks once payment is confirmed.'}
                     </p>
                   </div>
                 ) : (
