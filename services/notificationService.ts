@@ -19,6 +19,14 @@ export const requestNotificationPermission = async () => {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
             console.log('🔔 Notification permission granted.');
+
+            // Trigger OneSignal permission/registration to register OneSignal service worker
+            try {
+                const { requestOneSignalPermission } = await import('./onesignal');
+                await requestOneSignalPermission();
+            } catch (err) {
+                console.warn('[FCM] Failed to trigger OneSignal registration:', err);
+            }
             
             // Register service worker explicitly to support PWA/mobile environments robustly
             let registration: ServiceWorkerRegistration | undefined;

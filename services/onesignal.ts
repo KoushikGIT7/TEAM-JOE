@@ -48,6 +48,14 @@ export const initializeOneSignal = async (): Promise<void> => {
       });
       isInitialized = true;
       console.log('✅ [ONESIGNAL] Web SDK Initialized.');
+
+      // Auto-opt-in if browser permission is already granted!
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        console.log('🔔 [ONESIGNAL] Permission is granted. Opting in to push subscription...');
+        await OneSignal.User.PushSubscription.optIn().catch(err => {
+          console.warn('[ONESIGNAL] Auto opt-in failed:', err);
+        });
+      }
     } catch (error: any) {
       const msg = error?.message || '';
       if (
