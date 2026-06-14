@@ -24,6 +24,17 @@ export const initializeOneSignal = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
   if (isInitialized) return;
 
+  // On localhost the OneSignal app is domain-locked to https://kucafe.online.
+  // The SDK cannot subscribe devices on localhost anyway (no service worker scope).
+  // We skip init here — push sending still works via direct REST API in onesignal-webhook.ts.
+  const isLocal =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+  if (isLocal) {
+    console.log('ℹ️ [ONESIGNAL] Localhost detected — skipping SDK init (domain-locked to kucafe.online). Push sending via REST API still works.');
+    return;
+  }
+
   // Already in progress — return the same promise
   if (initPromise) return initPromise;
 
@@ -38,19 +49,24 @@ export const initializeOneSignal = async (): Promise<void> => {
       isInitialized = true;
       console.log('✅ [ONESIGNAL] Web SDK Initialized.');
     } catch (error: any) {
-      // "SDK already initialized" is NOT a real error — the SDK loaded via
-      // the page script tag before our module ran. Treat it as success.
       const msg = error?.message || '';
       if (
         msg.includes('already initialized') ||
         msg.includes('already been initialized') ||
         msg.includes('SDK already')
       ) {
+        // SDK was loaded by the page script tag before our module ran — adopt it
         isInitialized = true;
-        console.log('✅ [ONESIGNAL] SDK was already initialized (script tag). Adopting state.');
+        console.log('✅ [ONESIGNAL] SDK already initialized (script tag). Adopting state.');
+      } else if (msg.includes('Can only be used on')) {
+        // Domain restriction — this device/origin is not whitelisted in OneSignal dashboard
+        // This is expected on staging/preview URLs. Push sending via REST API still works.
+        console.warn('⚠️ [ONESIGNAL] Domain not whitelisted — SDK subscription disabled on this origin. REST push still works.');
+        initPromise = null;
+        return;
       } else {
         console.error('❌ [ONESIGNAL] Initialization failed:', error);
-        initPromise = null; // allow retry on genuine failures
+        initPromise = null;
         return;
       }
     }
