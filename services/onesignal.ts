@@ -194,6 +194,11 @@ export const loginUser = async (uid: string, profile: UserProfile): Promise<void
       await safeLoginWithRetry(uid);
       lastLoggedId = uid;
       lastLoggedSubscriptionId = currentSubId;
+
+      // ⏳ [STABILITY-GUARD] Give the OneSignal SDK's internal queue and server
+      // 1.5 seconds to settle user identity resolution before pushing tags.
+      // This prevents 409 (Conflict) errors caused by tag updates targeting the old anonymous ID.
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     if (lastSyncedTagsJson !== tagsJson) {
