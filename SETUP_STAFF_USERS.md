@@ -23,30 +23,30 @@ You should see output like:
 
 📋 Setting up 2 staff users...
 
-🔧 Processing: cashier@joe.com (cashier)
+🔧 Processing: cashier@cse.com (cashier)
 ─────────────────────────────────────────
-✅ Created Firebase Auth user: cashier@joe.com
-✅ Created Firestore profile for cashier@joe.com
+✅ Created Firebase Auth user: cashier@cse.com
+✅ Created Firestore profile for cashier@cse.com
    Role: cashier
    Active: true
    Description: Handles cash payment approvals
 ✅ Verification:
    ✓ UID: [uid]
-   ✓ Email: cashier@joe.com
+   ✓ Email: cashier@cse.com
    ✓ Name: Cashier Node
    ✓ Role: cashier
    ✓ Active: true
 
-🔧 Processing: server@joe.com (server)
+🔧 Processing: server@cse.com (server)
 ─────────────────────────────────────────
-✅ Created Firebase Auth user: server@joe.com
-✅ Created Firestore profile for server@joe.com
+✅ Created Firebase Auth user: server@cse.com
+✅ Created Firestore profile for server@cse.com
    Role: server
    Active: true
    Description: Handles order serving and QR scanning
 ✅ Verification:
    ✓ UID: [uid]
-   ✓ Email: server@joe.com
+   ✓ Email: server@cse.com
    ✓ Name: Server Node
    ✓ Role: server
    ✓ Active: true
@@ -58,12 +58,12 @@ You should see output like:
 📧 Demo Credentials:
 
    CASHIER PORTAL:
-   📧 Email: cashier@joe.com
+   📧 Email: cashier@cse.com
    🔑 Password: cashier123
    🎯 Portal: Cashier Dashboard
 
    SERVER PORTAL:
-   📧 Email: server@joe.com
+   📧 Email: server@cse.com
    🔑 Password: server123
    🎯 Portal: Serving Counter
 
@@ -74,18 +74,18 @@ You should see output like:
 ## Demo Credentials
 
 ### Admin Portal
-- **Email**: `admin@joecafe.com`
-- **Password**: `joeadmin2026`
+- **Email**: `admin@csecafe.com`
+- **Password**: `cseadmin2026`
 - **Portal**: Admin Dashboard (full system control)
 
 ### Cashier Portal
-- **Email**: `cashier@joecafe.com`
-- **Password**: `joecashier2026`
+- **Email**: `cashier@csecafe.com`
+- **Password**: `csecashier2026`
 - **Portal**: Cashier Dashboard (handles cash payment approvals)
 
 ### Server Portal
-- **Email**: `server@joecafe.com`
-- **Password**: `joeserver2026`
+- **Email**: `server@csecafe.com`
+- **Password**: `cseserver2026`
 - **Portal**: Serving Counter (handles order serving and QR scanning)
 
 ## Firestore Profile Structure
@@ -95,7 +95,7 @@ Each user profile in Firestore (`users` collection) has these fields:
 ```javascript
 {
   uid: "user-uid-from-firebase-auth",
-  email: "cashier@joe.com" or "server@joe.com",
+  email: "cashier@cse.com" or "server@cse.com",
   name: "Cashier Node" or "Server Node",
   role: "cashier" or "server",  // CRITICAL: Must match exactly
   active: true,
@@ -137,19 +137,19 @@ If the script doesn't work, you can create users manually:
 
 ### 1. Create Users in Firebase Auth
 1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project: **joecafe-a7fff**
+2. Select your project: **csecafe-a7fff**
 3. Go to **Authentication** → **Users** → **Add user**
 4. Create:
-   - `admin@joecafe.com` / `joeadmin2026`
-   - `cashier@joecafe.com` / `joecashier2026`
-   - `server@joecafe.com` / `joeserver2026`
+   - `admin@csecafe.com` / `cseadmin2026`
+   - `cashier@csecafe.com` / `csecashier2026`
+   - `server@csecafe.com` / `cseserver2026`
 
 ### 2. Create Profiles in Firestore
 1. Go to **Firestore Database** → `users` collection
 2. For each user, create a document with their UID (from Authentication)
 3. Add these fields:
    - `uid`: (user's UID from Auth)
-   - `email`: `cashier@joe.com` or `server@joe.com`
+   - `email`: `cashier@cse.com` or `server@cse.com`
    - `name`: `Cashier Node` or `Server Node`
    - `role`: `cashier` or `server` (CRITICAL - must match exactly)
    - `active`: `true`
@@ -163,9 +163,9 @@ After setup, test login:
 
 1. Click "Admin Login" button on welcome screen
 2. Enter credentials:
-   - Admin: `admin@joecafe.com` / `joeadmin2026`
-   - Cashier: `cashier@joecafe.com` / `joecashier2026`
-   - Server: `server@joecafe.com` / `joeserver2026`
+   - Admin: `admin@csecafe.com` / `cseadmin2026`
+   - Cashier: `cashier@csecafe.com` / `csecashier2026`
+   - Server: `server@csecafe.com` / `cseserver2026`
 3. You should be routed to:
    - Cashier → Cashier Dashboard
    - Server → Serving Counter

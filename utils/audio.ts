@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * JOE Audio Engine — Industrial Fintech Sound System
+ * CSE Audio Engine — Industrial Fintech Sound System
  * ============================================================
  * Each stage of the order lifecycle has a unique, professional
  * audio signature. Designed to feel like Zomato / Google Pay
@@ -119,8 +119,8 @@ class SoundService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // 1. JOE HALLMARK — Played on app entry / marketing pulse
-  //    Sound: Warm "JOE" voice + rising C-E-G crystal chime
+  // 1. CSE HALLMARK — Played on app entry / marketing pulse
+  //    Sound: Warm "CSE" voice + rising C-E-G crystal chime
   // ═══════════════════════════════════════════════════════
   public async playAlert() {
     if (this.isMuted) return;
@@ -136,9 +136,9 @@ class SoundService {
         this.tone(659.25, t + 0.16, 0.22, 0.15, 'sine'); // E5
         this.tone(783.99, t + 0.35, 0.55, 0.12, 'sine'); // G5
       }, 400);
-      this.say('JOE', 0.5, 0.95, 1.0);
+      this.say('CSE', 0.5, 0.95, 1.0);
     } catch (e) {
-      console.warn('[JOE Audio] Hallmark blocked:', e);
+      console.warn('[CSE Audio] Hallmark blocked:', e);
     }
   }
 
@@ -159,7 +159,7 @@ class SoundService {
       this.tone(659.25, now + 0.25, 0.3,  0.12, 'sine');  // E5
       this.tone(783.99, now + 0.45, 0.45, 0.10, 'sine');  // G5
     } catch (e) {
-      console.warn('[JOE Audio] Order placed sound blocked:', e);
+      console.warn('[CSE Audio] Order placed sound blocked:', e);
     }
   }
 
@@ -178,10 +178,10 @@ class SoundService {
       this.tone(659.25, now + 0.10, 0.14, 0.16, 'sine');  // E5
       this.tone(783.99, now + 0.20, 0.18, 0.16, 'sine');  // G5
       this.tone(1046.5, now + 0.32, 0.55, 0.13, 'sine');  // C6 — high bright finish
-      // Subtle "JOE" brand voice overlay
+      // Subtle "CSE" brand voice overlay
       setTimeout(() => this.say('Confirmed', 0.85, 1.1, 0.9), 100);
     } catch (e) {
-      console.warn('[JOE Audio] Confirmed sound blocked:', e);
+      console.warn('[CSE Audio] Confirmed sound blocked:', e);
     }
   }
 
@@ -199,7 +199,7 @@ class SoundService {
       this.tone(698.46, now,        0.15, 0.15, 'sine'); // F5
       this.tone(880.00, now + 0.12, 0.35, 0.12, 'sine'); // A5
     } catch (e) {
-      console.warn('[JOE Audio] Food ready sound blocked:', e);
+      console.warn('[CSE Audio] Food ready sound blocked:', e);
     }
   }
 
@@ -216,7 +216,7 @@ class SoundService {
       this.tone(783.99, now,        0.12, 0.15, 'sine'); // G5
       this.tone(659.25, now + 0.12, 0.35, 0.15, 'sine'); // E5
     } catch (e) {
-      console.warn('[JOE Audio] Incoming alert sound blocked:', e);
+      console.warn('[CSE Audio] Incoming alert sound blocked:', e);
     }
   }
 
@@ -235,7 +235,7 @@ class SoundService {
       this.tone(349.23, now + 0.22, 0.35, 0.10, 'sine');  // F4
       this.tone(293.66, now + 0.50, 0.55, 0.08, 'sine');  // D4 — fade out low
     } catch (e) {
-      console.warn('[JOE Audio] Rejected sound blocked:', e);
+      console.warn('[CSE Audio] Rejected sound blocked:', e);
     }
   }
 
@@ -254,7 +254,7 @@ class SoundService {
       this.tone(150, now + 0.3,  0.4, 0.3, 'square');
       setTimeout(() => this.say('Error', 1.0, 0.8, 1.0), 100);
     } catch (e) {
-      console.warn('[JOE Audio] Error buzzer blocked:', e);
+      console.warn('[CSE Audio] Error buzzer blocked:', e);
     }
   }
 
@@ -268,7 +268,21 @@ class SoundService {
       if (!this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
     } catch (e) {
-      console.warn('[JOE Audio] Success sound blocked:', e);
+      console.warn('[CSE Audio] Success sound blocked:', e);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 6.5. THANK YOU BOSS — Custom Voice Alert
+  // ═══════════════════════════════════════════════════════
+  public async playThankYouBoss() {
+    if (this.isMuted) return;
+    try {
+      await this.init();
+      if (!this.ctx || this.isMuted) return;
+      this.say('Thank you, Boss!', 0.9, 1.1, 1.0);
+    } catch (e) {
+      console.warn('[CSE Audio] Thank You Boss sound blocked:', e);
     }
   }
   // ═══════════════════════════════════════════════════════
@@ -286,7 +300,7 @@ class SoundService {
       const arrayBuffer = await response.arrayBuffer();
       return await this.ctx.decodeAudioData(arrayBuffer);
     } catch (e) {
-      console.warn(`[JOE Audio] Failed to load buffer for ${url}:`, e);
+      console.warn(`[CSE Audio] Failed to load buffer for ${url}:`, e);
       return null;
     }
   }
@@ -318,7 +332,7 @@ class SoundService {
       const played = this.playBuffer(this.serverSuccessBuffer);
       if (!played) this.playSuccess(); // Fallback
     } catch (e) {
-      console.warn('[JOE Audio] Server MP3 blocked:', e);
+      console.warn('[CSE Audio] Server MP3 blocked:', e);
       this.playSuccess();
     }
   }
@@ -334,10 +348,10 @@ class SoundService {
       const played = this.playBuffer(this.studentSuccessBuffer);
       if (!played) this.playFoodReady(); // Fallback
     } catch (e) {
-      console.warn('[JOE Audio] Student MP3 blocked:', e);
+      console.warn('[CSE Audio] Student MP3 blocked:', e);
       this.playFoodReady();
     }
   }
 }
 
-export const joeSounds = new SoundService();
+export const cseSounds = new SoundService();

@@ -478,6 +478,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
          />
       </div>
 
+      {/* MASSIVE HERO KPI SECTION */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-gradient-to-br from-brand-purple to-brand-purple-dark p-6 sm:p-8 rounded-[2rem] shadow-xl border border-white/10 text-white relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:scale-110 transition-transform"><DollarSign className="w-24 h-24 sm:w-32 sm:h-32" /></div>
+           <p className="text-xs font-black uppercase tracking-widest text-brand-purple-light mb-2 relative z-10">Today's Total Sales</p>
+           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter relative z-10">₹{stats.periodRevenue.toLocaleString()}</h2>
+        </div>
+
+        <div className="bg-gradient-to-br from-brand-green to-emerald-700 p-6 sm:p-8 rounded-[2rem] shadow-xl border border-white/10 text-white relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:scale-110 transition-transform"><Package className="w-24 h-24 sm:w-32 sm:h-32" /></div>
+           <p className="text-xs font-black uppercase tracking-widest text-emerald-200 mb-2 relative z-10">Total Orders Processed</p>
+           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter relative z-10">{stats.periodOrders}</h2>
+        </div>
+
+        <div className="bg-gradient-to-br from-amber-500 to-orange-600 p-6 sm:p-8 rounded-[2rem] shadow-xl border border-white/10 text-white relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:scale-110 transition-transform"><Activity className="w-24 h-24 sm:w-32 sm:h-32" /></div>
+           <p className="text-xs font-black uppercase tracking-widest text-amber-200 mb-2 relative z-10">Active Peak Hour Orders</p>
+           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter relative z-10">{stats.peakHours.length > 0 ? stats.peakHours.sort((a,b)=>b.orders-a.orders)[0]?.orders||0 : 0}</h2>
+        </div>
+      </div>
+
       {/* Financial Metrics — 2 cols on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {[
@@ -1398,7 +1419,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-xl sm:text-3xl font-black text-textMain tracking-tighter uppercase">System Parameters</h3>
-            <p className="text-xs text-textSecondary font-bold mt-1">Orchestrate the global state of the JOE ecosystem</p>
+            <p className="text-xs text-textSecondary font-bold mt-1">Orchestrate the global state of the CSE ecosystem</p>
           </div>
           <div className="p-3 sm:p-5 bg-primary/10 rounded-[1.5rem] border border-primary/10">
             <Globe className="w-6 h-6 sm:w-10 sm:h-10 text-primary" />

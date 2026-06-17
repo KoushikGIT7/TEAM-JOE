@@ -18,9 +18,9 @@ import { INITIAL_MENU, DEFAULT_FOOD_IMAGE } from "../constants";
  */
 export const initializeStaffUsers = async () => {
   const users = [
-    { email: 'admin@joe.com', password: 'admin123', name: 'JOE Admin', role: 'admin' },
-    { email: 'cashier@joe.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
-    { email: 'server@joe.com', password: 'server123', name: 'Server Node', role: 'server' }
+    { email: 'admin@cse.com', password: 'admin123', name: 'CSE Admin', role: 'admin' },
+    { email: 'cashier@cse.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
+    { email: 'server@cse.com', password: 'server123', name: 'Server Node', role: 'server' }
   ];
 
   const results = [];
@@ -143,7 +143,7 @@ export const initializeSettings = async () => {
     await setDoc(settingsRef, {
       isMaintenanceMode: false,
       acceptingOrders: true,
-      announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
+      announcement: "CSE: New Indian Breakfast Catalog is now LIVE!",
       taxRate: 5,
       minOrderValue: 20,
       peakHourThreshold: 50,

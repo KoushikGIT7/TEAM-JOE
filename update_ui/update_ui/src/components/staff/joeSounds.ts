@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export const joeSounds = {
+export const cseSounds = {
   playServerScanSuccess: () => {
     // 1. Device vibration
     if ('vibrate' in navigator) {

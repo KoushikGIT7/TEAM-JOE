@@ -39,12 +39,12 @@ The application uses **localStorage** for all data:
 
 | Data Type | Storage Location |
 |-----------|------------------|
-| Orders | `localStorage.getItem('joe_mock_orders')` |
-| Settings | `localStorage.getItem('joe_settings')` |
-| Scan Logs | `localStorage.getItem('joe_scan_logs')` |
-| Serve Logs | `localStorage.getItem('joe_serve_logs')` |
-| Cart | `localStorage.getItem('joe_cart')` |
-| Student Profile | `localStorage.getItem('joe_student_profile')` |
+| Orders | `localStorage.getItem('cse_mock_orders')` |
+| Settings | `localStorage.getItem('cse_settings')` |
+| Scan Logs | `localStorage.getItem('cse_scan_logs')` |
+| Serve Logs | `localStorage.getItem('cse_serve_logs')` |
+| Cart | `localStorage.getItem('cse_cart')` |
+| Student Profile | `localStorage.getItem('cse_student_profile')` |
 
 ## What This Means
 

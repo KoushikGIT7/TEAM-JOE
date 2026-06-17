@@ -1,4 +1,4 @@
-# 🚀 JOE CAFE ENGINE: 40-Sprint Core Roadmap (Spark Optimized)
+# 🚀 CSE CAFE ENGINE: 40-Sprint Core Roadmap (Spark Optimized)
 **Author**: Tech Lead | **Version**: 2.0 | **Focus**: 1 to 100 Scalability
 
 This roadmap is designed for the **Firestore Spark Plan** (Zero Cost). All tasks focus on reducing Read/Write overhead while delivering a "Starbucks-Class" experience.

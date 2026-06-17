@@ -312,7 +312,7 @@ export interface SystemMaintenance {
   activeNodeId: string;
 }
 
-// ─── JOE WALLET TYPES ────────────────────────────────────────────────────────
+// ─── CSE WALLET TYPES ────────────────────────────────────────────────────────
 
 /** Status of a student wallet recharge request */
 export type RechargeStatus = 'pending' | 'approved' | 'rejected';

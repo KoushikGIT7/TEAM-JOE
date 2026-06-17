@@ -118,7 +118,7 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({
       doc.setTextColor(...WHITE);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(24);
-      doc.text('JOE CAFETERIA & LOUNGE', 15, 22);
+      doc.text('CSE CAFETERIA & LOUNGE', 15, 22);
 
       doc.setFontSize(9);
       doc.setTextColor(...GOLD);
@@ -224,7 +224,7 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({
       // Footer page 1
       doc.setFontSize(6);
       doc.setTextColor(180, 180, 180);
-      doc.text('JOE CAFETERIA AUTOMATION • CONFIDENTIAL AUDIT • PAGE 1 OF 2', W / 2, H - 8, { align: 'center' });
+      doc.text('CSE CAFETERIA AUTOMATION • CONFIDENTIAL AUDIT • PAGE 1 OF 2', W / 2, H - 8, { align: 'center' });
 
       // ═══════════════════════════════════════════
       // PAGE 2 — Transactional Ledger
@@ -314,10 +314,10 @@ const AuditDownloadButton: React.FC<AuditDownloadProps> = ({
 
       doc.setFontSize(6);
       doc.setTextColor(180, 180, 180);
-      doc.text('JOE CAFETERIA AUTOMATION • CONFIDENTIAL AUDIT • PAGE 2 OF 2', W / 2, H - 8, { align: 'center' });
+      doc.text('CSE CAFETERIA AUTOMATION • CONFIDENTIAL AUDIT • PAGE 2 OF 2', W / 2, H - 8, { align: 'center' });
 
       // ── Save ─────────────────────────────────────────────────────────────
-      const fileName = `JOE_AUDIT_${period.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+      const fileName = `CSE_AUDIT_${period.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
 
       // Mobile-safe save: use blob URL instead of doc.save()
       // doc.save() uses <a download> which can fail on mobile browsers

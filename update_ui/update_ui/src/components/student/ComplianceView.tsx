@@ -75,7 +75,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({ onBackToMenu }) 
               </div>
 
               <p>
-                The JOE Smart Cafeteria application collects the minimal student registry indices (including your institutional email credentials and payment identifiers) securely proxying ledger allocations.
+                The CSE Smart Cafeteria application collects the minimal student registry indices (including your institutional email credentials and payment identifiers) securely proxying ledger allocations.
               </p>
               <p>
                 <strong>Prepaid Wallets:</strong> In accordance with industry standards, actual digital ledger balances are cached and encrypted client-side, syncing atomically with verified cashier-recharge databases.
@@ -136,7 +136,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({ onBackToMenu }) 
                 </a>
 
                 <a 
-                  href="mailto:support.joe@campuscanteen.edu"
+                  href="mailto:support.cse@campuscanteen.edu"
                   className="p-3.5 rounded-xl bg-white/5 border border-white/5 hover:border-brand-purple/35 flex items-center gap-3 transition-colors text-white"
                 >
                   <div className="w-8 h-8 rounded-lg bg-brand-purple/10 flex items-center justify-center text-brand-purple shrink-0">
@@ -144,7 +144,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({ onBackToMenu }) 
                   </div>
                   <div>
                     <span className="font-mono text-[9px] text-[#a3b8cc] block">SUPPORT EMAIL INTAKE</span>
-                    <span className="font-mono text-xs font-bold leading-none">support.joe@canteen.edu</span>
+                    <span className="font-mono text-xs font-bold leading-none">support.cse@canteen.edu</span>
                   </div>
                 </a>
               </div>

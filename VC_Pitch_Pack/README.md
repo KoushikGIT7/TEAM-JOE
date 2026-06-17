@@ -1,4 +1,4 @@
-# JOE — VC Pitch Pack
+# CSE — VC Pitch Pack
 ## Complete Investor & Grant Documentation Package
 
 ---
@@ -11,7 +11,7 @@
 | `02_System_Architecture.png` | Full system architecture diagram | 1 visual |
 | `03_User_Flows.md` | All 5 user role journeys with edge cases | ~4 pages |
 | `04_Current_Problems.md` | Deep dive into 6 cafeteria problems being solved | ~3 pages |
-| `05_Why_JOE_Is_Different.md` | Competitive analysis + 6 unfair advantages | ~3 pages |
+| `05_Why_CSE_Is_Different.md` | Competitive analysis + 6 unfair advantages | ~3 pages |
 | `06_Feature_to_Value_Mapping.md` | Every feature mapped to measurable outcome | ~3 pages |
 | `07_Pilot_Testing_Plan.md` | 90-day rollout blueprint with KPIs | ~4 pages |
 | `08_Budget_Utilization_46K.md` | Detailed ₹46,000 budget breakdown | ~3 pages |
@@ -25,8 +25,8 @@
 
 | | |
 |---|---|
-| **Live URL** | https://joecafebrand.netlify.app |
-| **GitHub** | https://github.com/KoushikGIT7/JOE-ENDGAME |
+| **Live URL** | https://csecafebrand.netlify.app |
+| **GitHub** | https://github.com/KoushikGIT7/CSE-ENDGAME |
 | **Codebase size** | 15+ TypeScript files, 142KB core service layer |
 | **Technology** | React 18, Firebase, Vite, Tailwind, OneSignal |
 | **QR Security** | HMAC-SHA256 + idempotency keys |
@@ -46,4 +46,4 @@
 
 ---
 
-*Generated March 2026 | JOE Cafeteria Automation System*
+*Generated March 2026 | CSE Cafeteria Automation System*

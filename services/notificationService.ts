@@ -46,7 +46,7 @@ export const requestNotificationPermission = async () => {
             }
             
             // Dispatch event so UI elements (like the HomeView Bell button) update instantly
-            window.dispatchEvent(new CustomEvent('joe_notif_granted'));
+            window.dispatchEvent(new CustomEvent('cse_notif_granted'));
             return 'granted';
         } else {
             console.warn('⚠️ Notification permission denied/dismissed:', permission);
@@ -166,13 +166,13 @@ export function onForegroundMessage(callback: (payload: any) => void) {
 
 // 🏁 Expose hook for index.html compatibility or HomeView Bell button click
 if (typeof window !== 'undefined') {
-    (window as any).joeSubscribe = () => {
+    (window as any).cseSubscribe = () => {
         console.log('🔔 [GLOBAL-SUBSCRIBE] Requesting FCM permission...');
         requestNotificationPermission();
     };
 }
 
-// ─── JOE WALLET NOTIFICATIONS ──────────────────────────────────────────────
+// ─── CSE WALLET NOTIFICATIONS ──────────────────────────────────────────────
 
 /**
  * Notify student that their recharge has been approved.
@@ -184,19 +184,19 @@ if (typeof window !== 'undefined') {
 export const notifyRechargeApproved = (amount: number, userId?: string): void => {
     triggerLocalNotification(
         '✅ Recharge Approved!',
-        `₹${amount} has been added to your JOE Wallet.`
+        `₹${amount} has been added to your CSE Wallet.`
     );
     // Background push — works even when app is closed
     if (userId) {
         triggerOneSignalWebhook(
             userId,
             '✅ Wallet Recharged!',
-            `₹${amount} has been added to your JOE Wallet. Your balance is now updated.`
+            `₹${amount} has been added to your CSE Wallet. Your balance is now updated.`
         );
     }
     // Dispatch DOM event so WalletView can show an in-app toast
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('joe_wallet_recharged', { detail: { amount } }));
+        window.dispatchEvent(new CustomEvent('cse_wallet_recharged', { detail: { amount } }));
     }
 };
 
@@ -217,7 +217,7 @@ export const notifyRechargeRejected = (amount: number, note?: string, userId?: s
         );
     }
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('joe_wallet_rejected', { detail: { amount, note } }));
+        window.dispatchEvent(new CustomEvent('cse_wallet_rejected', { detail: { amount, note } }));
     }
 };
 
@@ -228,7 +228,7 @@ export const notifyRechargeRejected = (amount: number, note?: string, userId?: s
 export const notifyLowBalance = (balance: number): void => {
     triggerLocalNotification(
         '⚠️ Low Wallet Balance',
-        `Your JOE Wallet balance is ₹${balance}. Recharge to keep ordering.`
+        `Your CSE Wallet balance is ₹${balance}. Recharge to keep ordering.`
     );
 };
 
@@ -238,6 +238,6 @@ export const notifyLowBalance = (balance: number): void => {
 export const notifyWalletDebited = (amount: number, balanceAfter: number): void => {
     // Silent — no popup, just dispatch DOM event for in-app update
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('joe_wallet_debited', { detail: { amount, balanceAfter } }));
+        window.dispatchEvent(new CustomEvent('cse_wallet_debited', { detail: { amount, balanceAfter } }));
     }
 };

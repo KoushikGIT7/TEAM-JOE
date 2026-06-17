@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChefHat, CheckSquare, RefreshCw, LogOut, Volume2, VolumeX } from 'lucide-react';
-import { listenToBatches, markBatchReady } from '../../services/firestore-db';
+import { listenToBatches, markBatchReady, startBatchPreparation } from '../../services/firestore-db';
 import { PrepBatch, UserProfile } from '../../types';
 import { useApp } from '../../contexts/AppContext';
-import { joeSounds } from '../../utils/audio';
+import { cseSounds } from '../../utils/audio';
 
 interface CookViewProps {
   profile: UserProfile;
@@ -18,7 +18,7 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [systemTime, setSystemTime] = useState('');
 
-  const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+  const [audioStatus, setAudioStatus] = useState(cseSounds.getMutedState());
 
   // Clock ticker
   useEffect(() => {
@@ -30,8 +30,8 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
 
   // Audio subscription
   useEffect(() => {
-    return joeSounds.subscribe(() => {
-       setAudioStatus(joeSounds.getMutedState());
+    return cseSounds.subscribe(() => {
+       setAudioStatus(cseSounds.getMutedState());
     });
   }, []);
 
@@ -73,6 +73,24 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
       setExpandedItemId(null);
     } catch (e) {
       console.error("Mark Ready failed", e);
+    } finally {
+      setProcessingItem(null);
+    }
+  };
+
+  const handleStartPreparation = async (itemId: string) => {
+    if (processingItem) return;
+
+    // Get all QUEUED batches for this item
+    const itemBatches = batches.filter(b => b.itemId === itemId && b.status === 'QUEUED');
+    if (itemBatches.length === 0) return;
+
+    setProcessingItem(itemId);
+    try {
+      await Promise.all(itemBatches.map(batch => startBatchPreparation(batch.id)));
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
+    } catch (e) {
+      console.error("Start Preparation failed", e);
     } finally {
       setProcessingItem(null);
     }
@@ -120,9 +138,9 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
           <button 
              onClick={async () => {
                 if (audioStatus === 'Silent') {
-                   await joeSounds.init();
+                   await cseSounds.init();
                 } else {
-                   joeSounds.toggleMute();
+                   cseSounds.toggleMute();
                 }
              }}
              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[9px] font-mono font-black transition active:scale-95 cursor-pointer ${
@@ -243,7 +261,17 @@ const CookView: React.FC<CookViewProps> = ({ profile, onLogout, onBack }) => {
                       </div>
 
                       {/* Expand segments triggers */}
-                      {isSelected ? (
+                      {!item.isPreparing ? (
+                        <div className="pt-3 border-t border-white/5 flex gap-2">
+                          <button
+                            disabled={isProcessing}
+                            onClick={() => handleStartPreparation(item.itemId)}
+                            className="w-full h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono text-[10px] font-bold tracking-wider flex items-center justify-center cursor-pointer transition disabled:opacity-40"
+                          >
+                            START COOKING
+                          </button>
+                        </div>
+                      ) : isSelected ? (
                         <div className="space-y-2.5 pt-3 border-t border-white/5 font-mono">
                           <div className="flex justify-between items-center">
                             <span className="text-[9px] text-zinc-400 block font-bold uppercase">

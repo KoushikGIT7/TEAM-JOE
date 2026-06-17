@@ -1,5 +1,5 @@
 ================================================================================
-  JOE CAFETERIA AUTOMATION - FIREBASE IMPLEMENTATION STATUS
+  CSE CAFETERIA AUTOMATION - FIREBASE IMPLEMENTATION STATUS
   Industry-Standard Perspective: Logic, Operations & Current State
   Generated: 2025-03-14
 ================================================================================
@@ -45,7 +45,7 @@ Analytics is intentionally disabled to avoid ad-blocker issues.
 
   - Single app instance: getApps().length === 0 then initializeApp(config).
   - Config source: import.meta.env.VITE_FIREBASE_* with fallback to hardcoded
-    values (project joecafe-a7fff). For production, industry standard is to
+    values (project csecafe-a7fff). For production, industry standard is to
     use env-only and avoid committing secrets; fallbacks are acceptable for
     demo/defaults if documented.
   - Auth: getAuth(app) — default persistence (local) for web.
@@ -91,7 +91,7 @@ Analytics is intentionally disabled to avoid ad-blocker issues.
   - User profile stored in Firestore: users/{uid} with uid, email, name, role,
     studentType, active, createdAt, lastActive.
   - getDoc(users/{uid}); role validated against validRoles; if role missing or
-    wrong, infer from email (admin@joe.com, cashier@joe.com, server@joe.com)
+    wrong, infer from email (admin@cse.com, cashier@cse.com, server@cse.com)
     and optionally fix Firestore with setDoc(..., { merge: true }).
   - createUserProfile: setDoc with merge: true (idempotent upsert).
 
@@ -186,7 +186,7 @@ Analytics is intentionally disabled to avoid ad-blocker issues.
 
 7. FIRESTORE INDEXES (firestore.indexes.json)
 --------------------------------------------------------------------------------
-  Deployed via: firebase deploy --only firestore:indexes (project joecafe-a7fff).
+  Deployed via: firebase deploy --only firestore:indexes (project csecafe-a7fff).
 
   Composite indexes defined:
   1) orders: paymentType ASC, paymentStatus ASC, createdAt DESC
@@ -350,7 +350,7 @@ Analytics is intentionally disabled to avoid ad-blocker issues.
 
 13. DEPLOYMENT & TOOLS
 --------------------------------------------------------------------------------
-  - Indexes: firebase use joecafe-a7fff && firebase deploy --only firestore:indexes
+  - Indexes: firebase use csecafe-a7fff && firebase deploy --only firestore:indexes
   - Rules: firebase deploy --only firestore:rules
   - Emulator: scripts/test-emulator.ps1 (Firestore emulator)
   - Setup docs: SETUP_STAFF_USERS.md, DEPLOY_INDEXES.md, DEPLOY_FIRESTORE_RULES.md,

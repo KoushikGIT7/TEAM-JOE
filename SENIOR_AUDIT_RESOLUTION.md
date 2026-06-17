@@ -1,8 +1,8 @@
-# JOE Auditure Certification: Senior Engineering Report
+# CSE Auditure Certification: Senior Engineering Report
 
 ## 🔍 Root Cause Analysis (15+ Years Experience POV)
 
-The persistence of duplicate and null values in the **JOE Auditure** system, despite previous sanitization attempts, was rooted in **Distributed State Overlap** and **Snapshot Fragmentation**:
+The persistence of duplicate and null values in the **CSE Auditure** system, despite previous sanitization attempts, was rooted in **Distributed State Overlap** and **Snapshot Fragmentation**:
 
 1.  **Snapshot Fragmentation**: High-traffic Firestore queries occasionally return overlapping document indices if a background trigger (like '0 Cost Testing') is rapidly mutating the `createdAt` index during the fetch.
 2.  **Recursive Mapping Hazards**: The application was mapping `orders` $\rightarrow$ `recentOrders` $\rightarrow$ `auditEntries`. Without a **Universal Reconciler** at the root, each transformation layer provided an opportunity for `id` duplication if the data stream was re-hydrated.
@@ -63,6 +63,6 @@ const auditData: AuditData = {
 - [x] **Zero SCHEMA changes**: 100% compatible with existing Firestore structure.
 - [x] **Idempotent Mapping**: The same input always results in the same unique PDF.
 - [x] **Scalable through 1k+ Entries**: Map-based reconcilers outperform Array-filtering in production scales.
-- [x] **Official JOE Branding**: Erased all demographic noise and cryptic stylistic artifacts.
+- [x] **Official CSE Branding**: Erased all demographic noise and cryptic stylistic artifacts.
 
 **This Audit engine is now hardened, reconciled, and production-ready.** 🚀

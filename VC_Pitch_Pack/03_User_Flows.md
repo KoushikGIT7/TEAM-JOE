@@ -1,4 +1,4 @@
-# JOE — User Flows
+# CSE — User Flows
 ## Complete Journey Maps for All 5 User Roles
 
 ---
@@ -199,7 +199,7 @@ finalizeBatch(batchId) → status = READY
 
 ## Critical Edge Cases Handled
 
-| Scenario | JOE's Response |
+| Scenario | CSE's Response |
 |----------|---------------|
 | Student scans QR twice | Idempotency key blocks second scan → "ALREADY MANIFESTED" |
 | Screenshot of QR reused | HMAC hash fails or qrStatus = USED → rejected |

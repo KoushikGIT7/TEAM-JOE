@@ -29,7 +29,7 @@ const PolicyLayout: React.FC<PolicyLayoutProps> = ({ title, onBack, children }) 
       </div>
       <div className="p-8 bg-gray-50/50 border-t border-gray-100 text-center">
         <p className="text-[10px] font-black text-textSecondary uppercase tracking-widest leading-loose">
-          JOE CAFETERIA • TRUSTED CAMPUS HOSPITALITY PARTNER
+          CSE CAFETERIA • TRUSTED CAMPUS HOSPITALITY PARTNER
         </p>
       </div>
     </div>
@@ -41,7 +41,7 @@ export const PrivacyPolicy: React.FC<{ onBack: () => void }> = ({ onBack }) => (
     <section>
       <h2 className="text-lg font-black text-textMain mb-4 uppercase tracking-tighter italic">1. Introduction</h2>
       <p className="text-sm text-textSecondary font-bold leading-relaxed whitespace-pre-line">
-        JOE Cafeteria ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how your personal information is collected, used, and disclosed by JOE Cafeteria.
+        CSE Cafeteria ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how your personal information is collected, used, and disclosed by CSE Cafeteria.
         By accessing or using our Service, you signify that you have read, understood, and agree to our collection, storage, use, and disclosure of your personal information as described in this Privacy Policy and our Terms of Service.
       </p>
     </section>
@@ -70,7 +70,7 @@ export const RefundPolicy: React.FC<{ onBack: () => void }> = ({ onBack }) => (
     <section>
       <h2 className="text-lg font-black text-textMain mb-4 uppercase tracking-tighter italic">1. Cancellation Policy</h2>
       <p className="text-sm text-textSecondary font-bold leading-relaxed whitespace-pre-line">
-        At JOE Cafeteria, we strive for operational excellence. Since we serve freshly prepared food items, order cancellations are governed by the following rules:
+        At CSE Cafeteria, we strive for operational excellence. Since we serve freshly prepared food items, order cancellations are governed by the following rules:
         • Standard Items: Cancellations are allowed only if requested within 60 seconds of order placement.
         • Preparation Items: Once the kitchen marks an item as "Preparing," no cancellations or modifications can be accepted.
       </p>
@@ -108,7 +108,7 @@ export const TermsAndConditions: React.FC<{ onBack: () => void }> = ({ onBack })
   <PolicyLayout title="Terms & Conditions" onBack={onBack}>
     <section>
       <h2 className="text-lg font-black text-textMain mb-4 uppercase tracking-tighter italic">1. Agreement to Terms</h2>
-      <p className="text-sm text-textSecondary font-bold leading-relaxed">By using the JOE Cafeteria platform, you agree to these terms and all applicable campus regulations.</p>
+      <p className="text-sm text-textSecondary font-bold leading-relaxed">By using the CSE Cafeteria platform, you agree to these terms and all applicable campus regulations.</p>
     </section>
     
     <section>
@@ -137,7 +137,7 @@ export const ContactUs: React.FC<{ onBack: () => void }> = ({ onBack }) => (
         <MapPin className="w-8 h-8 text-primary mb-4 group-hover:scale-110 transition-transform" />
         <h3 className="text-xs font-black text-textSecondary uppercase tracking-widest mb-2">Corporate Office</h3>
         <p className="text-sm text-textMain font-black leading-relaxed">
-          JOE Automation Solutions,<br />
+          CSE Automation Solutions,<br />
           Kishkinda University, Ballari, Karnataka, Siruguppa Road
         </p>
       </div>
@@ -243,7 +243,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({ onBackToMenu }) 
               </div>
 
               <p>
-                The JOE Smart Cafeteria application collects the minimal student registry indices (including your institutional email credentials and payment identifiers) securely proxying ledger allocations.
+                The CSE Smart Cafeteria application collects the minimal student registry indices (including your institutional email credentials and payment identifiers) securely proxying ledger allocations.
               </p>
               <p>
                 <strong>Prepaid Wallets:</strong> In accordance with industry standards, actual digital ledger balances are cached and encrypted client-side, syncing atomically with verified cashier-recharge databases.
@@ -304,7 +304,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({ onBackToMenu }) 
                 </a>
 
                 <a 
-                  href="mailto:support.joe@campuscanteen.edu"
+                  href="mailto:support.cse@campuscanteen.edu"
                   className="p-3.5 rounded-xl bg-white/5 border border-white/5 hover:border-brand-purple/35 flex items-center gap-3 transition-colors text-white"
                 >
                   <div className="w-8 h-8 rounded-lg bg-brand-purple/10 flex items-center justify-center text-brand-purple shrink-0">
@@ -312,7 +312,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({ onBackToMenu }) 
                   </div>
                   <div>
                     <span className="font-mono text-[9px] text-[#a3b8cc] block">SUPPORT EMAIL INTAKE</span>
-                    <span className="font-mono text-xs font-bold leading-none">support.joe@canteen.edu</span>
+                    <span className="font-mono text-xs font-bold leading-none">support.cse@canteen.edu</span>
                   </div>
                 </a>
               </div>

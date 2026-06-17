@@ -112,7 +112,7 @@ Updated error messaging to:
 ## Firebase Configuration (Already Set)
 
 Your Firebase project already has Google authentication enabled:
-- Project: `joecafe-a7fff`
+- Project: `csecafe-a7fff`
 - Google Sign-In provider: Enabled
 - Web client ID: Configured
 - No additional Firebase setup required

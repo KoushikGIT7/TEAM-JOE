@@ -4,7 +4,7 @@ import { UserProfile } from '../../types';
 import { validateQRForServing } from '../../services/firestore-db';
 import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
 import QRScanner from '../../components/QRScanner';
-import { joeSounds } from '../../utils/audio';
+import { cseSounds } from '../../utils/audio';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import ServerConsoleWorkspace from './ServerConsoleWorkspace';
@@ -26,15 +26,15 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
      customAvatarDecoration?: string;
   } | null>(null);
 
-  const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+  const [audioStatus, setAudioStatus] = useState(cseSounds.getMutedState());
   const [isCameraOpen, setIsCameraOpen] = useState(true);
   const [scanQueue, setScanQueue] = useState<string[]>([]);
   const isProcessingScannerRef = useRef(false);
   const lastScannedTokenRef = useRef<{ token: string; time: number } | null>(null);
 
   useEffect(() => {
-    return joeSounds.subscribe(() => {
-       setAudioStatus(joeSounds.getMutedState());
+    return cseSounds.subscribe(() => {
+       setAudioStatus(cseSounds.getMutedState());
     });
   }, []);
 
@@ -100,7 +100,11 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
           console.error("Failed to load user decorations on counter scan HUD:", e);
         }
 
-        joeSounds.playServerScanSuccess();
+        if (result === 'CONSUMED') {
+          cseSounds.playThankYouBoss();
+        } else {
+          cseSounds.playServerScanSuccess();
+        }
         if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
 
         setHudState('SUCCESS');
@@ -132,8 +136,8 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       setHudState('ERROR');
       setHudMessage('PAYMENT PENDING');
       if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-      joeSounds.stopAll();
-      joeSounds.playErrorBuzzer();
+      cseSounds.stopAll();
+      cseSounds.playErrorBuzzer();
       isProcessingScannerRef.current = false;
       resetToIdle(1500);
 
@@ -150,8 +154,8 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
       setHudState('ERROR');
       setHudMessage(display);
       if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-      joeSounds.stopAll();
-      joeSounds.playErrorBuzzer();
+      cseSounds.stopAll();
+      cseSounds.playErrorBuzzer();
       isProcessingScannerRef.current = false;
       resetToIdle(1500);
     }
@@ -159,9 +163,9 @@ const ServingCounterView: React.FC<Props> = ({ profile, onLogout }) => {
 
   const handleAudioToggle = async () => {
     if (audioStatus === 'Silent') {
-      await joeSounds.init();
+      await cseSounds.init();
     } else {
-      joeSounds.toggleMute();
+      cseSounds.toggleMute();
     }
   };
 

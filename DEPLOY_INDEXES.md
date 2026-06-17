@@ -23,13 +23,13 @@ This will open a browser window for authentication. Follow the prompts to comple
 ### Step 3: Set Firebase Project
 
 ```bash
-firebase use joecafe-a7fff
+firebase use csecafe-a7fff
 ```
 
 Or if you need to add it:
 
 ```bash
-firebase use joecafe-a7fff --add
+firebase use csecafe-a7fff --add
 ```
 
 ### Step 4: Deploy Indexes
@@ -43,7 +43,7 @@ firebase deploy --only firestore:indexes
 ## 📋 Expected Output
 
 ```
-=== Deploying to 'joecafe-a7fff'...
+=== Deploying to 'csecafe-a7fff'...
 
 i  deploying firestore indexes
 i  firestore: reading indexes from firestore.indexes.json...
@@ -64,7 +64,7 @@ i  firestore: reading indexes from firestore.indexes.json...
 After deployment, verify indexes are building:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select project: `joecafe-a7fff`
+2. Select project: `csecafe-a7fff`
 3. Navigate to: Firestore Database → Indexes
 4. Check status: Building → Enabled
 

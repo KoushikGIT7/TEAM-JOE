@@ -67,7 +67,7 @@ async function sendNotification(
       break;
     case "WALLET_RECHARGED":
       title = "💰 Wallet Recharged!";
-      body = `₹${orderData.amount || ''} has been added to your JOE Wallet. Updated balance ready.`;
+      body = `₹${orderData.amount || ''} has been added to your CSE Wallet. Updated balance ready.`;
       break;
     case "WALLET_RECHARGE_REJECTED":
       title = "❌ Recharge Rejected";
@@ -104,7 +104,7 @@ async function sendNotification(
       data: { orderId, event },
       android: {
         priority: "high",
-        notification: { channelId: "joe_orders", sound: "default" }
+        notification: { channelId: "cse_orders", sound: "default" }
       },
       apns: {
         payload: { aps: { sound: "default", badge: 1 } }
@@ -332,18 +332,48 @@ export const processHardwareScan = functions.https.onRequest(async (req, res) =>
 
     const batch = db.batch();
     let totalItemsServed = 0;
-    targetItems.forEach((item: any) => {
-      batch.update(orderRef.collection("items").doc(item.id), { status: "SERVED", servedAt: Date.now() });
-      totalItemsServed++;
-    });
-
-    const allItemsAreNowServed = items.every((i: any) =>
-      i.status === "SERVED" || targetItems.some(ti => ti.id === i.id)
-    );
-    if (allItemsAreNowServed) {
-      batch.update(orderRef, { orderStatus: "COMPLETED", serveFlowStatus: "SERVED" });
-    } else {
-      batch.update(orderRef, { serveFlowStatus: "PARTIALLY_SERVED" });
+    
+    // We only serve ONE portion of ONE item per hardware scan to match the 1-by-1 physical serving flow
+    const itemToServe = targetItems[0];
+    
+    if (itemToServe) {
+      const currentRemaining = itemToServe.remainingQty !== undefined ? itemToServe.remainingQty : itemToServe.quantity;
+      if (currentRemaining > 0) {
+        const newRemaining = currentRemaining - 1;
+        const newServed = (itemToServe.servedQty || 0) + 1;
+        const isNowServed = newRemaining === 0;
+        
+        batch.update(orderRef.collection("items").doc(itemToServe.id), { 
+          status: isNowServed ? "SERVED" : itemToServe.status,
+          remainingQty: newRemaining,
+          servedQty: newServed,
+          ...(isNowServed ? { servedAt: Date.now() } : {})
+        });
+        
+        // Also update the root order array so that clients see it immediately
+        const updatedItemsArray = items.map((i: any) => {
+          if (i.id === itemToServe.id) {
+            return {
+              ...i,
+              status: isNowServed ? "SERVED" : i.status,
+              remainingQty: newRemaining,
+              servedQty: newServed,
+              ...(isNowServed ? { servedAt: Date.now() } : {})
+            };
+          }
+          return i;
+        });
+        
+        const allItemsAreNowServed = updatedItemsArray.every((i: any) => i.status === "SERVED");
+        
+        if (allItemsAreNowServed) {
+          batch.update(orderRef, { items: updatedItemsArray, orderStatus: "COMPLETED", serveFlowStatus: "SERVED" });
+        } else {
+          batch.update(orderRef, { items: updatedItemsArray, serveFlowStatus: "PARTIALLY_SERVED" });
+        }
+        
+        totalItemsServed = 1;
+      }
     }
 
     await batch.commit();

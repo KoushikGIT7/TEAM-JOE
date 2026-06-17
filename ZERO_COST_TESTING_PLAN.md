@@ -1,4 +1,4 @@
-# 🛑 JOE Cafeteria: The Zero-Cost Testing Blueprint (UPDATED)
+# 🛑 CSE Cafeteria: The Zero-Cost Testing Blueprint (UPDATED)
 
 **Objective:** Run the first month of live testing with ~1,000 daily users completely FREE (₹0) on the Firebase Spark Plan.
 **The Constraints:** 50,000 Reads per Day, 20,000 Writes per Day, 0 Cloud Backend Functions allowed.

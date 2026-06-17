@@ -23,7 +23,7 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', className = '' }) => {
 
   return (
     <div className={`flex items-center font-bold tracking-tighter text-primary ${sizes[size]} ${className}`}>
-      <span>JOE</span>
+      <span>CSE</span>
       <div className={`bg-accent rounded-full ml-1 ${dotSizes[size]}`} />
     </div>
   );

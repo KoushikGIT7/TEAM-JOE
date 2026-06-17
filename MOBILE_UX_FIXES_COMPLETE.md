@@ -110,12 +110,12 @@
    ```
 
 3. **Verify in Firebase Console:**
-   - Authentication → Users (should see cashier@joe.com, server@joe.com)
+   - Authentication → Users (should see cashier@cse.com, server@cse.com)
    - Firestore → users collection (should have proper role fields)
 
 **New Credentials:**
-- `cashier@joe.com` / `cashier123` (role: cashier)
-- `server@joe.com` / `server123` (role: server)
+- `cashier@cse.com` / `cashier123` (role: cashier)
+- `server@cse.com` / `server123` (role: server)
 
 **Files Created:**
 - `scripts/resetStaffUsers.js` - Complete reset script

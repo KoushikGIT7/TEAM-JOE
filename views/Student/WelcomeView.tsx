@@ -34,7 +34,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
       <header className="relative z-10 flex justify-between items-center w-full pt-8 pb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-brand-purple to-brand-purple-dark flex items-center justify-center shadow-md shadow-brand-purple/30">
-            <span className="font-display font-black text-white text-xs">JOE</span>
+            <span className="font-display font-black text-white text-xs">CSE</span>
           </div>
           <span className="font-mono text-[10px] tracking-widest text-brand-purple-light select-none font-semibold uppercase">
             Smart Cafeteria
@@ -58,7 +58,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
         {/* Hero Title Block */}
         <div className="flex flex-col gap-4 text-center">
           <span className="font-mono text-[9px] tracking-widest text-brand-purple-light font-black uppercase opacity-75">
-            ⚡️ JOE's Campus Digital Ordering Platform
+            ⚡️ CSE's Campus Digital Ordering Platform
           </span>
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-white leading-[1.2]">
             Order ahead.{' '}

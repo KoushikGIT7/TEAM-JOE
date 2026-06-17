@@ -11,7 +11,7 @@ import {
 } from '../../services/firestore-db';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { joeSounds } from '../../utils/audio';
+import { cseSounds } from '../../utils/audio';
 import { sonicVoice } from '../../services/voice-engine';
 import { offlineDetector } from '../../utils/offlineDetector';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -341,7 +341,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    const [reportEnd, setReportEnd] = useState<string>(() => new Date().toISOString().split('T')[0]);
    const [reportLoading, setReportLoading] = useState(false);
 
-   const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+   const [audioStatus, setAudioStatus] = useState(cseSounds.getMutedState());
    const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
    const [earningsToday, setEarningsToday] = useState<number>(0);
@@ -406,8 +406,8 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
    }, []);
 
    useEffect(() => {
-      const unsubAudio = joeSounds.subscribe(() => {
-         setAudioStatus(joeSounds.getMutedState());
+      const unsubAudio = cseSounds.subscribe(() => {
+         setAudioStatus(cseSounds.getMutedState());
       });
 
       if ('Notification' in window && Notification.permission === 'default') {
@@ -418,7 +418,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       const unsubs = [
          listenToPendingCashOrders((data) => {
             if (data.length > lastLen) {
-               joeSounds.playAlert();
+               cseSounds.playAlert();
                if ('Notification' in window && Notification.permission === 'granted') {
                   new Notification(`💵 ${data.length} Cash Request${data.length > 1 ? 's' : ''} Pending`, {
                      body: `Tap to review.`,
@@ -558,7 +558,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
        }
        setConfirming(orderId);
        setOptimisticClearedIds(prev => new Set(prev).add(orderId));
-       joeSounds.playPaymentConfirmed();
+       cseSounds.playPaymentConfirmed();
        sonicVoice.announceOrderComplete();
        
        const targetOrder = pendingOrders.find(o => o.id === orderId);
@@ -597,7 +597,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
        const targetOrder = pendingOrders.find(o => o.id === orderId);
        try {
           await rejectCashPayment(orderId, profile.uid);
-          joeSounds.playRejected();
+          cseSounds.playRejected();
           if (targetOrder) {
              const shortToken = targetOrder.tokenNumber || orderId.slice(-4).toUpperCase();
              triggerOneSignalWebhook(
@@ -663,7 +663,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       try {
          await approveRechargeRequest(id, profile.name);
          if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
-         joeSounds.playPaymentConfirmed();
+         cseSounds.playPaymentConfirmed();
       } catch (err: any) {
          alert(err.message);
       } finally {
@@ -681,7 +681,7 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
       try {
          await rejectRechargeRequest(id, profile.name, reason);
          if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-         joeSounds.playRejected();
+         cseSounds.playRejected();
          setRejectId(null);
       } catch (err: any) {
          alert(err.message);
@@ -692,9 +692,9 @@ const CashierView: React.FC<CashierViewProps> = ({ profile, onLogout }) => {
 
    const handleAudioToggle = async () => {
      if (audioStatus === 'Silent') {
-       await joeSounds.init();
+       await cseSounds.init();
      } else {
-       joeSounds.toggleMute();
+       cseSounds.toggleMute();
      }
    };
 

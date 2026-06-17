@@ -1,5 +1,5 @@
 /**
- * JOE Cafeteria — OneSignal Push Notification Service
+ * CSE Cafeteria — OneSignal Push Notification Service
  *
  * ARCHITECTURE (Rapido-style):
  *   Push notifications fire from the ACTIVE STAFF device (cashier, supervisor, scanner)
@@ -102,8 +102,10 @@ export const triggerOneSignalWebhook = async (
   }
 
   const pushBody = {
-    // ✅ Stable v1 format — most compatible
+    // ✅ Stable v1 format + aliases for higher reliability across SDK versions
     include_external_user_ids: [userId],
+    include_aliases: { external_id: [userId] },
+    target_channel: 'push',
     headings: { en: title },
     contents: { en: body },
     // Large icon shown in Android notification tray

@@ -1,4 +1,4 @@
-# JOE — Budget Utilization Plan
+# CSE — Budget Utilization Plan
 ## ₹46,000 Seed Grant — Complete Allocation
 
 ---
@@ -39,7 +39,7 @@
 | Item | Cost | Notes |
 |------|------|-------|
 | OneSignal (Push Notification) | ₹0 | Free tier (< 500 subscribers covered) |
-| Domain name (joecafeteria.in or similar) | ₹800 | 1-year registration |
+| Domain name (csecafeteria.in or similar) | ₹800 | 1-year registration |
 | Figma (design collaboration) | ₹0 | Free tier sufficient |
 | GitHub Pro | ₹0 | Free for public repos |
 | VS Code extensions + dev tools | ₹0 | Open source |
@@ -56,7 +56,7 @@
 | Travel to pilot college (4 visits × ₹500 return) | ₹2,000 | Setup, training, mid-pilot review, final evaluation |
 | Staff training session (lunch provided) | ₹1,500 | 1 session × 8 staff × ₹187/head |
 | "First Order Incentive" for students (₹10 credit × 100 students) | ₹1,000 | Adoption catalyst |
-| Printed counter posters (A4 laminated, 10 pcs) | ₹500 | "Order on JOE" with QR code |
+| Printed counter posters (A4 laminated, 10 pcs) | ₹500 | "Order on CSE" with QR code |
 | Printed quick-guide cards for staff (50 cards) | ₹500 | Laminated reference card per role |
 | WhatsApp Business account + initial setup | ₹0 | Free |
 | Pilot monitoring & admin support (2 months × ₹3,250) | ₹6,500 | Developer's time for on-call support |
@@ -71,11 +71,11 @@
 | College WhatsApp group targeted posts | ₹0 | Organic |
 | Instagram reels / demo video production | ₹2,000 | Shoot + basic edit for 2 reels |
 | LinkedIn outreach to college Principals / HODs | ₹0 | Organic B2B |
-| Demo landing page (joecafebrand.netlify.app polishing) | ₹1,000 | Extra design work for external showcase |
+| Demo landing page (csecafebrand.netlify.app polishing) | ₹1,000 | Extra design work for external showcase |
 | Hackathon submission fees (targeting 3) | ₹1,500 | Entry fees: NASSCOM, SIH, local TiE |
 | Pitch deck printing (premium A3 for investor meetings) | ₹600 | 10 sets × ₹60 |
 | Business cards | ₹500 | 100 cards |
-| "JOE at Colleges" micro-campaign (Instagram ads) | ₹3,000 | Targeted to college HoD decision-makers |
+| "CSE at Colleges" micro-campaign (Instagram ads) | ₹3,000 | Targeted to college HoD decision-makers |
 | **Category Total** | | **₹8,600** |
 
 ---
@@ -131,7 +131,7 @@
 
 ## Post-Grant Sustainability
 
-JOE is designed to become self-sustaining within 6 months through:
+CSE is designed to become self-sustaining within 6 months through:
 - **SaaS licensing to colleges**: ₹3,000–8,000/month per cafeteria
 - **Per-transaction micro-fee**: ₹0.50 per UPI transaction (routed through institution)
 - **Premium features**: Advanced analytics, multi-cafeteria management, bulk order scheduling

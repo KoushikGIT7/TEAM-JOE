@@ -1,4 +1,4 @@
-// 👻 [SERVICE-WORKER] JOE Firebase Cloud Messaging Service Worker
+// 👻 [SERVICE-WORKER] CSE Firebase Cloud Messaging Service Worker
 // This file MUST live in the 'public/' folder so that browsers can load it at '/firebase-messaging-sw.js'.
 // OneSignal uses its own dedicated OneSignalSDKWorker.js — do NOT import OneSignal here.
 
@@ -20,7 +20,7 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('📬 Background FCM Message:', payload);
 
-  const title = payload.notification?.title || payload.data?.title || "JOE Cafeteria";
+  const title = payload.notification?.title || payload.data?.title || "CSE Cafeteria";
   const body = payload.notification?.body || payload.data?.body || "New update regarding your order!";
   const orderId = payload.data?.orderId || "";
   

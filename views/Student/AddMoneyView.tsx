@@ -199,7 +199,7 @@ export const AddMoneyView: React.FC<AddMoneyViewProps> = ({ profile, onBack, onB
                 <span className="font-mono text-[8px] text-[#94a3b8] tracking-wider uppercase">
                   OFFICIAL INTEGRATORS
                 </span>
-                <h4 className="font-display font-extrabold text-xs text-white">JOE Cafeteria Merchant</h4>
+                <h4 className="font-display font-extrabold text-xs text-white">CSE Cafeteria Merchant</h4>
               </div>
 
               {/* Copyable UPI Id container bar */}

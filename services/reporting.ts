@@ -202,7 +202,7 @@ export const fetchReport = async ({ role, start, end }: ReportParams): Promise<R
 const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
 const buildFileName = (type: string, dateLabel: string, ext: string) =>
-  `JOE_Report_${type}_${dateLabel}.${ext}`;
+  `CSE_Report_${type}_${dateLabel}.${ext}`;
 
 export type ExportFormat = 'pdf' | 'csv' | 'xlsx' | 'json' | 'png';
 
@@ -268,7 +268,7 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(32);
-    doc.text('JOE CAFETERIA', 20, 28);
+    doc.text('CSE CAFETERIA', 20, 28);
     
     doc.setFontSize(10);
     doc.setTextColor(accentGold[0], accentGold[1], accentGold[2]);
@@ -348,7 +348,7 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     // Footer Pg 1
     doc.setFontSize(7);
     doc.setTextColor(180, 180, 180);
-    doc.text('JOE AUTOMATION • PROPRIETARY DIAGNOSTIC REPORT • CONFIDENTIAL', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    doc.text('CSE AUTOMATION • PROPRIETARY DIAGNOSTIC REPORT • CONFIDENTIAL', pageWidth / 2, pageHeight - 10, { align: 'center' });
 
     // ==========================================
     // PAGE 2: ANALYTIC RECOMMENDATIONS & STRATEGY
@@ -448,7 +448,7 @@ export const exportReport = async (data: ReportData, opts: { typeLabel: string; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#111827';
     ctx.font = '16px Poppins';
-    ctx.fillText(`JOE Report - ${opts.typeLabel}`, 20, 30);
+    ctx.fillText(`CSE Report - ${opts.typeLabel}`, 20, 30);
 
     const bars = data.revenueTrend.slice(0, 12);
     const max = Math.max(...bars.map(b => b.revenue), 1);

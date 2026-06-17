@@ -144,7 +144,7 @@ Each day, follow this pattern:
 
 ### Setup (Start of Day)
 ```bash
-cd D:\JOE-Cafeteria-Automation-mobile\backend
+cd D:\CSE-Cafeteria-Automation-mobile\backend
 
 # Terminal 1: Start server
 npm run dev
@@ -331,10 +331,10 @@ npm run lint
 curl -X GET http://localhost:5000/api/v1/health
 
 # View database tables
-psql -U postgres -d joe_cafeteria_dev -c "\dt"
+psql -U postgres -d cse_cafeteria_dev -c "\dt"
 
 # Check active connections
-psql -U postgres -d joe_cafeteria_dev -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'joe_cafeteria_dev';"
+psql -U postgres -d cse_cafeteria_dev -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'cse_cafeteria_dev';"
 ```
 
 ---

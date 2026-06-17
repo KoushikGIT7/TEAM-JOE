@@ -10,7 +10,7 @@ import { listenToActiveSupervisorOrders } from '../../services/firestore-db';
 import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
 import { Order, UserProfile, CartItem } from '../../types';
 import { LogOut, Volume2, VolumeX, Clock, BellRing, RefreshCw, ChefHat } from 'lucide-react';
-import { joeSounds } from '../../utils/audio';
+import { cseSounds } from '../../utils/audio';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -61,7 +61,7 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
   const { menuItems } = useApp();
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [lang, setLang] = useState<Lang>('TE'); // Default to Telugu
-  const [audioStatus, setAudioStatus] = useState(joeSounds.getMutedState());
+  const [audioStatus, setAudioStatus] = useState(cseSounds.getMutedState());
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [, setForceTick] = useState(0);
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
@@ -85,7 +85,7 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
         if (Date.now() - o.createdAt < 120000) {
           // Play local chime sound if not muted
           if (audioStatus !== 'Muted') {
-            joeSounds.playIncomingAlert().catch(() => {});
+            cseSounds.playIncomingAlert().catch(() => {});
           }
 
           // Telugu TTS announcement
@@ -126,8 +126,8 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
 
   // Audio Subscription
   useEffect(() => {
-    return joeSounds.subscribe(() => {
-      setAudioStatus(joeSounds.getMutedState());
+    return cseSounds.subscribe(() => {
+      setAudioStatus(cseSounds.getMutedState());
     });
   }, []);
 
@@ -370,9 +370,9 @@ export const AssistantSupervisorView: React.FC<Props> = ({ profile, onLogout }) 
           <button 
              onClick={async () => {
                 if (audioStatus === 'Silent') {
-                   await joeSounds.init();
+                   await cseSounds.init();
                 } else {
-                   joeSounds.toggleMute();
+                   cseSounds.toggleMute();
                 }
              }}
              className={`p-2.5 rounded-xl border flex items-center justify-center transition active:scale-95 cursor-pointer min-h-[40px] ${

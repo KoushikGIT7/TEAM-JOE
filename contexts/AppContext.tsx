@@ -11,7 +11,7 @@ import {
 import { getMenuOnce, listenToMenu, listenToSettings, updateSettings } from '../services/firestore-db';
 import { deductWalletForOrder, submitRechargeRequest, approveRechargeRequest, rejectRechargeRequest, listenToWalletSummary } from '../services/wallet';
 import { signOut as fbSignOut } from '../services/auth';
-import { joeSounds } from '../utils/audio';
+import { cseSounds } from '../utils/audio';
 import { triggerOneSignalWebhook, triggerRolePush } from '../services/onesignal-webhook';
 
 const DEFAULT_QUESTS: Quest[] = [
@@ -83,7 +83,7 @@ export const INITIAL_REWARD_ITEMS: RewardItem[] = [
   {
     id: 'rew_3',
     name: 'Limited Edition Sticker',
-    description: 'Holographic finish, JOE Season 1 design.',
+    description: 'Holographic finish, CSE Season 1 design.',
     pointsCost: 200,
     image: 'https://images.unsplash.com/photo-1572375995501-4b0894dbe057?w=400&auto=format&fit=crop&q=60',
     badge: 'RARE',
@@ -145,6 +145,8 @@ interface AppContextType {
   // Global Setup & Configs
   settings: SystemSettings;
   updateSettings: (s: SystemSettings) => void;
+  isOrderingWindowOpen: boolean;
+  orderingWindowMessage: string | null;
 
   // Gamification & Loyalty States
   studentPoints: number;
@@ -161,6 +163,9 @@ interface AppContextType {
   claimMagicBox: () => Promise<{ success: boolean; rewardName: string; discountCode: string; discountPercent: number; description: string }>;
   leaderboardUsers: LeaderboardUser[];
   purchaseCustomization: (type: 'title' | 'frame' | 'decoration', value: string, cost: number) => Promise<{ success: boolean; error?: string }>;
+  
+  isOrderingWindowOpen: boolean;
+  orderingWindowMessage: string | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -170,14 +175,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- Portal & Routing Modes ---
   const [portalMode, setPortalModeState] = useState<PortalMode>(() => {
-    return (localStorage.getItem('joe_portal_mode') as PortalMode) || 'STUDENT';
+    return (localStorage.getItem('cse_portal_mode') as PortalMode) || 'STUDENT';
   });
   const [studentTab, setStudentTabState] = useState<'HOME' | 'ORDERS' | 'WALLET' | 'COMPLIANCE' | 'TRACKING' | 'QUESTS' | 'RANK' | 'STORE' | 'VAULT' | 'PROFILE'>('HOME');
   const [isStaffLoggedIn, setIsStaffLoggedInState] = useState<boolean>(() => {
-    return localStorage.getItem('joe_staff_logged_in') === 'true';
+    return localStorage.getItem('cse_staff_logged_in') === 'true';
   });
   const [staffRole, setStaffRoleState] = useState<StaffRole>(() => {
-    return (localStorage.getItem('joe_staff_role') as StaffRole) || 'CASHIER';
+    return (localStorage.getItem('cse_staff_role') as StaffRole) || 'CASHIER';
   });
 
   // --- Student Identity ---
@@ -229,12 +234,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync state options to localStorage
   useEffect(() => {
-    localStorage.setItem('joe_portal_mode', portalMode);
+    localStorage.setItem('cse_portal_mode', portalMode);
   }, [portalMode]);
 
   useEffect(() => {
-    localStorage.setItem('joe_staff_logged_in', String(isStaffLoggedIn));
-    localStorage.setItem('joe_staff_role', staffRole);
+    localStorage.setItem('cse_staff_logged_in', String(isStaffLoggedIn));
+    localStorage.setItem('cse_staff_role', staffRole);
   }, [isStaffLoggedIn, staffRole]);
 
   // Sync menuItems in real-time
@@ -244,7 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auto-seed missing menu item BKT11 to Firestore on admin login
   useEffect(() => {
-    const isAdmin = user?.email && (user.email === 'admin@joe.com' || user.email === 'admin@joecafe.com' || user.email.startsWith('admin@'));
+    const isAdmin = user?.email && (user.email === 'admin@cse.com' || user.email === 'admin@csecafe.com' || user.email.startsWith('admin@'));
     if (isAdmin && menuItems.length > 0 && !menuItems.some(it => it.id === 'BKT11')) {
       const seedBKT11 = async () => {
         try {
@@ -303,6 +308,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     });
+  }, []);
+
+  const [isOrderingWindowOpen, setIsOrderingWindowOpen] = useState(true);
+  const [orderingWindowMessage, setOrderingWindowMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkWindow = () => {
+      const now = new Date();
+      const h = now.getHours();
+      
+      if (h < 9) {
+        setIsOrderingWindowOpen(false);
+        setOrderingWindowMessage("Ordering starts at 9:00 AM.");
+      } else if (h >= 18) {
+        setIsOrderingWindowOpen(false);
+        setOrderingWindowMessage("Cafeteria ordering closed for today. Please visit tomorrow.");
+      } else {
+        setIsOrderingWindowOpen(true);
+        setOrderingWindowMessage(null);
+      }
+    };
+    checkWindow();
+    const interval = setInterval(checkWindow, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   // Sync Orders in real-time
@@ -436,7 +465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Sync Leaderboard in real-time — only while authenticated
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "users"), orderBy("points", "desc"), limit(10));
+    const q = query(collection(db, "users"), orderBy("points", "desc"), limit(3));
     return onSnapshot(
       q,
       (snap) => {
@@ -500,6 +529,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- Checkout Action ---
   const placeOrder = async (paymentMethod: 'WALLET' | 'CASH', appliedDiscountAmount: number = 0, discountDetail?: string) => {
+    if (!isOrderingWindowOpen) {
+      return { success: false, error: orderingWindowMessage || 'Cafeteria is closed.' };
+    }
     if (paymentMethod === 'CASH') {
       return { success: false, error: 'Cash orders are disabled. Please pay online via your Prepaid Wallet.' };
     }
@@ -851,7 +883,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.error('Failed to purchase customization:', err);
           return { success: false, error: err.message || 'Customization purchase failed.' };
         }
-      }
+      },
+      isOrderingWindowOpen,
+      orderingWindowMessage
     }}>
       {children}
     </AppContext.Provider>

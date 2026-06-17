@@ -274,16 +274,16 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
 
 export const DEFAULT_SETTINGS: SystemSettings = {
   systemEnabled: true,
-  upiId: 'joe-cafeteria@okaxis',
+  upiId: 'cse-cafeteria@okaxis',
   upiQrCode: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCe0LcsCDMcen5LM_o_LTfSI2U9r9eF-UDAi9HGxY_I9m6Lhc6K6MzrSAKJsNdE3LBwXgtfdXG4DDGKBjUhnC8hxxXEiAm59nxKDnVsouc6WiPbt9Cx7mRit-SU3DYd8lLa0cyM9PXN74fCqcZEn_17yyc1q3eSVBq8y1p3--ioBDAf2U6PdsMYUeRUohvg_yja6vltAHouw9SEzmu188USRDCP76V-LTN4o1BAJ_Q6oCAo_iFnkQpBhGbw9Yl0rNAFs_DWrqN42oU',
   lowBalanceThreshold: 15.00,
   pilotNotification: '👨‍✈️ Digital wallet & cash counter pilot program running. Instant wallet approvals automated for testing!'
 };
 
 export const STAFF_USERS: StaffUser[] = [
-  { email: 'cashier@joe.com', name: 'Kabir Dev (Cashier)', role: 'CASHIER', active: true },
-  { email: 'cook@joe.com', name: 'Chef Suresh Kumar', role: 'COOK', active: true },
-  { email: 'supervisor@joe.com', name: 'Ananya Sharma (Supervisor)', role: 'SUPERVISOR', active: true },
-  { email: 'server@joe.com', name: 'Pranav Roy (Server)', role: 'SERVER', active: true },
-  { email: 'admin@joe.com', name: 'Administrator Main', role: 'ADMIN', active: true }
+  { email: 'cashier@cse.com', name: 'Kabir Dev (Cashier)', role: 'CASHIER', active: true },
+  { email: 'cook@cse.com', name: 'Chef Suresh Kumar', role: 'COOK', active: true },
+  { email: 'supervisor@cse.com', name: 'Ananya Sharma (Supervisor)', role: 'SUPERVISOR', active: true },
+  { email: 'server@cse.com', name: 'Pranav Roy (Server)', role: 'SERVER', active: true },
+  { email: 'admin@cse.com', name: 'Administrator Main', role: 'ADMIN', active: true }
 ];

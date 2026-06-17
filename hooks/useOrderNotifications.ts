@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Order, PrepBatch } from '../types';
-import { joeSounds } from '../utils/audio';
+import { cseSounds } from '../utils/audio';
 import { triggerOneSignalWebhook } from '../services/onesignal-webhook';
 
 /**
@@ -59,7 +59,7 @@ export const useOrderNotifications = (userId: string | null) => {
                     const dKey = `${orderId}-REJECTED`;
                     if (!sessionDedupeRef.current.has(dKey)) {
                         sessionDedupeRef.current.add(dKey);
-                        joeSounds.playRejected();
+                        cseSounds.playRejected();
                         // Push from cashier device already sent; this is backup for when app is open
                         triggerOneSignalWebhook(
                             userId,
@@ -77,7 +77,7 @@ export const useOrderNotifications = (userId: string | null) => {
 
                 if (wasUnverified && isNowVerified && isCashOrder && !sessionDedupeRef.current.has(cashKey)) {
                     sessionDedupeRef.current.add(cashKey);
-                    joeSounds.playPaymentConfirmed?.().catch?.(() => {});
+                    cseSounds.playPaymentConfirmed?.().catch?.(() => {});
                     // Push already sent from cashier device; this is the in-app alert
                 }
 
@@ -103,7 +103,7 @@ export const useOrderNotifications = (userId: string | null) => {
                                 for (let i = 0; i < 3; i++) {
                                     // Play the celebratory ping sound with offset matching speech pacing
                                     setTimeout(() => {
-                                        joeSounds.playFoodReady().catch(() => {});
+                                        cseSounds.playFoodReady().catch(() => {});
                                     }, i * 3500);
 
                                     const utter = new SpeechSynthesisUtterance(speakText);
@@ -125,8 +125,8 @@ export const useOrderNotifications = (userId: string | null) => {
                         const dKey = `${orderId}-SCANNED-AUDIO`;
                         if (!sessionDedupeRef.current.has(dKey)) {
                             sessionDedupeRef.current.add(dKey);
-                            joeSounds.stopAll();
-                            joeSounds.playStudentScanComplete();
+                            cseSounds.stopAll();
+                            cseSounds.playStudentScanComplete();
                             // Push from scanner device already sent; no duplicate here
                         }
                     }
@@ -147,7 +147,7 @@ export const useOrderNotifications = (userId: string | null) => {
                                     triggerOneSignalWebhook(
                                         userId,
                                         '🏆 5-Order Streak!',
-                                        `You've completed ${newCount} orders at JOE Cafeteria. You're a regular!`
+                                        `You've completed ${newCount} orders at CSE Cafeteria. You're a regular!`
                                     ).catch(() => {});
                                 }
                             }
@@ -160,7 +160,7 @@ export const useOrderNotifications = (userId: string | null) => {
                     if (!sessionDedupeRef.current.has(dKey)) {
                         sessionDedupeRef.current.add(dKey);
                         if (!isNowScanned) {
-                            joeSounds.stopAll();
+                            cseSounds.stopAll();
                         }
                     }
                 }

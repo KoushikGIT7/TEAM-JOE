@@ -9,8 +9,8 @@
  * 4. Press Enter
  * 
  * This will create/update:
- * - cashier@joe.com / cashier123 (Cashier portal)
- * - server@joe.com / server123 (Server portal)
+ * - cashier@cse.com / cashier123 (Cashier portal)
+ * - server@cse.com / server123 (Server portal)
  */
 
 (async function setupStaffUsers() {
@@ -26,15 +26,15 @@
     // Staff users to create/update
     const staffUsers = [
       {
-        email: 'cashier@joecafe.com',
-        password: 'joecashier2026',
+        email: 'cashier@csecafe.com',
+        password: 'csecashier2026',
         name: 'Cashier Node',
         role: 'CASHIER',
         description: 'Handles cash payment approvals'
       },
       {
-        email: 'server@joecafe.com',
-        password: 'joeserver2026',
+        email: 'server@csecafe.com',
+        password: 'cseserver2026',
         name: 'Server Node',
         role: 'SERVER',
         description: 'Handles order serving and QR scanning'
@@ -132,12 +132,12 @@
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('📧 Demo Credentials:\n');
     console.log('   CASHIER PORTAL:');
-    console.log('   📧 Email: cashier@joecafe.com');
-    console.log('   🔑 Password: joecashier2026');
+    console.log('   📧 Email: cashier@csecafe.com');
+    console.log('   🔑 Password: csecashier2026');
     console.log('   🎯 Portal: Cashier Dashboard\n');
     console.log('   SERVER PORTAL:');
-    console.log('   📧 Email: server@joecafe.com');
-    console.log('   🔑 Password: joeserver2026');
+    console.log('   📧 Email: server@csecafe.com');
+    console.log('   🔑 Password: cseserver2026');
     console.log('   🎯 Portal: Serving Counter\n');
     console.log('💡 You can now login with these credentials!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '../firebase';
-import { joeSounds } from '../utils/audio';
+import { cseSounds } from '../utils/audio';
 
 /**
  * 📣 [MARKETING-SYNC] Listen for real-time promotion pulses and alerts
@@ -39,7 +39,7 @@ export const useMarketingPulses = (role: string | null) => {
                         setLatestPulse({ id: change.doc.id, text: data.text });
                         
                         // 🔊 [HALLMARK-TRADEMARK] Trigger the Signature "JOOOOOOH-EE"
-                        joeSounds.playAlert(); 
+                        cseSounds.playAlert(); 
                         
                         if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
                     }

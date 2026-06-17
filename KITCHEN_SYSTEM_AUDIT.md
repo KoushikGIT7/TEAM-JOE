@@ -1,4 +1,4 @@
-# 🍽️ JOE Cafeteria — Kitchen & Server System Expert Audit
+# 🍽️ CSE Cafeteria — Kitchen & Server System Expert Audit
 > **Perspective**: Real-world hotel/cafeteria management + technical architecture expert  
 > **Verdict**: Honest, no sugarcoating. What works. What doesn't. What's far better.
 
@@ -12,9 +12,9 @@
 | **QR-based token** | Eliminates paper tokens/shouting names — cleaner than McDonald's receipt system |
 | **Real-time Firestore sync** | Cook marks Ready → Server instantly sees it. Zero phone calls or shouting across kitchen |
 | **Local cache scan** (`activePool`) | QR scan resolves from RAM, not Firestore — no quota hits, sub-100ms response |
-| **Partial serve** ([serveOrderItemsAtomic](file:///d:/JOE-Cafeteria-Automation-mobile/services/firestore-db.ts#1768-1822)) | Student can get fast items (Coffee) while Dosa is still cooking — correct architecture |
+| **Partial serve** ([serveOrderItemsAtomic](file:///d:/CSE-Cafeteria-Automation-mobile/services/firestore-db.ts#1768-1822)) | Student can get fast items (Coffee) while Dosa is still cooking — correct architecture |
 | **Pickup window** (7 min timer) | Prevents cold food piling up at counter — real restaurant practice |
-| **[requeueMissedOrder](file:///d:/JOE-Cafeteria-Automation-mobile/services/cook-workflow.ts#211-257)** | Auto-requeues missed food into next batch — handles walk-aways properly |
+| **[requeueMissedOrder](file:///d:/CSE-Cafeteria-Automation-mobile/services/cook-workflow.ts#211-257)** | Auto-requeues missed food into next batch — handles walk-aways properly |
 
 ---
 
@@ -59,12 +59,12 @@ Without this, students crowd the counter "just checking" — which IS the chaos.
 ### GAP 4: 🚨 Server Has No Queue Visibility
 **Current**: Server scans one QR → serves → next customer manually walks up  
 **Real World Impact**: Server can only see the order **after** they scan. They cannot prepare the next serve mentally. In a high-volume rush, this creates 8–15 second gaps between each customer  
-**Missing**: A **live queue strip** showing who's next — the design doc mentions `QueueStrip` but it's **not implemented** in the actual [ScannerView.tsx](file:///d:/JOE-Cafeteria-Automation-mobile/views/Staff/ScannerView.tsx)
+**Missing**: A **live queue strip** showing who's next — the design doc mentions `QueueStrip` but it's **not implemented** in the actual [ScannerView.tsx](file:///d:/CSE-Cafeteria-Automation-mobile/views/Staff/ScannerView.tsx)
 
 ---
 
 ### GAP 5: 🚨 Fresh Food guarantee is missing
-**Current**: [markBatchReady](file:///d:/JOE-Cafeteria-Automation-mobile/services/firestore-db.ts#2481-2524) sets a 7-minute pickup window.  
+**Current**: [markBatchReady](file:///d:/CSE-Cafeteria-Automation-mobile/services/firestore-db.ts#2481-2524) sets a 7-minute pickup window.  
 **Real World Impact**: What about the student who doesn't come for 6 minutes? Dosa served at minute 6 is cold and soggy. No freshness guarantee.  
 **Missing**: A cook-side **"Serve Temperature Window"** — only items cooked within last 3 minutes get `DISPENSE_FRESH` status. Otherwise, re-cook flag triggers.
 
@@ -115,7 +115,7 @@ Cook only sees ONE slot highlighted in red at a time. No decision fatigue.
 A dedicated `/display` route (full-screen, for TV/tablet at counter):
 ```
 ┌──────────────────────────────────────────────┐
-│      JOE CAFE — ORDER STATUS BOARD            │
+│      CSE CAFE — ORDER STATUS BOARD            │
 ├────────────┬─────────────────────────────────┤
 │  ✅ READY   │  #4A2F  #7B1C  #2E9A          │
 │  🔄 COOKING │  #1F3B  #8C2D  #5A7E          │

@@ -1,5 +1,5 @@
 /**
- * Cloud Functions callables for JOE Cafeteria.
+ * Cloud Functions callables for CSE Cafeteria.
  * All critical mutations (createOrder, confirmPayment, validateQRCode, serveItem, etc.)
  * go through these Callables when VITE_USE_CALLABLES is true (default in production).
  */

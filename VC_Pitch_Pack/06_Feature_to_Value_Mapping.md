@@ -1,5 +1,5 @@
 # Feature-to-Value Mapping
-## Every JOE Feature Linked to a Measurable Business / Student Outcome
+## Every CSE Feature Linked to a Measurable Business / Student Outcome
 
 ---
 
@@ -15,7 +15,7 @@
 
 ## Feature-to-Value Table
 
-| JOE Feature | Technical Implementation | User Who Benefits | Measurable Value |
+| CSE Feature | Technical Implementation | User Who Benefits | Measurable Value |
 |------------|--------------------------|-------------------|-----------------|
 | **Pre-order from anywhere** | React PWA, Firestore orders collection | Students | Eliminates 15–25 min queue wait |
 | **Google Sign-In (zero friction)** | Firebase Auth OAuth2 | Students | < 10 second onboarding |
@@ -58,32 +58,32 @@
 
 ### #1 — QR Fraud Elimination (Revenue Integrity)
 - **Feature**: HMAC-SHA256 QR + idempotency keys
-- **Without JOE**: ₹500–2,000/day revenue leakage (conservative estimate for 600-student cafeteria)
-- **With JOE**: ₹0 leakage (cryptographic guarantee)
+- **Without CSE**: ₹500–2,000/day revenue leakage (conservative estimate for 600-student cafeteria)
+- **With CSE**: ₹0 leakage (cryptographic guarantee)
 - **Annual ROI**: ₹1.8L – ₹7.3L recovered revenue
 
 ### #2 — Pre-order Queue Elimination (Student Time Value)
 - **Feature**: Mobile pre-order with real-time status
-- **Without JOE**: 600 students × 20 min/day = 200 person-hours wasted daily
-- **With JOE**: < 2 min total interaction per order
+- **Without CSE**: 600 students × 20 min/day = 200 person-hours wasted daily
+- **With CSE**: < 2 min total interaction per order
 - **Value**: Academic time recovered, reduced stress, higher meal completion rate
 
 ### #3 — Kitchen Demand Signal (Waste Reduction)
 - **Feature**: Real-time FIFO batch queue with exact item counts
-- **Without JOE**: 15–25% over-preparation
-- **With JOE**: Cook prepares exactly what's ordered
+- **Without CSE**: 15–25% over-preparation
+- **With CSE**: Cook prepares exactly what's ordered
 - **Annual savings**: ₹50,000–1,50,000 in food cost (600-student cafeteria, 240 working days)
 
 ### #4 — FAST_ITEM Auto-Serve (Throughput)
 - **Feature**: Static item classification → instant serve on scan
-- **Without JOE**: Plate Meal goes through manual announcement + search
-- **With JOE**: 1 scan = done, < 3 seconds
+- **Without CSE**: Plate Meal goes through manual announcement + search
+- **With CSE**: 1 scan = done, < 3 seconds
 - **Throughput**: Server handles 50% more orders/hour for Plate Meal days
 
 ### #5 — Admin P&L Dashboard (Decision Intelligence)
 - **Feature**: Daily revenue, cost, and item-wise reports
-- **Without JOE**: Zero data → waste, wrong menu, wrong staffing
-- **With JOE**: Evidence-based decisions on menu, staffing, and timing
+- **Without CSE**: Zero data → waste, wrong menu, wrong staffing
+- **With CSE**: Evidence-based decisions on menu, staffing, and timing
 - **Value**: Compounding operational improvement over time
 
 ---

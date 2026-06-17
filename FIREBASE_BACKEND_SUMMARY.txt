@@ -1,14 +1,14 @@
 ================================================================================
-  JOE CAFETERIA — FIREBASE BACKEND IMPLEMENTATION SUMMARY
-  Project: joecafe-a7fff   |   Generated: 2026-03-15
+  CSE CAFETERIA — FIREBASE BACKEND IMPLEMENTATION SUMMARY
+  Project: csecafe-a7fff   |   Generated: 2026-03-15
 ================================================================================
 
 --------------------------------------------------------------------------------
 1. FIREBASE PROJECT OVERVIEW
 --------------------------------------------------------------------------------
 
-Project ID      : joecafe-a7fff
-Project Name    : JOECafe
+Project ID      : csecafe-a7fff
+Project Name    : CSECafe
 Region          : us-central1
 Firebase Plan   : Spark (Free) — v1 Launch Mode
 Auth Account    : koushikabhi.dev@gmail.com
@@ -43,9 +43,9 @@ To switch to Cloud Functions (after upgrading Firebase plan):
 --------------------------------------------------------------------------------
 
 VITE_FIREBASE_API_KEY              = AIzaSyBRzOIMBTExHkfM92EMNfCodh63t54OKSw
-VITE_FIREBASE_AUTH_DOMAIN          = joecafe-a7fff.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID           = joecafe-a7fff
-VITE_FIREBASE_STORAGE_BUCKET       = joecafe-a7fff.firebasestorage.app
+VITE_FIREBASE_AUTH_DOMAIN          = csecafe-a7fff.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID           = csecafe-a7fff
+VITE_FIREBASE_STORAGE_BUCKET       = csecafe-a7fff.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID  = 1034738714307
 VITE_FIREBASE_APP_ID               = 1:1034738714307:web:95e1f52bfa57a101ae8476
 VITE_FIREBASE_MEASUREMENT_ID       = G-BSF8C3H6S4
@@ -403,7 +403,7 @@ File: services/callables.ts  (73 lines)
 File: services/qr.ts
   - Client-side HMAC-SHA256 QR token generation
   - QR verification for direct Firestore mode
-  - Shared secret: JOE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION
+  - Shared secret: CSE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION
   - QR expiry: 30 minutes from creation
 
 File: services/fcm.ts
@@ -537,7 +537,7 @@ Update Flow:
 Algorithm:    HMAC-SHA256
 Encoding:     Base64URL (URL-safe: +→-, /→_, padding stripped)
 Expiry:       30 minutes from payment confirmation
-Secret Key:   JOE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION
+Secret Key:   CSE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION
               (set via process.env.QR_SECRET_KEY in Cloud Functions)
 
 QR Token Payload (JSON):
@@ -578,7 +578,7 @@ Build Status:                  PASSING (npm run build — 0 errors)
 15. UPGRADE CHECKLIST (When Moving to Blaze Plan)
 --------------------------------------------------------------------------------
 
-[ ] Enable GCP billing at: https://console.cloud.google.com/billing?project=joecafe-a7fff
+[ ] Enable GCP billing at: https://console.cloud.google.com/billing?project=csecafe-a7fff
 [ ] Verify APIs are enabled:
     - cloudfunctions.googleapis.com
     - cloudbuild.googleapis.com
@@ -592,7 +592,7 @@ Build Status:                  PASSING (npm run build — 0 errors)
 [ ] Set VITE_FIREBASE_VAPID_KEY from Firebase Console (for FCM push)
 [ ] Deploy updated rules: firebase deploy --only firestore:rules
 [ ] Test full payment flow end-to-end
-[ ] Monitor logs: firebase functions:log --project joecafe-a7fff
+[ ] Monitor logs: firebase functions:log --project csecafe-a7fff
 
 --------------------------------------------------------------------------------
 16. USEFUL COMMANDS
@@ -605,27 +605,27 @@ npm run dev
 npm run build
 
 # Deploy Firestore rules only (free)
-firebase deploy --only firestore:rules --project joecafe-a7fff
+firebase deploy --only firestore:rules --project csecafe-a7fff
 
 # Deploy Firestore indexes only (free)
-firebase deploy --only firestore:indexes --project joecafe-a7fff
+firebase deploy --only firestore:indexes --project csecafe-a7fff
 
 # Deploy Cloud Functions (Blaze plan required)
-firebase deploy --only functions --project joecafe-a7fff
+firebase deploy --only functions --project csecafe-a7fff
 
 # Deploy single function
-firebase deploy --only functions:createOrder --project joecafe-a7fff
+firebase deploy --only functions:createOrder --project csecafe-a7fff
 
 # View function logs
-firebase functions:log --project joecafe-a7fff
+firebase functions:log --project csecafe-a7fff
 
 # Start local emulators (for testing functions locally)
-firebase emulators:start --only functions,firestore --project joecafe-a7fff
+firebase emulators:start --only functions,firestore --project csecafe-a7fff
 
 # Re-authenticate Firebase CLI
 firebase login --reauth
 
 ================================================================================
   END OF SUMMARY
-  JOE Cafeteria Automation — Built with Firebase, React + Vite, TypeScript
+  CSE Cafeteria Automation — Built with Firebase, React + Vite, TypeScript
 ================================================================================

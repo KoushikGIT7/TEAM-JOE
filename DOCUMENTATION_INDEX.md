@@ -1,4 +1,4 @@
-# 📚 JOE CAFETERIA BACKEND - COMPLETE DOCUMENTATION INDEX
+# 📚 CSE CAFETERIA BACKEND - COMPLETE DOCUMENTATION INDEX
 
 **Generated**: March 10, 2026  
 **Quality Level**: Enterprise Grade | Production Ready  

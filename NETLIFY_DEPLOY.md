@@ -22,7 +22,7 @@ Go to: **Site settings → Environment variables → Add a variable**
 |--------------|-------------|---------------|----------|
 | `VITE_FIREBASE_API_KEY` | Firebase API Key | `AIzaSy...` | No |
 | `VITE_FIREBASE_AUTH_DOMAIN` | Firebase Auth Domain | `project.firebaseapp.com` | No |
-| `VITE_FIREBASE_PROJECT_ID` | Firebase Project ID | `joe-cafeteria` | No |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase Project ID | `cse-cafeteria` | No |
 | `VITE_FIREBASE_STORAGE_BUCKET` | Storage Bucket | `project.appspot.com` | No |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Messaging Sender ID | `123456789` | No |
 | `VITE_FIREBASE_APP_ID` | Firebase App ID | `1:123:web:abc` | No |
@@ -96,7 +96,7 @@ Create a `netlify.toml` file in your project root:
    - Go to Netlify Dashboard
    - Click **Add new site** → **Import an existing project**
    - Connect to GitHub
-   - Select your repository: `KoushikGIT7/JOE-Cafeteria-Automation`
+   - Select your repository: `KoushikGIT7/CSE-Cafeteria-Automation`
 
 2. **Configure Build Settings**
    - Build command: `npm run build`

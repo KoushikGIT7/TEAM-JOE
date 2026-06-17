@@ -56,7 +56,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
     <div
       className="fixed inset-0 z-50 pointer-events-auto flex flex-col items-center justify-center"
       style={{
-        background: 'linear-gradient(135deg, #0A0A0A 0%, #111111 60%, rgba(15,157,88,0.12) 100%)',
+        background: 'linear-gradient(135deg, #0A0A0A 0%, #111111 60%, rgba(147,51,234,0.12) 100%)',
         // Pre-allocate GPU composite layer for smooth animation
         willChange: 'opacity',
       }}
@@ -72,7 +72,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
             height: '200%',
             top: '-50%',
             left: '-50%',
-            background: 'radial-gradient(circle, rgba(15,157,88,0.18) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(147,51,234,0.18) 0%, transparent 70%)',
             animation: 'glowPulse 2.4s ease-in-out infinite',
             willChange: 'opacity, transform',
           }}
@@ -88,7 +88,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
         >
           <img
               src={LOGO_SRC}
-              alt="JOE"
+              alt="CSE"
               width={160}
               height={160}
               // @ts-ignore - fetchpriority is valid HTML but not yet in TS types
@@ -96,8 +96,8 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
               loading="eager"
               decoding="sync"
               draggable={false}
-              className="w-[140px] h-[140px] sm:w-[160px] sm:h-[160px] object-contain drop-shadow-2xl select-none"
-              style={{ willChange: 'transform' }}
+              className="w-[140px] h-[140px] sm:w-[160px] sm:h-[160px] object-cover rounded-3xl drop-shadow-2xl select-none"
+              style={{ willChange: 'transform', filter: 'saturate(1.5) contrast(1.15)' }}
             />
         </div>
 
@@ -117,7 +117,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
             Fast food. No chaos.
           </p>
           <div
-            className="mt-3 mx-auto h-0.5 bg-[#0F9D58] rounded-full opacity-60"
+            className="mt-3 mx-auto h-0.5 bg-[#9333EA] rounded-full opacity-60"
             style={{
               animation: logoReady
                 ? 'taglineAccent 0.6s cubic-bezier(0.22,1,0.36,1) 0.35s both'

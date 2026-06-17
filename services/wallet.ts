@@ -1,5 +1,5 @@
 /**
- * JOE Wallet Service
+ * CSE Wallet Service
  * ─────────────────────────────────────────────────────────────────────────────
  * All wallet balance mutations use Firestore runTransaction() so every debit/credit
  * is atomic and creates an immutable audit trail in wallet_transactions/.

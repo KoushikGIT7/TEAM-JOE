@@ -2,7 +2,7 @@
 import { Order } from '../types';
 
 // Production-grade secret key (Hardlocked across environments to prevent SECURITY_BREACH)
-const QR_SECRET_KEY = 'JOE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION_HARDLOCKED';
+const QR_SECRET_KEY = 'CSE_QR_SECRET_2024_SECURE_TOKEN_KEY_PRODUCTION_HARDLOCKED';
 
 // QR code expiry: effectively indefinite (10 years) until scanned
 export const QR_EXPIRY_MS = 10 * 365 * 24 * 60 * 60 * 1000;
@@ -244,7 +244,7 @@ export const generateQRPayloadSync = (order: Order, itemId: string = 'all'): str
   
   // Normalize exactly like firestore-db.ts verification
   const userId = String(order.userId || "");
-  const cafeteriaId = String(order.cafeteriaId || "JOE_CAFETERIA_01");
+  const cafeteriaId = String(order.cafeteriaId || "CSE_CAFETERIA_01");
   
   const signature = generateSecureHashSync(order.id, userId, cafeteriaId, createdAt, expiresAt);
   // Format: v1.ORDER_ID.ITEM_ID.SIGNATURE.EXPIRY

@@ -46,23 +46,23 @@ export const Dashboard: React.FC = () => {
 
   // Staff users list (Retained locally)
   const [teamUsers, setTeamUsers] = useState<StaffUser[]>(() => {
-    const saved = localStorage.getItem('joe_staff_users');
+    const saved = localStorage.getItem('cse_staff_users');
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { /* fallback */ }
     }
     return [
-      { email: 'cashier@joe.com', name: 'Kabir Dev (Cashier)', role: 'CASHIER', active: true },
-      { email: 'cook@joe.com', name: 'Chef Suresh Kumar', role: 'COOK', active: true },
-      { email: 'supervisor@joe.com', name: 'Ananya Sharma (Supervisor)', role: 'SUPERVISOR', active: true },
-      { email: 'server@joe.com', name: 'Pranav Roy (Server)', role: 'SERVER', active: true },
-      { email: 'admin@joe.com', name: 'Administrator Main', role: 'ADMIN', active: true }
+      { email: 'cashier@cse.com', name: 'Kabir Dev (Cashier)', role: 'CASHIER', active: true },
+      { email: 'cook@cse.com', name: 'Chef Suresh Kumar', role: 'COOK', active: true },
+      { email: 'supervisor@cse.com', name: 'Ananya Sharma (Supervisor)', role: 'SUPERVISOR', active: true },
+      { email: 'server@cse.com', name: 'Pranav Roy (Server)', role: 'SERVER', active: true },
+      { email: 'admin@cse.com', name: 'Administrator Main', role: 'ADMIN', active: true }
     ];
   });
   const [teamLoading, setTeamLoading] = useState(false);
 
   // Save changes to staff
   useEffect(() => {
-    localStorage.setItem('joe_staff_users', JSON.stringify(teamUsers));
+    localStorage.setItem('cse_staff_users', JSON.stringify(teamUsers));
   }, [teamUsers]);
 
   // Menu editing states
@@ -365,7 +365,7 @@ export const Dashboard: React.FC = () => {
       const blob = new Blob(["\ufeff" + csvStr], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `JoeCafe_Hisab_${dateRangeLabel}_${timestamp}.csv`;
+      link.download = `CseCafe_Hisab_${dateRangeLabel}_${timestamp}.csv`;
       link.click();
       alert('Excel/CSV Sheet Downloaded successfully! / ఎక్సెల్ ఫైల్ డౌన్‌లోడ్ చేయబడింది!');
     } 
@@ -374,7 +374,7 @@ export const Dashboard: React.FC = () => {
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `JoeCafe_Hisab_${dateRangeLabel}_${timestamp}.json`;
+      link.download = `CseCafe_Hisab_${dateRangeLabel}_${timestamp}.json`;
       link.click();
       alert('Raw JSON backup file downloaded! / JSON ఫైల్ డౌన్‌లోడ్ చేయబడింది!');
     }
@@ -402,13 +402,13 @@ export const Dashboard: React.FC = () => {
       const blob = new Blob([xmlStr], { type: 'application/xml' });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `JoeCafe_Ledger_${dateRangeLabel}_${timestamp}.xml`;
+      link.download = `CseCafe_Ledger_${dateRangeLabel}_${timestamp}.xml`;
       link.click();
       alert('XML accounting standard format downloaded! / XML ఫైల్ డౌన్‌లోడ్ చేయబడింది!');
     }
     else if (format === 'TXT') {
       let txtStr = `========================================================================\n`;
-      txtStr += `                      JOE CAFETERIA LEDGER INVOICE                      \n`;
+      txtStr += `                      CSE CAFETERIA LEDGER INVOICE                      \n`;
       txtStr += `------------------------------------------------------------------------\n`;
       txtStr += `Generated On  : ${new Date().toLocaleString()}\n`;
       txtStr += `Audit Range   : ${dateRangeLabel}\n`;
@@ -430,7 +430,7 @@ export const Dashboard: React.FC = () => {
       const blob = new Blob([txtStr], { type: 'text/plain;charset=utf-8;' });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `JoeCafe_Hisab_${dateRangeLabel}_${timestamp}.txt`;
+      link.download = `CseCafe_Hisab_${dateRangeLabel}_${timestamp}.txt`;
       link.click();
       alert('Easy Text Bill summary downloaded! / టెక్స్ట్ ఫైల్ డౌన్‌లోడ్ చేయబడింది!');
     }
@@ -446,7 +446,7 @@ export const Dashboard: React.FC = () => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Joe Cafe - Accounting Audit Report</title>
+          <title>Cse Cafe - Accounting Audit Report</title>
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #fff; color: #333; margin: 30px; }
             h1 { color: #f59e0b; border-bottom: 2px solid #f59e0b; padding-bottom: 5px; font-size: 26px; }
@@ -462,7 +462,7 @@ export const Dashboard: React.FC = () => {
           </style>
         </head>
         <body>
-          <h1>👑 JOE CAFETERIA - ACCOUNTING AUDIT STATEMENT</h1>
+          <h1>👑 CSE CAFETERIA - ACCOUNTING AUDIT STATEMENT</h1>
           <div class="meta">
             <strong>Generatd On:</strong> ${new Date().toLocaleString()}<br/>
             <strong>Statement Date Range:</strong> ${dateRangeLabel.replace('_to_', ' to ')}<br/>
@@ -504,7 +504,7 @@ export const Dashboard: React.FC = () => {
           </table>
 
           <div class="footer">
-            Joe Cafeteria Cloud system ledger statement. End of document.
+            Cse Cafeteria Cloud system ledger statement. End of document.
           </div>
 
           <script>
@@ -535,7 +535,7 @@ export const Dashboard: React.FC = () => {
             <Store className="w-5 h-5 text-brand-purple" />
           </div>
           <div>
-            <h3 className="font-display font-black text-sm tracking-tight text-white leading-none">JOE CAFETERIA</h3>
+            <h3 className="font-display font-black text-sm tracking-tight text-white leading-none">CSE CAFETERIA</h3>
             <span className="font-mono text-[9px] uppercase tracking-widest text-emerald-400 font-extrabold mt-1 block">
               యజమాని డ్యాష్‌బోర్డ్ 👑
             </span>

@@ -3,7 +3,7 @@
 ```
 ╔════════════════════════════════════════════════════════════════════╗
 ║                                                                    ║
-║     JOE CAFETERIA AUTOMATION - COMPLETE BACKEND DEVELOPMENT      ║
+║     CSE CAFETERIA AUTOMATION - COMPLETE BACKEND DEVELOPMENT      ║
 ║                      DOCUMENTATION PACKAGE                        ║
 ║                                                                    ║
 ║                    ✅ READY FOR IMPLEMENTATION                    ║
@@ -452,7 +452,7 @@ YOU ARE HERE
 ## 📍 ALL FILES IN YOUR PROJECT ROOT
 
 ```
-d:\JOE-Cafeteria-Automation-mobile\
+d:\CSE-Cafeteria-Automation-mobile\
 
 ├── 🟢 00_START_HERE.md                       ← YOU ARE HERE
 ├── 📋 DOCUMENTATION_INDEX.md                 ← Next: Go here

@@ -1,4 +1,4 @@
-# Deploy Cloud Functions (JOE Cafeteria)
+# Deploy Cloud Functions (CSE Cafeteria)
 
 With the backend optimization in place, **orders, payment, QR validation, and serving** run in Cloud Functions. Firestore rules are set so that **only Functions can create/update orders and inventory**. You must deploy Functions before the app will work in production.
 
@@ -7,7 +7,7 @@ With the backend optimization in place, **orders, payment, QR validation, and se
 - Node 18+
 - Firebase CLI: `npm install -g firebase-tools`
 - Logged in: `firebase login`
-- Project set: `firebase use joecafe-a7fff` (or your project ID)
+- Project set: `firebase use csecafe-a7fff` (or your project ID)
 
 ## 2. Install and deploy
 

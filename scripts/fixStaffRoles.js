@@ -18,7 +18,7 @@ async function auditStaffRoles() {
     const emailLower = email.toLowerCase();
     let correctRole = null;
     
-    if (emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com')) {
+    if (emailLower.endsWith('@csecafe.com') || emailLower.endsWith('@cse.com')) {
       if (emailLower.startsWith('admin@'))   correctRole = 'ADMIN';
       else if (emailLower.startsWith('cashier@')) correctRole = 'CASHIER';
       else if (emailLower.startsWith('server@'))  correctRole = 'SERVER';

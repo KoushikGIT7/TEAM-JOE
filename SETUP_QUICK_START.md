@@ -6,7 +6,7 @@ You can't login because staff users (admin, cashier, server) and menu items have
 ## Solution - Run This in Browser Console
 
 ### Step 1: Open Your App
-1. Open your JOE app in browser
+1. Open your CSE app in browser
 2. Open **Browser Console** (F12 or Right-click → Inspect → Console tab)
 
 ### Step 2: Copy & Paste This Script
@@ -51,11 +51,11 @@ const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
 
 // Create admin user
 try {
-  const admin = await createUserWithEmailAndPassword(auth, 'admin@joe.com', 'admin123');
+  const admin = await createUserWithEmailAndPassword(auth, 'admin@cse.com', 'admin123');
   await setDoc(doc(db, 'users', admin.user.uid), {
     uid: admin.user.uid,
-    email: 'admin@joe.com',
-    name: 'JOE Admin',
+    email: 'admin@cse.com',
+    name: 'CSE Admin',
     role: 'admin',
     active: true,
     createdAt: serverTimestamp()
@@ -65,10 +65,10 @@ try {
 
 // Create cashier
 try {
-  const cashier = await createUserWithEmailAndPassword(auth, 'cashier@joe.com', 'cashier123');
+  const cashier = await createUserWithEmailAndPassword(auth, 'cashier@cse.com', 'cashier123');
   await setDoc(doc(db, 'users', cashier.user.uid), {
     uid: cashier.user.uid,
-    email: 'cashier@joe.com',
+    email: 'cashier@cse.com',
     name: 'Cashier Node',
     role: 'cashier',
     active: true,
@@ -79,10 +79,10 @@ try {
 
 // Create server
 try {
-  const server = await createUserWithEmailAndPassword(auth, 'server@joe.com', 'server123');
+  const server = await createUserWithEmailAndPassword(auth, 'server@cse.com', 'server123');
   await setDoc(doc(db, 'users', server.user.uid), {
     uid: server.user.uid,
-    email: 'server@joe.com',
+    email: 'server@cse.com',
     name: 'Server Node',
     role: 'server',
     active: true,
@@ -97,23 +97,23 @@ try {
 ### Create Users Manually:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select project: **joecafe-a7fff**
+2. Select project: **csecafe-a7fff**
 3. Go to **Authentication** → **Users** → **Add user**
 4. Create these 3 users:
 
 | Email | Password | Role |
 |-------|----------|------|
-| admin@joe.com | admin123 | admin |
-| cashier@joe.com | cashier123 | cashier |
-| server@joe.com | server123 | server |
+| admin@cse.com | admin123 | admin |
+| cashier@cse.com | cashier123 | cashier |
+| server@cse.com | server123 | server |
 
 5. Then go to **Firestore Database** → Create collection: `users`
 6. For each user, create a document with their UID (from Authentication) with fields:
    ```json
    {
      "uid": "[user-uid]",
-     "email": "admin@joe.com",
-     "name": "JOE Admin",
+     "email": "admin@cse.com",
+     "name": "CSE Admin",
      "role": "admin",
      "active": true,
      "createdAt": [current timestamp]
@@ -127,7 +127,7 @@ Menu items will auto-initialize when you first open the app (via `initializeMenu
 ## Test Login
 
 After setup, try logging in with:
-- **Email**: `admin@joe.com`
+- **Email**: `admin@cse.com`
 - **Password**: `admin123`
 
 ## Need Help?

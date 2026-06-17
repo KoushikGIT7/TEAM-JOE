@@ -1,4 +1,4 @@
-# JOE — 2-Minute Demo Script
+# CSE — 2-Minute Demo Script
 ## Live Demonstration Walkthrough for VC / Jury Presentation
 
 ---
@@ -6,13 +6,13 @@
 ## Pre-Demo Setup Checklist
 
 Before presenting:
-- [ ] Open https://joecafebrand.netlify.app on projector browser (Desktop Chrome)
+- [ ] Open https://csecafebrand.netlify.app on projector browser (Desktop Chrome)
 - [ ] Have a second device (phone) logged in as a student
 - [ ] Login credentials ready:
   - Student: Google Sign-In (any Google account)
-  - Cashier: cashier@joecafe.com / [password]
-  - Server: server@joecafe.com / [password]
-  - Cook: cook@joecafe.com / [password]
+  - Cashier: cashier@csecafe.com / [password]
+  - Server: server@csecafe.com / [password]
+  - Cook: cook@csecafe.com / [password]
 - [ ] QR camera working on server device
 - [ ] Restaurant background music or silence — no distractions
 
@@ -24,7 +24,7 @@ Before presenting:
 
 ### [0:00 – 0:15] — THE HOOK (15 seconds)
 
-> *"Every day in Indian college cafeterias, students waste 20 minutes standing in a queue for a 5-minute meal. That's 200 person-hours lost every single day in a 600-student college. JOE eliminates that queue entirely. Let me show you — in real time."*
+> *"Every day in Indian college cafeterias, students waste 20 minutes standing in a queue for a 5-minute meal. That's 200 person-hours lost every single day in a 600-student college. CSE eliminates that queue entirely. Let me show you — in real time."*
 
 **[Action]**: Show the Welcome screen on projector.
 
@@ -32,7 +32,7 @@ Before presenting:
 
 ### [0:15 – 0:35] — STUDENT PLACES ORDER (20 seconds)
 
-> *"A student opens JOE on their phone — no app download. Just a web link. They can see the full live menu with stock levels. Tap to add items. Real-time inventory. No surprises at the counter."*
+> *"A student opens CSE on their phone — no app download. Just a web link. They can see the full live menu with stock levels. Tap to add items. Real-time inventory. No surprises at the counter."*
 
 **[Action on phone]**:
 1. Tap "Continue with Google" → lands on HomeView
@@ -89,26 +89,26 @@ Before presenting:
 
 ### [1:50 – 2:00] — CLOSE (10 seconds)
 
-> *"JOE is live. The code is written. The system works. What we need now is a pilot cafeteria and the runway to prove this at scale. That's what this grant / investment makes possible."*
+> *"CSE is live. The code is written. The system works. What we need now is a pilot cafeteria and the runway to prove this at scale. That's what this grant / investment makes possible."*
 
 ---
 
 ## Backup Talking Points (Q&A)
 
 **Q: What if the internet goes down at the cafeteria?**
-> Firestore offline persistence keeps JOE functional. Orders placed offline sync when connectivity returns. The counter still has a manual fallback for cashier to check order IDs.
+> Firestore offline persistence keeps CSE functional. Orders placed offline sync when connectivity returns. The counter still has a manual fallback for cashier to check order IDs.
 
 **Q: What about students without smartphones?**
 > Cash payment kiosk mode: Cashier can manually create an order on the student's behalf. This is a built-in fallback flow.
 
-**Q: How does JOE make money?**
+**Q: How does CSE make money?**
 > Three channels: (1) Monthly SaaS fee per cafeteria (₹3,000–8,000/month), (2) per-UPI-transaction fee routed through the institution, (3) Premium analytics tier for multi-campus management.
 
 **Q: How long to deploy at a new college?**
 > 48 hours to go live: Firebase project setup, Netlify deploy, menu data entry, staff account creation. Week 1 training. Week 2 first live orders.
 
 **Q: Why not just use existing apps like ET or Swiggy for Business?**
-> They're built for delivery logistics, not on-campus walk-in serving. They require dedicated hardware. They don't support cash payment workflows. They don't route to kitchen stations. JOE is purpose-built for this exact use case.
+> They're built for delivery logistics, not on-campus walk-in serving. They require dedicated hardware. They don't support cash payment workflows. They don't route to kitchen stations. CSE is purpose-built for this exact use case.
 
 ---
 

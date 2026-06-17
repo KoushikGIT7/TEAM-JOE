@@ -399,8 +399,8 @@ const order = await getOrder(orderId);
 - Order data is stored in Firestore (not localStorage)
 
 **Files Using localStorage:**
-- `views/Student/HomeView.tsx` - Cart state (`joe_cart`)
-- `views/Student/PaymentView.tsx` - Cart state (`joe_cart`)
+- `views/Student/HomeView.tsx` - Cart state (`cse_cart`)
+- `views/Student/PaymentView.tsx` - Cart state (`cse_cart`)
 
 **Status:** ✅ Acceptable - No migration needed
 

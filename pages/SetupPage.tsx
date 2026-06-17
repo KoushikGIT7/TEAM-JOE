@@ -49,9 +49,9 @@ const SetupPage: React.FC = () => {
             <div className="p-4 bg-gray-50 rounded-xl">
               <h3 className="font-bold text-textMain mb-2">What will be created:</h3>
               <ul className="space-y-1 text-sm text-textSecondary">
-                <li>• Admin user: admin@joe.com / admin123</li>
-                <li>• Cashier user: cashier@joe.com / cashier123</li>
-                <li>• Server user: server@joe.com / server123</li>
+                <li>• Admin user: admin@cse.com / admin123</li>
+                <li>• Cashier user: cashier@cse.com / cashier123</li>
+                <li>• Server user: server@cse.com / server123</li>
                 <li>• {INITIAL_MENU.length} menu items from constants</li>
                 <li>• Inventory entries for all menu items</li>
                 <li>• Default system settings</li>

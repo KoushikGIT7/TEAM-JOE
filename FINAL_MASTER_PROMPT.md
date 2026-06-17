@@ -819,7 +819,7 @@ DELIVERABLES:
 
 ### THE MASTER INSTRUCTION
 
-**YOUR MISSION**: Complete JOE Cafeteria Backend from 75% → 99% (skipping real Razorpay)
+**YOUR MISSION**: Complete CSE Cafeteria Backend from 75% → 99% (skipping real Razorpay)
 
 **DURATION**: 5 days (40-50 hours)  
 **SPRINTS**: 4 executable sprints (3, 4, 5, 6)

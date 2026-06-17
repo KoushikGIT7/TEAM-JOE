@@ -20,7 +20,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onEnterStaffPortal }) 
   };
 
   const mockGuestLogin = () => {
-    handleStudentLogin('guest@joe.com', 'Guest Client', 'GUEST');
+    handleStudentLogin('guest@cse.com', 'Guest Client', 'GUEST');
   };
 
   return (
@@ -35,7 +35,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onEnterStaffPortal }) 
       <header className="relative z-10 flex justify-between items-center w-full">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-linear-to-tr from-brand-purple to-brand-purple-dark flex items-center justify-center shadow-md">
-            <span className="font-display font-black text-white text-xs">JOE</span>
+            <span className="font-display font-black text-white text-xs">CSE</span>
           </div>
           <span className="font-mono text-xs tracking-wider text-brand-purple-light select-none font-semibold uppercase">
             SMART CAFETERIA
@@ -57,7 +57,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onEnterStaffPortal }) 
       <main className="relative z-10 flex flex-col gap-5 w-full max-w-lg mx-auto py-6 animate-fade-in">
         <div className="flex flex-col gap-1.5 text-center">
           <span className="font-mono text-[9px] tracking-widest text-brand-purple-light font-black uppercase">
-            ⚡️ JOE'S CAMPUS DIGITAL SIGNAGE & CUSTOMER APP
+            ⚡️ CSE'S CAMPUS DIGITAL SIGNAGE & CUSTOMER APP
           </span>
           <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
             Order Smarter. <br />

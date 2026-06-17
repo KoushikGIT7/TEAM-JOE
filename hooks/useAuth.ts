@@ -27,8 +27,8 @@ interface UseAuthReturn {
   role: UserProfile['role'] | null;
 }
 
-const PROFILE_CACHE_KEY = 'joe_profile_cache';
-const PROFILE_UID_KEY = 'joe_profile_uid';
+const PROFILE_CACHE_KEY = 'cse_profile_cache';
+const PROFILE_UID_KEY = 'cse_profile_uid';
 
 /** Read profile from localStorage (instant, no network) */
 function loadCachedProfile(uid: string): UserProfile | null {

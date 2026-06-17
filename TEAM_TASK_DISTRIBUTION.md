@@ -1,4 +1,4 @@
-# ⚔️ JOE Cafeteria: 1-to-100 Team Execution Plan
+# ⚔️ CSE Cafeteria: 1-to-100 Team Execution Plan
 
 The foundation is built (0 to 1). We now have a robust data model, polished design identity, and active Kitchen/Cook system. Your mission as a 3-person AI prompting team is to take this from 1 to 100 seamlessly.
 

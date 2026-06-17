@@ -14,7 +14,7 @@ import { getScanLogs, processAtomicIntake } from '../../services/firestore-db';
 import { triggerOneSignalWebhook } from '../../services/onesignal-webhook';
 import QRScanner from '../../components/QRScanner';
 import Logo from '../../components/Logo';
-import { joeSounds } from '../../utils/audio';
+import { cseSounds } from '../../utils/audio';
 
 interface ScannerViewProps {
   profile: UserProfile;
@@ -33,14 +33,14 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setLastResult({ title, sub });
     setTerminalState(state);
     
-    joeSounds.stopAll();
+    cseSounds.stopAll();
     
     if (state === 'SUCCESS') {
        if ('vibrate' in navigator) navigator.vibrate(100);
-       joeSounds.playServerScanSuccess();
+       cseSounds.playServerScanSuccess();
     } else {
        if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-       joeSounds.playErrorBuzzer();
+       cseSounds.playErrorBuzzer();
     }
 
     // Auto-dismiss 
@@ -57,7 +57,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
     setTerminalState('SUCCESS');
 
     try {
-      const { result, order } = await processAtomicIntake(data.trim(), profile.uid, true);
+      const { result, order, targetItemId } = await processAtomicIntake(data.trim(), profile.uid, true);
       
       const res = result as string;
       
@@ -68,7 +68,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
       } else if (res === 'AWAITING_COOKING') {
         triggerStrobe('ERROR', 'NOT READY', 'Meal still in preparation');
       } else if (res === 'CONSUMED') {
-        triggerStrobe('SUCCESS', 'VERIFIED ✅', 'RELEASE MEAL NOW');
+        triggerStrobe('SUCCESS', 'VERIFIED ✅', 'COMPLETE ORDER RELEASED');
         if (order && order.userId) {
           const shortToken = order.tokenNumber || order.id.slice(-4).toUpperCase();
           triggerOneSignalWebhook(
@@ -79,7 +79,19 @@ const ScannerView: React.FC<ScannerViewProps> = ({ profile, onLogout }) => {
           ).catch(e => console.warn("OneSignal failed:", e));
         }
       } else if (res === 'MANIFESTED') {
-        triggerStrobe('SUCCESS', 'PARTIAL RELEASE ✅', 'ITEMS LOADED ON SCREEN');
+        let subMsg = 'ITEMS LOADED ON SCREEN';
+        if (targetItemId && targetItemId !== 'all' && order?.items) {
+           const targetItem = order.items.find((it: any) => it.itemId === targetItemId || it.id === targetItemId);
+           if (targetItem) {
+             const rem = targetItem.remainingQty !== undefined ? targetItem.remainingQty : targetItem.quantity;
+             if (rem > 0) {
+                 subMsg = `REMAINING ${rem}`;
+             } else {
+                 subMsg = `ITEM COMPLETE`;
+             }
+           }
+        }
+        triggerStrobe('SUCCESS', 'PARTIAL RELEASE ✅', subMsg);
         if (order && order.userId) {
           const shortToken = order.tokenNumber || order.id.slice(-4).toUpperCase();
           triggerOneSignalWebhook(

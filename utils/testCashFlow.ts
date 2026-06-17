@@ -17,7 +17,7 @@ export const testCashApproval = async (orderId: string) => {
   
   // Check current order state
   const checkOrder = () => {
-    const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
+    const orders = JSON.parse(localStorage.getItem('cse_mock_orders') || '[]');
     const order = orders.find((o: any) => o.id === orderId);
     console.log('📋 Current order state:', {
       found: !!order,
@@ -65,7 +65,7 @@ export const testCashApproval = async (orderId: string) => {
  * Check if an order exists and its current state
  */
 export const checkOrderState = (orderId: string) => {
-  const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
+  const orders = JSON.parse(localStorage.getItem('cse_mock_orders') || '[]');
   const order = orders.find((o: any) => o.id === orderId);
   
   if (!order) {

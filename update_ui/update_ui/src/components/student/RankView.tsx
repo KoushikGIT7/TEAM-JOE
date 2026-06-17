@@ -27,7 +27,7 @@ export const RankView: React.FC = () => {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<{ rewardName: string; code: string; desc: string; percent: number } | null>(null);
 
-  // Joe Points Loyalty Tier Calculations
+  // Cse Points Loyalty Tier Calculations
   const totalOrdersPlaced = orders.length;
   let tierTitle = 'Bronze Foodie';
   let dynamicDiscount = '0%';
@@ -198,7 +198,7 @@ export const RankView: React.FC = () => {
               </div>
             </section>
 
-            {/* JOE POINTS LOYALTY CARD AND TIER-BASED PROGRESS */}
+            {/* CSE POINTS LOYALTY CARD AND TIER-BASED PROGRESS */}
             <section className="glass-bg glass-stroke rounded-3xl p-5 bg-[#171f33]/35 relative border border-white/5 space-y-4 animate-fade-in">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
                 <div className="flex items-center gap-2">
@@ -206,7 +206,7 @@ export const RankView: React.FC = () => {
                     <Trophy className="w-4 h-4 text-yellow-400" />
                   </div>
                   <div>
-                    <h3 className="font-display font-black text-xs text-white uppercase tracking-wider">JOE Loyalty Engine</h3>
+                    <h3 className="font-display font-black text-xs text-white uppercase tracking-wider">CSE Loyalty Engine</h3>
                     <p className="font-sans text-[10px] text-zinc-400">Order frequency and tier multiplier status</p>
                   </div>
                 </div>
@@ -226,7 +226,7 @@ export const RankView: React.FC = () => {
                   <span className="font-display text-sm font-black text-brand-green">{dynamicDiscount}</span>
                 </div>
                 <div className="p-2.5 rounded-2xl bg-white/5 border border-white/5">
-                  <span className="block font-mono text-[8px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Joe Points</span>
+                  <span className="block font-mono text-[8px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Cse Points</span>
                   <span className="font-display text-sm font-black text-brand-purple-light">{studentPoints} PTS</span>
                 </div>
               </div>
@@ -252,7 +252,7 @@ export const RankView: React.FC = () => {
               <div className="p-3 bg-white/5 border border-white/5 rounded-2xl text-[10px] text-zinc-400 font-sans leading-relaxed flex gap-2">
                 <ShieldCheck className="w-4 h-4 text-brand-purple shrink-0 mt-0.5" />
                 <span>
-                  <strong>Owner Profitability Guarantee:</strong> Our special deca-multiplier milestones (e.g., 50% discount every 10th order) are automatically capped at $10 max. This keeps ingredients fully covered and secures steady margins for Mr. Joe.
+                  <strong>Owner Profitability Guarantee:</strong> Our special deca-multiplier milestones (e.g., 50% discount every 10th order) are automatically capped at $10 max. This keeps ingredients fully covered and secures steady margins for Mr. Cse.
                 </span>
               </div>
             </section>

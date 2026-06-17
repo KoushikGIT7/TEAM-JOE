@@ -7,7 +7,7 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { LogOut, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { QRScanner } from './QRScanner';
-import { joeSounds } from './joeSounds';
+import { cseSounds } from './cseSounds';
 import { Order } from '../../types';
 
 export const ServingCounterView: React.FC = () => {
@@ -119,7 +119,7 @@ export const ServingCounterView: React.FC = () => {
       const targetItem = targetOrder.items.find(it => it.menuItemId === itemId);
       const itemNameDisplay = targetItem ? `${targetItem.quantity}x ${targetItem.name}` : 'Item';
 
-      joeSounds.playServerScanSuccess();
+      cseSounds.playServerScanSuccess();
 
       setHudState('SUCCESS');
       setHudPayload({
@@ -139,7 +139,7 @@ export const ServingCounterView: React.FC = () => {
     } else {
       const errorMsg = result.error || 'Invalid QR Security Digest';
       
-      joeSounds.playErrorBuzzer();
+      cseSounds.playErrorBuzzer();
 
       setHudState('ERROR');
       setHudMessage(errorMsg);

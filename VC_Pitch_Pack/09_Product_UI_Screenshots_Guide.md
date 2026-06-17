@@ -1,7 +1,7 @@
-# JOE Product UI — Screenshots Reference
+# CSE Product UI — Screenshots Reference
 ## Visual Guide to All Screens
 
-> **Note**: Screenshots available at live demo: https://joecafebrand.netlify.app
+> **Note**: Screenshots available at live demo: https://csecafebrand.netlify.app
 > Use browser DevTools → Toggle Device Toolbar → iPhone 12 Pro for mobile view
 
 ---
@@ -51,7 +51,7 @@
 
 ### Recommended capture sequence (20 minutes total):
 
-1. **Open browser in Incognito mode** → joecafebrand.netlify.app
+1. **Open browser in Incognito mode** → csecafebrand.netlify.app
 2. **DevTools** → Mobile (iPhone 12 Pro, 390×844)
 3. Capture Welcome screen
 4. Login as Google → HomeView → capture menu

@@ -1,7 +1,7 @@
 /**
  * Quick User Initialization Script
  * Copy and paste this ENTIRE script into your browser console
- * Make sure you're on your JOE app page first
+ * Make sure you're on your CSE app page first
  */
 
 (async function initUsers() {
@@ -32,9 +32,9 @@
     const { doc: firestoreDoc, setDoc: firestoreSetDoc, serverTimestamp } = await import('firebase/firestore');
     
     const users = [
-      { email: 'admin@joecafe.com', password: 'joeadmin2026', name: 'JOE Admin', role: 'ADMIN' },
-      { email: 'cashier@joecafe.com', password: 'joecashier2026', name: 'Cashier Node', role: 'CASHIER' },
-      { email: 'server@joecafe.com', password: 'joeserver2026', name: 'Server Node', role: 'SERVER' }
+      { email: 'admin@csecafe.com', password: 'cseadmin2026', name: 'CSE Admin', role: 'ADMIN' },
+      { email: 'cashier@csecafe.com', password: 'csecashier2026', name: 'Cashier Node', role: 'CASHIER' },
+      { email: 'server@csecafe.com', password: 'cseserver2026', name: 'Server Node', role: 'SERVER' }
     ];
     
     for (const userData of users) {
@@ -69,9 +69,9 @@
     
     console.log('✅ User initialization complete!');
     console.log('Now you can login with:');
-    console.log('  - admin@joecafe.com / joeadmin2026');
-    console.log('  - cashier@joecafe.com / joecashier2026');
-    console.log('  - server@joecafe.com / joeserver2026');
+    console.log('  - admin@csecafe.com / cseadmin2026');
+    console.log('  - cashier@csecafe.com / csecashier2026');
+    console.log('  - server@csecafe.com / cseserver2026');
     
   } catch (error) {
     console.error('❌ Setup failed:', error);

@@ -222,7 +222,7 @@ service cloud.firestore {
       allow write: if isAuthenticated();
     }
 
-    // ─── JOE WALLET ───────────────────────────────────────────────────────────
+    // ─── CSE WALLET ───────────────────────────────────────────────────────────
 
     // wallet_recharge_requests
     // Students: create own requests, read own requests

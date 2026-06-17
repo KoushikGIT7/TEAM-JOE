@@ -16,7 +16,7 @@ const scheduledFunction: Handler = async (event, context) => {
     included_segments: ["Active Users"],
     target_channel: "push",
     headings: { en: "🍽️ Lunch is Ready!" },
-    contents: { en: "Beat the queue! Order your lunch now on JOE." },
+    contents: { en: "Beat the queue! Order your lunch now on CSE." },
   };
 
   try {

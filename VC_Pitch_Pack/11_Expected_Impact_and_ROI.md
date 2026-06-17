@@ -1,4 +1,4 @@
-# JOE — Expected Impact & ROI
+# CSE — Expected Impact & ROI
 ## Projected Outcomes for Pilot + Scale
 
 ---
@@ -19,7 +19,7 @@
 
 ## Impact Area 1: Queue Elimination
 
-| Metric | Before JOE | After JOE (30 days) | Change |
+| Metric | Before CSE | After CSE (30 days) | Change |
 |--------|-----------|---------------------|--------|
 | Average peak wait time | 22 min | 2 min | -91% |
 | Peak queue depth | 35–50 students | 3–8 students | -85% |
@@ -34,7 +34,7 @@
 
 ## Impact Area 2: Revenue Integrity
 
-| Fraud Type | Estimated Daily Loss | With JOE |
+| Fraud Type | Estimated Daily Loss | With CSE |
 |-----------|---------------------|---------|
 | Token sharing / QR screenshot reuse | ₹400–800 | ₹0 |
 | Verbal order inflation | ₹200–500 | ₹0 (digital manifest) |
@@ -47,7 +47,7 @@
 
 ## Impact Area 3: Kitchen Efficiency & Food Waste
 
-| Metric | Before JOE | After JOE | Change |
+| Metric | Before CSE | After CSE | Change |
 |--------|-----------|-----------|--------|
 | Daily over-preparation | 20% excess | 5% excess | -75% |
 | Food wasted per day (value) | ₹1,200 | ₹300 | -₹900/day |
@@ -60,7 +60,7 @@
 
 ## Impact Area 4: Staff Efficiency
 
-| Staff Role | Manual Throughput | JOE Throughput | Gain |
+| Staff Role | Manual Throughput | CSE Throughput | Gain |
 |-----------|-------------------|----------------|------|
 | Cashier | 4 approvals/min (verbal) | 6 taps/min (digital) | +50% |
 | Server (counter) | 2 manual serves/min | 5 QR scans/min | +150% |
@@ -72,7 +72,7 @@
 
 ## Impact Area 5: Operational Intelligence
 
-| Decision | Before JOE | After JOE |
+| Decision | Before CSE | After CSE |
 |----------|-----------|-----------|
 | Menu planning | Intuition | Item-wise sales rank (data) |
 | Staffing | Fixed rota | Demand-based peaks visible |
@@ -150,7 +150,7 @@
 
 ## 5-Year Vision
 
-> JOE becomes the operating system for institutional food service in India — the way Swiggy operates delivery, JOE operates on-campus cafeterias. Every college, every hostel mess, every corporate canteen that serves people face-to-face runs on JOE.
+> CSE becomes the operating system for institutional food service in India — the way Swiggy operates delivery, CSE operates on-campus cafeterias. Every college, every hostel mess, every corporate canteen that serves people face-to-face runs on CSE.
 
 The infrastructure is already built. The differentiation is proven. The market is massive and untouched. The only variable is distribution — and that's exactly what this pilot makes possible.
 
@@ -158,4 +158,4 @@ The infrastructure is already built. The differentiation is proven. The market i
 
 ## Summary Statement for Investors
 
-> **JOE turns ₹46,000 into ₹5.34 Lakhs of annual savings on a single pilot, with a 23,500+ institution market and a proven, live, production-grade system. The risk is deployment. The tech works.**
+> **CSE turns ₹46,000 into ₹5.34 Lakhs of annual savings on a single pilot, with a 23,500+ institution market and a proven, live, production-grade system. The risk is deployment. The tech works.**

@@ -9,7 +9,7 @@ The execution policy issue has been resolved. You can now deploy indexes.
 **Run this single command:**
 
 ```powershell
-cd "D:\Joe 3rd time proj"
+cd "D:\Cse 3rd time proj"
 .\deploy-indexes-fixed.ps1
 ```
 
@@ -29,13 +29,13 @@ If you prefer to run commands manually:
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process -Force
 
 # 2. Navigate to project
-cd "D:\Joe 3rd time proj"
+cd "D:\Cse 3rd time proj"
 
 # 3. Login to Firebase (opens browser)
 firebase login
 
 # 4. Set project
-firebase use joecafe-a7fff
+firebase use csecafe-a7fff
 
 # 5. Deploy indexes
 firebase deploy --only firestore:indexes
@@ -61,7 +61,7 @@ firebase deploy --only firestore:indexes
 ## 📊 Verify Deployment
 
 After deployment, check status:
-- **Firebase Console:** https://console.firebase.google.com/project/joecafe-a7fff/firestore/indexes
+- **Firebase Console:** https://console.firebase.google.com/project/csecafe-a7fff/firestore/indexes
 - **Status:** Building → Enabled (when ready)
 
 ---

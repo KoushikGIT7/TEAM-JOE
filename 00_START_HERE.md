@@ -13,7 +13,7 @@
 ### 6 COMPREHENSIVE DOCUMENTS CREATED
 
 ```
-Your Project Root Directory (d:\JOE-Cafeteria-Automation-mobile\)
+Your Project Root Directory (d:\CSE-Cafeteria-Automation-mobile\)
 │
 ├── 📋 DELIVERABLES_SUMMARY.md           ← YOU ARE HERE (Overview)
 ├── 📋 DOCUMENTATION_INDEX.md             ← START HERE (Navigation)
@@ -429,7 +429,7 @@ Open DOCUMENTATION_INDEX.md and begin. Everything you need is there.
 All 6 documents are located in your project root:
 
 ```
-d:\JOE-Cafeteria-Automation-mobile\
+d:\CSE-Cafeteria-Automation-mobile\
 
 ├── DELIVERABLES_SUMMARY.md           ← Overview (this file)
 ├── DOCUMENTATION_INDEX.md            ← Start here

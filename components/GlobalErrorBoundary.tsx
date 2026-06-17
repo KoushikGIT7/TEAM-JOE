@@ -31,20 +31,20 @@ class GlobalErrorBoundary extends Component<Props, State> {
     console.error('🔥 [REACT-CRASH]:', error, errorInfo);
 
     // [STABILITY-GUARD] Detect and prevent reload loops
-    const lastReload = parseInt(localStorage.getItem('joe_last_reload') || '0');
+    const lastReload = parseInt(localStorage.getItem('cse_last_reload') || '0');
     const now = Date.now();
-    const reloadCount = parseInt(localStorage.getItem('joe_reload_count') || '0');
+    const reloadCount = parseInt(localStorage.getItem('cse_reload_count') || '0');
     
     if (now - lastReload < 10000) {
       if (reloadCount > 2) {
         console.error('🛑 [CRITICAL]: Infinite reload loop detected. Stopping auto-recovery.');
         return;
       }
-      localStorage.setItem('joe_reload_count', (reloadCount + 1).toString());
+      localStorage.setItem('cse_reload_count', (reloadCount + 1).toString());
     } else {
-      localStorage.setItem('joe_reload_count', '1');
+      localStorage.setItem('cse_reload_count', '1');
     }
-    localStorage.setItem('joe_last_reload', now.toString());
+    localStorage.setItem('cse_last_reload', now.toString());
 
     // Auto-recover after 4s in production so users aren't permanently blocked
     const isDev = import.meta.env?.DEV || window.location.hostname === 'localhost';

@@ -7,7 +7,7 @@ import { signInWithGoogle, signInAsGuest, signOut } from './services/auth';
 import { requestNotificationPermission } from './services/notificationService';
 import { UserProfile } from './types';
 import { Bell, X, Compass, Bolt, Trophy, ShoppingBag, Vault as VaultIcon, User } from 'lucide-react';
-import { joeSounds } from './utils/audio';
+import { cseSounds } from './utils/audio';
 import { useMaintenanceWorker } from './hooks/useMaintenanceWorker';
 import { initializeOneSignal, loginUser, logoutUser } from './services/onesignal';
 import { triggerOneSignalWebhook } from './services/onesignal-webhook';
@@ -27,18 +27,17 @@ import AssistantSupervisorView from './views/Staff/AssistantSupervisorView';
 import FoodLoader from './components/Common/FoodLoader';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 
-// Lazy load student views to improve initial bundle size
-const HomeView    = React.lazy(() => import('./views/Student/HomeView'));
-const PaymentView = React.lazy(() => import('./views/Student/PaymentView'));
-const OrdersView  = React.lazy(() => import('./views/Student/OrdersView'));
-const QRView      = React.lazy(() => import('./views/Student/QRView'));
-const WalletView  = React.lazy(() => import('./views/Student/WalletView'));
-const AddMoneyView = React.lazy(() => import('./views/Student/AddMoneyView'));
-const QuestsView   = React.lazy(() => import('./views/Student/QuestsView').then(m => ({ default: m.QuestsView })));
-const RankView     = React.lazy(() => import('./views/Student/RankView').then(m => ({ default: m.RankView })));
-const StoreView    = React.lazy(() => import('./views/Student/StoreView').then(m => ({ default: m.StoreView })));
-const VaultView    = React.lazy(() => import('./views/Student/VaultView').then(m => ({ default: m.VaultView })));
-const ProfileView  = React.lazy(() => import('./views/Student/ProfileView').then(m => ({ default: m.ProfileView })));
+import HomeView from './views/Student/HomeView';
+import PaymentView from './views/Student/PaymentView';
+import OrdersView from './views/Student/OrdersView';
+import QRView from './views/Student/QRView';
+import WalletView from './views/Student/WalletView';
+import AddMoneyView from './views/Student/AddMoneyView';
+import { QuestsView } from './views/Student/QuestsView';
+import { RankView } from './views/Student/RankView';
+import { StoreView } from './views/Student/StoreView';
+import { VaultView } from './views/Student/VaultView';
+import { ProfileView } from './views/Student/ProfileView';
 
 import { PrivacyPolicy, RefundPolicy, TermsAndConditions, ContactUs, ComplianceView } from './views/Student/ComplianceView';
 
@@ -58,7 +57,7 @@ const AppContent: React.FC = () => {
   
   const [guestProfile, setGuestProfile] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem('joe_guest_profile');
+      const saved = localStorage.getItem('cse_guest_profile');
       return saved ? JSON.parse(saved) : null;
     } catch { return null; }
   });
@@ -74,7 +73,7 @@ const AppContent: React.FC = () => {
   // 🔊 [SONIC-UNLOCK] Silently wake AudioContext on first interaction (no audible sound)
   useEffect(() => {
     const unlock = () => {
-      joeSounds.init(); // Wake the engine without playing anything
+      cseSounds.init(); // Wake the engine without playing anything
       window.removeEventListener('click', unlock);
       window.removeEventListener('touchstart', unlock);
     };
@@ -103,7 +102,7 @@ const AppContent: React.FC = () => {
   // Low Balance Push Notification Trigger
   useEffect(() => {
     if (profile && (profile.role === 'STUDENT' || profile.role === 'GUEST') && profile.walletBalance !== undefined && profile.walletBalance < 30) {
-      const lastSentStr = localStorage.getItem(`joe_low_balance_push_${profile.uid}`);
+      const lastSentStr = localStorage.getItem(`cse_low_balance_push_${profile.uid}`);
       const lastSent = lastSentStr ? parseInt(lastSentStr, 10) : 0;
       const now = Date.now();
       const twentyFourHours = 24 * 60 * 60 * 1000;
@@ -114,14 +113,14 @@ const AppContent: React.FC = () => {
           "⚠️ Low Balance Warning",
           `Your wallet balance is ₹${profile.walletBalance}. Recharge soon!`
         );
-        localStorage.setItem(`joe_low_balance_push_${profile.uid}`, now.toString());
+        localStorage.setItem(`cse_low_balance_push_${profile.uid}`, now.toString());
       }
     }
   }, [profile?.walletBalance, profile?.uid]);
 
   // Restore Guest identity from Long-term Storage
   useEffect(() => {
-    const savedGuest = localStorage.getItem('joe_guest_profile');
+    const savedGuest = localStorage.getItem('cse_guest_profile');
     if (savedGuest && !authProfile) {
         try {
             setGuestProfile(JSON.parse(savedGuest));
@@ -154,12 +153,12 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (authUser) {
-      const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+      const promptStatus = localStorage.getItem('cse_onesignal_prompt_status');
       if (!promptStatus) {
         // First time this device/browser has seen the permission prompt
         setTimeout(() => {
           requestNotificationPermission();
-          localStorage.setItem('joe_onesignal_prompt_status', 'shown');
+          localStorage.setItem('cse_onesignal_prompt_status', 'shown');
         }, 3000); // 3s delay — let the student settle into the app first
       } else {
         // Already prompted before — just register the token silently (no UI popup)
@@ -202,7 +201,7 @@ const AppContent: React.FC = () => {
 
   const onStaffLoginSuccess = (p: UserProfile) => {
     setGuestProfile(null);
-    localStorage.removeItem('joe_guest_profile');
+    localStorage.removeItem('cse_guest_profile');
     setView(getViewForRole(p.role));
     // Let App stabilize
     setTimeout(() => setIsAuthenticating(false), 500);
@@ -211,7 +210,7 @@ const AppContent: React.FC = () => {
   const handleGoogleLogin = async () => {
     if (googleSignInLoading) return;
     
-    joeSounds.init(); // Silent wake — no sound on sign-in
+    cseSounds.init(); // Silent wake — no sound on sign-in
     
     try {
       // Execute sign-in Promise synchronously before any React state updates.
@@ -224,11 +223,11 @@ const AppContent: React.FC = () => {
       setView(getViewForRole(newProfile.role));
       
       // Trigger push consent after successful login (only once per device)
-      const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+      const promptStatus = localStorage.getItem('cse_onesignal_prompt_status');
       if (!promptStatus) {
         setTimeout(() => {
           requestNotificationPermission();
-          localStorage.setItem('joe_onesignal_prompt_status', 'shown');
+          localStorage.setItem('cse_onesignal_prompt_status', 'shown');
         }, 2000);
       }
     } catch (error: any) {
@@ -245,11 +244,11 @@ const AppContent: React.FC = () => {
   const handleGuestLogin = async () => {
     if (guestLoading) return;
     setGuestLoading(true);
-    joeSounds.init(); // Silent wake — no sound on sign-in
+    cseSounds.init(); // Silent wake — no sound on sign-in
     try {
       const { profile: gProfile } = await signInAsGuest();
       setGuestProfile(gProfile);
-      localStorage.setItem('joe_guest_profile', JSON.stringify(gProfile));
+      localStorage.setItem('cse_guest_profile', JSON.stringify(gProfile));
       setStudentTab('HOME');
       setView('STUDENT_HOME');
     } catch (error) {
@@ -265,7 +264,7 @@ const AppContent: React.FC = () => {
       await signOut();
     } catch (_) { /* ignore */ }
     setGuestProfile(null);
-    localStorage.removeItem('joe_guest_profile');
+    localStorage.removeItem('cse_guest_profile');
     setView('WELCOME');
     setStudentTab('HOME');
     setActiveOrderId(null);
@@ -399,11 +398,11 @@ const AppContent: React.FC = () => {
                         setActiveOrderId(id);
                         setStudentTab('TRACKING');
                         // Trigger push consent after first order (only once per device)
-                        const promptStatus = localStorage.getItem('joe_onesignal_prompt_status');
+                        const promptStatus = localStorage.getItem('cse_onesignal_prompt_status');
                         if (!promptStatus) {
                           setTimeout(() => {
                             requestNotificationPermission();
-                            localStorage.setItem('joe_onesignal_prompt_status', 'shown');
+                            localStorage.setItem('cse_onesignal_prompt_status', 'shown');
                           }, 2000);
                         }
                       }}
@@ -455,9 +454,6 @@ const AppContent: React.FC = () => {
             <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50 bg-[#121824]/90 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-2 py-3 pb-[env(safe-area-inset-bottom,16px)] shadow-3xl rounded-t-3xl">
               {[
                 { tab: 'HOME', label: 'Feed', icon: Compass },
-                { tab: 'QUESTS', label: 'Quests', icon: Bolt },
-                { tab: 'RANK', label: 'Rank', icon: Trophy },
-                { tab: 'STORE', label: 'Store', icon: ShoppingBag },
                 { tab: 'VAULT', label: 'Vault', icon: VaultIcon, badge: activeOrderCount > 0 },
                 { tab: 'PROFILE', label: 'Profile', icon: User },
               ].map((item) => {
@@ -508,7 +504,7 @@ const AppContent: React.FC = () => {
 
             {/* Text */}
             <div className="flex-1 min-w-0">
-              <span className="text-[9px] font-black uppercase tracking-widest text-gray-300 block leading-none mb-0.5">JOE Pulse</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-gray-300 block leading-none mb-0.5">CSE Pulse</span>
               <p className="text-[11px] font-semibold text-gray-700 leading-tight truncate">{latestPulse.text}</p>
             </div>
 

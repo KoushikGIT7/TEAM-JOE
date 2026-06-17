@@ -100,7 +100,7 @@ function NavigationWrapper() {
                 CAMPUS INTAKE ECOSYSTEM
               </span>
               <h1 className="font-display font-extrabold text-[#f4f4f5] text-sm leading-none mt-1">
-                JOE Staff Cockpit
+                CSE Staff Cockpit
               </h1>
             </div>
           </div>

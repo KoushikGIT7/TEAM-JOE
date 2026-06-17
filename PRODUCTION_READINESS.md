@@ -43,7 +43,7 @@
    - ✅ All reports display correctly
 
 **Check Firebase Console:**
-- https://console.firebase.google.com/project/joecafe-a7fff/firestore/indexes
+- https://console.firebase.google.com/project/csecafe-a7fff/firestore/indexes
 - All indexes should show **"Enabled"** status
 
 ---
@@ -53,7 +53,7 @@
 **Run locally:**
 
 ```powershell
-cd "D:\Joe 3rd time proj"
+cd "D:\Cse 3rd time proj"
 firebase emulators:start
 ```
 

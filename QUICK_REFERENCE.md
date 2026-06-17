@@ -460,13 +460,13 @@ socket.emit('notification:mark-read', { notificationId })
 npm run build
 
 # 2. Create Docker image
-docker build -t joe-backend:latest .
+docker build -t cse-backend:latest .
 
 # 3. Run locally
-docker run -p 5000:5000 joe-backend
+docker run -p 5000:5000 cse-backend
 
 # 4. Push to cloud
-docker push your-registry/joe-backend:latest
+docker push your-registry/cse-backend:latest
 
 # 5. Deploy
 kubectl apply -f deployment.yaml  # or your method

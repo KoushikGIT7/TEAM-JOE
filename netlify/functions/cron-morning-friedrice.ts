@@ -10,15 +10,15 @@ interface NotificationCopy {
 const slotCopyMap: Record<number, NotificationCopy> = {
   0: { // 10:30 AM IST (5:00 UTC)
     title: "🥢 Fried Rice Pre-orders are OPEN!",
-    body: "Class finishing at 12:05 PM? Pre-order your hot Fried Rice now using JOE coins to ensure it is ready when you walk in!"
+    body: "Class finishing at 12:05 PM? Pre-order your hot Fried Rice now using CSE coins to ensure it is ready when you walk in!"
   },
   1: { // 10:45 AM IST (5:15 UTC)
     title: "⚡ Beat the 12:05 PM Rush!",
-    body: "Lock in your lunch order early! Pre-order your favorite wok-tossed Fried Rice using your JOE balance now."
+    body: "Lock in your lunch order early! Pre-order your favorite wok-tossed Fried Rice using your CSE balance now."
   },
   2: { // 11:00 AM IST (5:30 UTC)
     title: "🔥 The Woks are Heating Up!",
-    body: "The kitchen is prepping the lunch batch. Tap to pre-order your steaming hot Fried Rice using JOE coins."
+    body: "The kitchen is prepping the lunch batch. Tap to pre-order your steaming hot Fried Rice using CSE coins."
   },
   3: { // 11:15 AM IST (5:45 UTC)
     title: "⚠️ Cafeteria Lines are Filling Up!",
@@ -26,11 +26,11 @@ const slotCopyMap: Record<number, NotificationCopy> = {
   },
   4: { // 11:30 AM IST (6:00 UTC)
     title: "⏱️ Only 30 Minutes Left!",
-    body: "Don't miss the 12:05 PM lunch batch. Pre-order your delicious Fried Rice plate using JOE coins right now!"
+    body: "Don't miss the 12:05 PM lunch batch. Pre-order your delicious Fried Rice plate using CSE coins right now!"
   },
   5: { // 11:45 AM IST (6:15 UTC)
     title: "🔔 Last Call for 12:05 PM Servings!",
-    body: "Pre-orders are closing soon! Grab your hot, fresh Fried Rice using your JOE balance to have it ready for lunch."
+    body: "Pre-orders are closing soon! Grab your hot, fresh Fried Rice using your CSE balance to have it ready for lunch."
   },
   6: { // 12:00 PM IST (6:30 UTC)
     title: "🚀 5 Minutes to Lunch!",

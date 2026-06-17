@@ -1,4 +1,4 @@
-# JOE — Current Problems Being Solved
+# CSE — Current Problems Being Solved
 ## A First-Principles Audit of Indian College Cafeteria Operations
 
 ---
@@ -24,7 +24,7 @@ Every weekday, at approximately **8:30 AM and 12:30 PM**, a predictable crisis u
 - Students arriving late from class often go hungry or skip meals
 - Academic performance correlation: hungry students = distracted students
 
-**JOE's solution**: Pre-order from the classroom. Walk to counter only when food is ready. Wait = 0.
+**CSE's solution**: Pre-order from the classroom. Walk to counter only when food is ready. Wait = 0.
 
 ---
 
@@ -41,7 +41,7 @@ Every weekday, at approximately **8:30 AM and 12:30 PM**, a predictable crisis u
 
 **Estimated leakage**: Conservative estimate = **₹500–2,000/day** for a 600-student cafeteria.
 
-**JOE's solution**:
+**CSE's solution**:
 - HMAC-SHA256 cryptographic QR → unforgeable, single-use
 - All transactions logged in Firestore with timestamps + staff IDs
 - Cash approval requires cashier digital action (auditable)
@@ -62,7 +62,7 @@ Every weekday, at approximately **8:30 AM and 12:30 PM**, a predictable crisis u
 
 **Estimated food waste**: **15–25% of daily preparation** in kitchens without demand signals.
 
-**JOE's solution**:
+**CSE's solution**:
 - Real-time FIFO batch queue on kitchen console
 - Station-based routing (Dosa counter ≠ Main kitchen)
 - Cook sees exact items, quantities, and order sequence
@@ -74,7 +74,7 @@ Every weekday, at approximately **8:30 AM and 12:30 PM**, a predictable crisis u
 
 **What happens**: Cafeteria managers make decisions based on intuition, not data.
 
-Questions they cannot answer without JOE:
+Questions they cannot answer without CSE:
 - What is the most ordered item this week?
 - What is peak demand by hour?
 - Which items have the highest profit margin?
@@ -83,7 +83,7 @@ Questions they cannot answer without JOE:
 
 **Impact**: Inability to optimize menu, staffing, or purchasing decisions.
 
-**JOE's solution**: Real-time dashboard with daily P&L, item-wise revenue, order counts, and exportable CSV reports.
+**CSE's solution**: Real-time dashboard with daily P&L, item-wise revenue, order counts, and exportable CSV reports.
 
 ---
 
@@ -97,7 +97,7 @@ Questions they cannot answer without JOE:
 | Partial order served | Student returns, queue disrupts |
 | Server can't verify if paid | Either turns student away or under-charges |
 
-**JOE's solution**:
+**CSE's solution**:
 - QR scan pulls exact order manifest instantly
 - Server console shows food image + name + quantity per item
 - SERVE / REJECT per item with full audit trail
@@ -111,7 +111,7 @@ Questions they cannot answer without JOE:
 - Stand at the counter waiting (same as old queue)
 - Wander off and miss their pickup window
 
-**JOE's solution**:
+**CSE's solution**:
 - Push notification via OneSignal + FCM the instant food is marked READY
 - In-app real-time status tracker (order tracking like Swiggy, but for canteen)
 - Motivational countdown messages shown during prep wait
@@ -120,7 +120,7 @@ Questions they cannot answer without JOE:
 
 ## Summary: Problems vs Solutions
 
-| # | Problem | Manual System Cost | JOE Eliminates |
+| # | Problem | Manual System Cost | CSE Eliminates |
 |---|---------|-------------------|----------------|
 | 1 | Queue wait | 15–25 min/student/day | Pre-order, zero wait |
 | 2 | Fraud & leakage | ₹500–2,000/day | Cryptographic QR, audit trail |
@@ -137,6 +137,6 @@ Existing solutions (Swiggy for Business, ET campus meals) require:
 - Dedicated hardware (tablets, scanners, printers)
 - Internet-scale delivery logistics not applicable to on-campus serving
 - High monthly SaaS fees out of reach for college cafeterias
-- English-only interfaces, no bilingual support (Kannada UI embedded in JOE)
+- English-only interfaces, no bilingual support (Kannada UI embedded in CSE)
 
-**JOE is zero-hardware** (uses staff's existing smartphones), zero-delivery-logistics, and priced for institutional budgets.
+**CSE is zero-hardware** (uses staff's existing smartphones), zero-delivery-logistics, and priced for institutional budgets.

@@ -1,6 +1,6 @@
-# 🚀 JOE Cafeteria Automation: AI Prompt Engineer Guide
+# 🚀 CSE Cafeteria Automation: AI Prompt Engineer Guide
 
-Welcome to the team! You are taking over a highly optimized, production-ready React codebase for the **Zero-Wait JOE Cafeteria System**. 
+Welcome to the team! You are taking over a highly optimized, production-ready React codebase for the **Zero-Wait CSE Cafeteria System**. 
 
 This guide provides exactly what you need to safely upgrade and extend the system using AI programming assistants, without breaking the foundational architecture or the core logic.
 
@@ -36,7 +36,7 @@ Before you begin executing tasks, **always copy and paste the prompt below** to 
 
 ### 📋 Copy-Paste This Predefined Prompt to Your AI First:
 
-> "You are an expert AI Coding Assistant deployed on the JOE Cafeteria Automation project. 
+> "You are an expert AI Coding Assistant deployed on the CSE Cafeteria Automation project. 
 > 
 > **Context:**
 > - Tech Stack: React 18 (TypeScript), Vite, TailwindCSS, Firebase v12 (Firestore).

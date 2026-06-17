@@ -19,20 +19,24 @@ interface QRViewProps {
   onViewOrders?: () => void;
 }
 
-const ITEM_COLOR_MAP: Record<string, { color: string; label: string; emoji: string }> = {
-  'BKT01': { color: '#94A3B8', label: 'IDLI (2PCS)',   emoji: '⚪' },
-  'BKT03': { color: '#F97316', label: 'MASALA DOSA',  emoji: '🟠' },
-  'BKT06': { color: '#D946EF', label: 'ONION DOSA',   emoji: '🟣' },
-  'BKT04': { color: '#22C55E', label: 'SET DOSA',     emoji: '🟢' },
-  'BKT10': { color: '#F43F5E', label: 'BREAD OMELETTE', emoji: '🔴' },
-  'BKT11': { color: '#b76dff', label: '2 IDLI + 2 MIRCHI', emoji: '🍽️' },
-  'LCH01': { color: '#EAB308', label: 'PLATE MEAL',   emoji: '🟡' },
-  'BEV01': { color: '#3B82F6', label: 'CHAI / TEA',   emoji: '🔵' },
-  'BEV02': { color: '#3B82F6', label: 'COFFEE',       emoji: '🔵' },
+const DEFAULT_COLOR = { color: '#8B5CF6', label: 'ITEM', emoji: '🟢' };
+
+const COLORS = [
+  '#94A3B8', '#EAB308', '#22C55E', '#F59E0B', '#EF4444', 
+  '#8B5CF6', '#EC4899', '#3B82F6', '#14B8A6', '#F97316'
+];
+
+const getHashColor = (str: string) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return COLORS[Math.abs(hash) % COLORS.length];
 };
 
-const DEFAULT_COLOR = { color: '#8B5CF6', label: 'ITEM', emoji: '⭐' };
-const getItemConfig = (itemId: string) => ITEM_COLOR_MAP[itemId] || DEFAULT_COLOR;
+const getItemConfig = (itemId: string, itemName?: string) => {
+  // Use deterministic hash based on item name so colors remain fixed even if IDs change
+  const key = itemName ? itemName.toLowerCase().trim() : itemId;
+  return { color: getHashColor(key), label: itemName || 'ITEM', emoji: '🟢' };
+};
 
 const getItemBadge = (item: CartItem): 'SERVED' | 'READY' | 'COOKING' | 'QUEUED' => {
   if (item.status === 'SERVED' || item.status === 'COMPLETED') return 'SERVED';
@@ -46,7 +50,7 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
 
   const [order, setOrder] = useState<Order | null>(() => {
     try {
-      const opt = sessionStorage.getItem('joe_optimistic_order');
+      const opt = sessionStorage.getItem('cse_optimistic_order');
       if (opt) {
         const parsed = JSON.parse(opt);
         if (parsed.id === orderId) return parsed;
@@ -57,7 +61,7 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
 
   const [liveItems, setLiveItems] = useState<any[]>(() => {
     try {
-      const opt = sessionStorage.getItem('joe_optimistic_order');
+      const opt = sessionStorage.getItem('cse_optimistic_order');
       if (opt) {
         const parsed = JSON.parse(opt);
         if (parsed.id === orderId) return parsed.items || [];
@@ -155,7 +159,7 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
   const activeItem = items[activeItemIdx] || items[0];
   if (!activeItem) return null;
 
-  const itemConfig = getItemConfig(activeItem.id);
+  const itemConfig = getItemConfig(activeItem.id, activeItem.name);
   const badge = getItemBadge(activeItem);
   const isAlreadyServed = activeItem.status === 'SERVED' || activeItem.status === 'COMPLETED';
   const isOrderPaid = order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'VERIFIED';
@@ -270,12 +274,26 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
             }}
           >
             
-            {/* Countdown seconds milliseconds ticker */}
-            <div className="flex justify-between items-center bg-surface-lowest/50 backdrop-blur-md border border-white/5 px-3 py-1 rounded-full z-10 w-full select-none">
-              <span className="font-mono text-[8px] font-black tracking-widest text-brand-purple-light">
-                {tickerTime}
-              </span>
-              <RefreshCw className="w-2.5 h-2.5 text-brand-purple animate-spin" />
+            {/* Header: Item Name, Emoji, Qty, Token */}
+            <div className="flex justify-between items-start w-full px-2 pt-1 pb-3 select-none">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{itemConfig.emoji}</span>
+                  <h2 className="font-display font-black text-white text-3xl tracking-tight uppercase" style={{ color: itemConfig.color }}>
+                    {activeItem.name.split(' ')[0]}
+                  </h2>
+                </div>
+                <div className="flex gap-3 mt-1 font-mono text-[10px] font-bold text-zinc-400">
+                  <span>QTY: {activeItem.remainingQty !== undefined ? activeItem.remainingQty : activeItem.quantity}</span>
+                  <span>ORD: {order.tokenNumber ? `#${order.tokenNumber}` : `#${order.id.slice(-4).toUpperCase()}`}</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center bg-surface-lowest/50 backdrop-blur-md border border-white/5 px-2 py-1 rounded-full z-10 shrink-0">
+                <span className="font-mono text-[8px] font-black tracking-widest text-brand-purple-light mr-1">
+                  {tickerTime}
+                </span>
+                <RefreshCw className="w-2.5 h-2.5 text-brand-purple animate-spin" />
+              </div>
             </div>
 
             {/* QR block or locker state */}
@@ -302,7 +320,8 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
                       <CheckCircle2 className="w-10 h-10 text-brand-green" />
                     </div>
                     <span className="font-display font-black text-slate-800 uppercase text-sm">
-                      Handover Complete!
+                      Handover Complete!<br/>
+                      <span className="text-xs text-slate-600">ఆహారం అందించబడింది!</span>
                     </span>
                     <span className="font-sans text-[10px] text-zinc-400 mt-1 leading-none">
                       Hope to see you soon
@@ -325,10 +344,10 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
                     </div>
                     <h4 className="font-display font-bold text-xs text-brand-purple-light uppercase text-center tracking-wider leading-relaxed">
                       {!isOrderPaid
-                        ? 'Payment Pending'
+                        ? <><span className="block">Payment Pending</span><span className="block text-[10px] mt-0.5 opacity-80">చెల్లింపు పెండింగ్‌లో ఉంది</span></>
                         : isDynamicOrder
-                          ? 'Being Prepared'
-                          : 'Preparing Your Food'}
+                          ? <><span className="block">Being Prepared</span><span className="block text-[10px] mt-0.5 opacity-80">ఆహారం తయారవుతోంది</span></>
+                          : <><span className="block">Preparing Your Food</span><span className="block text-[10px] mt-0.5 opacity-80">మీ ఆహారం సిద్ధమవుతోంది</span></>}
                     </h4>
                     <p className="font-sans text-[9px] text-zinc-400 max-w-[80%] text-center leading-normal mt-1.5">
                       {!isOrderPaid
@@ -391,7 +410,7 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
               </span>
             </div>
             <h3 className="font-display font-extrabold text-xs text-white truncate mt-1">
-              {activeItem.quantity}x {activeItem.name}
+              {activeItem.remainingQty !== undefined ? activeItem.remainingQty : activeItem.quantity}x {activeItem.name}
             </h3>
             <p className="font-sans text-[10px] text-on-surface-variant mt-0.5">
               Total price: ₹{(activeItem.price * activeItem.quantity).toFixed(2)}

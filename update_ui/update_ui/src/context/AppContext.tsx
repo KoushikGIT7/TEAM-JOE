@@ -76,7 +76,7 @@ export const INITIAL_REWARD_ITEMS: RewardItem[] = [
   {
     id: 'rew_3',
     name: 'Limited Edition Sticker',
-    description: 'Holographic finish, JOE Season 1 design.',
+    description: 'Holographic finish, CSE Season 1 design.',
     pointsCost: 200,
     image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAXAv4RhFKqxLSsvFLTdL_Xe4eIrMf4rfWEBnkKp55c7ECVBg98FJtWzYHHuMBs7AzWc6v1nqTaKfEabnq9lUuqPgb2p6wKEAVlfw0qM7OV6EdhxqKOyO8ySa8Ugutf-Ygl_9WxTdXbjbUYnEd81YPtkedESRu1mGqz2HFS-7IpwCc4BmuXzT_vWzBRG6zdmq4ApHmM7GJT271W3tCrKvck6FsJRclmRkc3OPWJBb08S5OSPJPUHpS8eJdCp4dz3qroa3fH3JcpcRk',
     badge: 'RARE',
@@ -183,54 +183,54 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // --- Portal & Routing Modes ---
   const [portalMode, setPortalModeState] = useState<PortalMode>(() => {
-    return (localStorage.getItem('joe_portal_mode') as PortalMode) || 'STUDENT';
+    return (localStorage.getItem('cse_portal_mode') as PortalMode) || 'STUDENT';
   });
   const [studentTab, setStudentTabState] = useState<'HOME' | 'ORDERS' | 'WALLET' | 'COMPLIANCE' | 'TRACKING' | 'QUESTS' | 'RANK' | 'STORE' | 'VAULT' | 'PROFILE'>('HOME');
   const [isStaffLoggedIn, setIsStaffLoggedInState] = useState<boolean>(() => {
-    return localStorage.getItem('joe_staff_logged_in') === 'true';
+    return localStorage.getItem('cse_staff_logged_in') === 'true';
   });
   const [staffRole, setStaffRoleState] = useState<StaffRole>(() => {
-    return (localStorage.getItem('joe_staff_role') as StaffRole) || 'CASHIER';
+    return (localStorage.getItem('cse_staff_role') as StaffRole) || 'CASHIER';
   });
 
   // --- Student Identity ---
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('joe_student_logged_in') === 'true';
+    return localStorage.getItem('cse_student_logged_in') === 'true';
   });
   const [isGuest, setIsGuest] = useState<boolean>(() => {
-    return localStorage.getItem('joe_student_is_guest') === 'true';
+    return localStorage.getItem('cse_student_is_guest') === 'true';
   });
   const [studentName, setStudentName] = useState<string>(() => {
-    return localStorage.getItem('joe_student_name') || 'Kabir Dev';
+    return localStorage.getItem('cse_student_name') || 'Kabir Dev';
   });
   const [studentEmail, setStudentEmail] = useState<string>(() => {
-    return localStorage.getItem('joe_student_email') || 'kabir.dev@gmail.com';
+    return localStorage.getItem('cse_student_email') || 'kabir.dev@gmail.com';
   });
   const [walletBalance, setWalletBalance] = useState<number>(() => {
-    const saved = localStorage.getItem('joe_student_wallet_balance');
+    const saved = localStorage.getItem('cse_student_wallet_balance');
     return saved ? parseFloat(saved) : 0.00; // default startup money
   });
 
   const [studentPoints, setStudentPoints] = useState<number>(() => {
-    const saved = localStorage.getItem('joe_student_points');
+    const saved = localStorage.getItem('cse_student_points');
     return saved ? parseInt(saved, 10) : 0;
   });
   const [studentXp, setStudentXp] = useState<number>(() => {
-    const saved = localStorage.getItem('joe_student_xp');
+    const saved = localStorage.getItem('cse_student_xp');
     return saved ? parseInt(saved, 10) : 0;
   });
   const [studentLevel, setStudentLevel] = useState<number>(() => {
-    const saved = localStorage.getItem('joe_student_level');
+    const saved = localStorage.getItem('cse_student_level');
     return saved ? parseInt(saved, 10) : 1;
   });
 
   const [magicBoxProgress, setMagicBoxProgress] = useState<number>(() => {
-    const saved = localStorage.getItem('joe_magic_box_progress');
+    const saved = localStorage.getItem('cse_magic_box_progress');
     return saved ? parseInt(saved, 10) : 1;
   });
 
   const [leaderboardUsers, setLeaderboardUsers] = useState<LeaderboardUser[]>(() => {
-    const saved = localStorage.getItem('joe_leaderboard_users');
+    const saved = localStorage.getItem('cse_leaderboard_users');
     if (saved) return JSON.parse(saved);
     return [
       { name: 'Leo V.', points: 4950, level: 24, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBTDPv7WdN2PKZubtsb3Ejet0BDK26s1iAp8ZLP-XJt8mS-KbVKuerZJskzgCq6h335sasf2d8tSeP3IIOqgpLtVWj_-L1XLdfH5DGDoBloID181ZKRiIs-alUugLUqfp2q3EF9s1ftpH6Yg_2s2lzfwDT-oOdpR0Q6wISHBOlnwhIJZQjkNmI2LV4_pxfqsVexvvOSsJMnsaaU_N-PK8iMpriHacDpVkJqtWai5u3BxUY-iAblELYmwR9t8QPSZypiV24-acKe2Zg', title: 'Chai Emperor', frequency: 54 },
@@ -243,17 +243,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ];
   });
   const [quests, setQuests] = useState<Quest[]>(() => {
-    const saved = localStorage.getItem('joe_student_quests');
+    const saved = localStorage.getItem('cse_student_quests');
     return saved ? JSON.parse(saved) : DEFAULT_QUESTS;
   });
   const [redeemedRewards, setRedeemedRewards] = useState<RedeemedReward[]>(() => {
-    const saved = localStorage.getItem('joe_redeemed_rewards');
+    const saved = localStorage.getItem('cse_redeemed_rewards');
     return saved ? JSON.parse(saved) : [];
   });
 
   // --- Core Catalogs & settings ---
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
-    const saved = localStorage.getItem('joe_menu_items');
+    const saved = localStorage.getItem('cse_menu_items');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -267,25 +267,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_MENU_ITEMS;
   });
   const [settings, setSettings] = useState<SystemSettings>(() => {
-    const saved = localStorage.getItem('joe_settings');
+    const saved = localStorage.getItem('cse_settings');
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
   });
 
   // --- Operational States ---
   const [cart, setCart] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('joe_cart');
+    const saved = localStorage.getItem('cse_cart');
     return saved ? JSON.parse(saved) : [];
   });
   const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('joe_orders');
+    const saved = localStorage.getItem('cse_orders');
     return saved ? JSON.parse(saved) : [];
   });
   const [rechargeRequests, setRechargeRequests] = useState<RechargeRequest[]>(() => {
-    const saved = localStorage.getItem('joe_recharge_requests');
+    const saved = localStorage.getItem('cse_recharge_requests');
     return saved ? JSON.parse(saved) : [];
   });
   const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>(() => {
-    const saved = localStorage.getItem('joe_wallet_transactions');
+    const saved = localStorage.getItem('cse_wallet_transactions');
     if (saved) return JSON.parse(saved);
     // Seed default transactions for beautiful initial ledger experience
     return [
@@ -309,37 +309,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [activeOrderTrackId, setActiveOrderTrackId] = useState<string | null>(() => {
-    return localStorage.getItem('joe_active_track_id');
+    return localStorage.getItem('cse_active_track_id');
   });
 
   // --- Synchronization & Side-effects ---
   useEffect(() => {
-    localStorage.setItem('joe_portal_mode', portalMode);
+    localStorage.setItem('cse_portal_mode', portalMode);
   }, [portalMode]);
 
   useEffect(() => {
-    localStorage.setItem('joe_staff_logged_in', String(isStaffLoggedIn));
-    localStorage.setItem('joe_staff_role', staffRole);
+    localStorage.setItem('cse_staff_logged_in', String(isStaffLoggedIn));
+    localStorage.setItem('cse_staff_role', staffRole);
   }, [isStaffLoggedIn, staffRole]);
 
   useEffect(() => {
-    localStorage.setItem('joe_student_logged_in', String(isLoggedIn));
-    localStorage.setItem('joe_student_is_guest', String(isGuest));
-    localStorage.setItem('joe_student_name', studentName);
-    localStorage.setItem('joe_student_email', studentEmail);
-    localStorage.setItem('joe_student_wallet_balance', walletBalance.toFixed(2));
+    localStorage.setItem('cse_student_logged_in', String(isLoggedIn));
+    localStorage.setItem('cse_student_is_guest', String(isGuest));
+    localStorage.setItem('cse_student_name', studentName);
+    localStorage.setItem('cse_student_email', studentEmail);
+    localStorage.setItem('cse_student_wallet_balance', walletBalance.toFixed(2));
   }, [isLoggedIn, isGuest, studentName, studentEmail, walletBalance]);
 
   useEffect(() => {
-    localStorage.setItem('joe_student_points', String(studentPoints));
+    localStorage.setItem('cse_student_points', String(studentPoints));
   }, [studentPoints]);
 
   useEffect(() => {
-    localStorage.setItem('joe_magic_box_progress', String(magicBoxProgress));
+    localStorage.setItem('cse_magic_box_progress', String(magicBoxProgress));
   }, [magicBoxProgress]);
 
   useEffect(() => {
-    localStorage.setItem('joe_leaderboard_users', JSON.stringify(leaderboardUsers));
+    localStorage.setItem('cse_leaderboard_users', JSON.stringify(leaderboardUsers));
   }, [leaderboardUsers]);
 
   // Synchronize dynamic leaderboard rankings with current student state recursively
@@ -367,50 +367,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [studentPoints, studentLevel, studentName, orders.length]);
 
   useEffect(() => {
-    localStorage.setItem('joe_student_xp', String(studentXp));
+    localStorage.setItem('cse_student_xp', String(studentXp));
   }, [studentXp]);
 
   useEffect(() => {
-    localStorage.setItem('joe_student_level', String(studentLevel));
+    localStorage.setItem('cse_student_level', String(studentLevel));
   }, [studentLevel]);
 
   useEffect(() => {
-    localStorage.setItem('joe_student_quests', JSON.stringify(quests));
+    localStorage.setItem('cse_student_quests', JSON.stringify(quests));
   }, [quests]);
 
   useEffect(() => {
-    localStorage.setItem('joe_redeemed_rewards', JSON.stringify(redeemedRewards));
+    localStorage.setItem('cse_redeemed_rewards', JSON.stringify(redeemedRewards));
   }, [redeemedRewards]);
 
   useEffect(() => {
-    localStorage.setItem('joe_menu_items', JSON.stringify(menuItems));
+    localStorage.setItem('cse_menu_items', JSON.stringify(menuItems));
   }, [menuItems]);
 
   useEffect(() => {
-    localStorage.setItem('joe_settings', JSON.stringify(settings));
+    localStorage.setItem('cse_settings', JSON.stringify(settings));
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem('joe_cart', JSON.stringify(cart));
+    localStorage.setItem('cse_cart', JSON.stringify(cart));
   }, [cart]);
 
   useEffect(() => {
-    localStorage.setItem('joe_orders', JSON.stringify(orders));
+    localStorage.setItem('cse_orders', JSON.stringify(orders));
   }, [orders]);
 
   useEffect(() => {
-    localStorage.setItem('joe_recharge_requests', JSON.stringify(rechargeRequests));
+    localStorage.setItem('cse_recharge_requests', JSON.stringify(rechargeRequests));
   }, [rechargeRequests]);
 
   useEffect(() => {
-    localStorage.setItem('joe_wallet_transactions', JSON.stringify(walletTransactions));
+    localStorage.setItem('cse_wallet_transactions', JSON.stringify(walletTransactions));
   }, [walletTransactions]);
 
   useEffect(() => {
     if (activeOrderTrackId) {
-      localStorage.setItem('joe_active_track_id', activeOrderTrackId);
+      localStorage.setItem('cse_active_track_id', activeOrderTrackId);
     } else {
-      localStorage.removeItem('joe_active_track_id');
+      localStorage.removeItem('cse_active_track_id');
     }
   }, [activeOrderTrackId]);
 
@@ -438,8 +438,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudentEmail(email);
     if (type === 'GOOGLE') {
       // Retain standard balance and points loaded from localStorage, or start at zero if fresh login
-      const savedBalance = localStorage.getItem('joe_student_wallet_balance');
-      const savedPoints = localStorage.getItem('joe_student_points');
+      const savedBalance = localStorage.getItem('cse_student_wallet_balance');
+      const savedPoints = localStorage.getItem('cse_student_points');
       setWalletBalance(savedBalance ? parseFloat(savedBalance) : 0.00);
       setStudentPoints(savedPoints ? parseInt(savedPoints, 10) : 0);
     } else {
@@ -901,18 +901,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const reseedAllData = () => {
-    localStorage.removeItem('joe_menu_items');
-    localStorage.removeItem('joe_settings');
-    localStorage.removeItem('joe_cart');
-    localStorage.removeItem('joe_orders');
-    localStorage.removeItem('joe_recharge_requests');
-    localStorage.removeItem('joe_wallet_transactions');
-    localStorage.removeItem('joe_active_track_id');
-    localStorage.removeItem('joe_student_points');
-    localStorage.removeItem('joe_student_xp');
-    localStorage.removeItem('joe_student_level');
-    localStorage.removeItem('joe_student_quests');
-    localStorage.removeItem('joe_redeemed_rewards');
+    localStorage.removeItem('cse_menu_items');
+    localStorage.removeItem('cse_settings');
+    localStorage.removeItem('cse_cart');
+    localStorage.removeItem('cse_orders');
+    localStorage.removeItem('cse_recharge_requests');
+    localStorage.removeItem('cse_wallet_transactions');
+    localStorage.removeItem('cse_active_track_id');
+    localStorage.removeItem('cse_student_points');
+    localStorage.removeItem('cse_student_xp');
+    localStorage.removeItem('cse_student_level');
+    localStorage.removeItem('cse_student_quests');
+    localStorage.removeItem('cse_redeemed_rewards');
     
     setPortalModeState('STUDENT');
     setStudentTabState('HOME');

@@ -43,13 +43,13 @@ const db = getFirestore(app);
 
 const staffUsers = [
   {
-    email: 'cashier@joe.com',
+    email: 'cashier@cse.com',
     password: 'cashier123',
     name: 'Cashier Node',
     role: 'cashier'
   },
   {
-    email: 'server@joe.com',
+    email: 'server@cse.com',
     password: 'server123',
     name: 'Server Node',
     role: 'server'
@@ -182,8 +182,8 @@ async function resetStaffUsers() {
   
   console.log('\n✅ Staff user reset complete!');
   console.log('\n📝 Login credentials:');
-  console.log('  - cashier@joe.com / cashier123');
-  console.log('  - server@joe.com / server123');
+  console.log('  - cashier@cse.com / cashier123');
+  console.log('  - server@cse.com / server123');
   console.log('\n⚠️  IMPORTANT: Update firebaseConfig in this script with your actual Firebase config!');
 }
 

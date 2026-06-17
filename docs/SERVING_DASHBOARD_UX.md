@@ -8,7 +8,7 @@ This document describes the **scanner-first serving dashboard** layout, interact
 
 **Goal:** Scanner always in context; one-handed use; minimal chrome.
 
-- **Header:** Single row, compact. Logo/name (e.g. “JOE”), sync indicator, time (24h), Kitchen, Logout. Touch targets ≥ 44px. Time in tabular-nums for no layout shift.
+- **Header:** Single row, compact. Logo/name (e.g. “CSE”), sync indicator, time (24h), Kitchen, Logout. Touch targets ≥ 44px. Time in tabular-nums for no layout shift.
 - **Primary area (Ready to serve):** Full-width, top of scroll. “Scan active” pill so staff know the hardware scanner is listening. Empty state: icon + “Scan QR to start” + “Items appear here after scan.”
 - **Order cards:** Order # in a dark bar, then one row per item: thumbnail, name, ordered/served/left, **Serve** button. Serve button: full-width on mobile, min-height 48px, “Serve” label (not “SERVING...” only; show spinner + “Serving” when loading).
 - **Secondary area (Pending):** Below Ready, or behind a tab/accordion on very small screens. Same card pattern; amber theme.
@@ -149,7 +149,7 @@ This document describes the **scanner-first serving dashboard** layout, interact
 │                    MAIN LAYOUT                           │
 │  ┌─────────────┐  ┌─────────────────────────────────┐  │
 │  │ Header      │  │ Ready to serve  │  Pending       │  │
-│  │ JOE · time  │  │ [Scan active]   │  Search + list │  │
+│  │ CSE · time  │  │ [Scan active]   │  Search + list │  │
 │  └─────────────┘  │ Order cards     │                │  │
 │                   │ [Serve] [Serve] │                │  │
 │                   └─────────────────────────────────┘  │

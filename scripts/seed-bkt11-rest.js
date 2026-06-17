@@ -1,13 +1,13 @@
 // Seeding script for BKT11 menu item via Firebase REST API
 const apiKey = "AIzaSyBRzOIMBTExHkfM92EMNfCodh63t54OKSw";
-const projectId = "joecafe-a7fff";
+const projectId = "csecafe-a7fff";
 
 async function run() {
   console.log("🚀 Initializing BKT11 Firestore Seeder...");
   
   const credentials = [
-    { email: "admin@joe.com", password: "admin123" },
-    { email: "admin@joecafe.com", password: "joeadmin2026" }
+    { email: "admin@cse.com", password: "admin123" },
+    { email: "admin@csecafe.com", password: "cseadmin2026" }
   ];
 
   let idToken = null;

@@ -1,6 +1,6 @@
 {
-  "name": "joe-cafe-functions",
-  "description": "JOE Cafe Firebase Cloud Functions — Notification Engine",
+  "name": "cse-cafe-functions",
+  "description": "CSE Cafe Firebase Cloud Functions — Notification Engine",
   "scripts": {
     "build": "tsc",
     "serve": "npm run build && firebase emulators:start --only functions",

@@ -2,7 +2,7 @@
 import os
 import re
 
-filepath = r'd:\JOE-Cafeteria-Automation-mobile\services\firestore-db.ts'
+filepath = r'd:\CSE-Cafeteria-Automation-mobile\services\firestore-db.ts'
 
 with open(filepath, 'r', encoding='utf-8') as f:
     text = f.read()

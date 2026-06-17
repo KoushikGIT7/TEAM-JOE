@@ -3,7 +3,7 @@
 ## ⚡ Fastest Method - Copy/Paste into Browser Console
 
 ### Step 1: Open Your App
-Open your JOE app in browser (localhost:5174 or your deployed URL)
+Open your CSE app in browser (localhost:5174 or your deployed URL)
 
 ### Step 2: Open Browser Console
 - Press `F12` OR
@@ -24,9 +24,9 @@ Copy the **ENTIRE** content from `CONSOLE_SETUP.js` file and paste into console,
     const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
     
     const users = [
-      { email: 'admin@joe.com', password: 'admin123', name: 'JOE Admin', role: 'admin' },
-      { email: 'cashier@joe.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
-      { email: 'server@joe.com', password: 'server123', name: 'Server Node', role: 'server' }
+      { email: 'admin@cse.com', password: 'admin123', name: 'CSE Admin', role: 'admin' },
+      { email: 'cashier@cse.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
+      { email: 'server@cse.com', password: 'server123', name: 'Server Node', role: 'server' }
     ];
     
     for (const userData of users) {
@@ -58,9 +58,9 @@ Copy the **ENTIRE** content from `CONSOLE_SETUP.js` file and paste into console,
     
     console.log('✅ Setup complete!');
     console.log('You can now login with:');
-    console.log('  📧 admin@joe.com / 🔑 admin123');
-    console.log('  📧 cashier@joe.com / 🔑 cashier123');
-    console.log('  📧 server@joe.com / 🔑 server123');
+    console.log('  📧 admin@cse.com / 🔑 admin123');
+    console.log('  📧 cashier@cse.com / 🔑 cashier123');
+    console.log('  📧 server@cse.com / 🔑 server123');
     
   } catch (error) {
     console.error('❌ Setup failed:', error);
@@ -73,21 +73,21 @@ Copy the **ENTIRE** content from `CONSOLE_SETUP.js` file and paste into console,
 
 You should see:
 ```
-✅ Created auth user: admin@joe.com
-✅ Created Firestore profile for admin@joe.com (role: admin)
-✅ Created auth user: cashier@joe.com
-✅ Created Firestore profile for cashier@joe.com (role: cashier)
-✅ Created auth user: server@joe.com
-✅ Created Firestore profile for server@joe.com (role: server)
+✅ Created auth user: admin@cse.com
+✅ Created Firestore profile for admin@cse.com (role: admin)
+✅ Created auth user: cashier@cse.com
+✅ Created Firestore profile for cashier@cse.com (role: cashier)
+✅ Created auth user: server@cse.com
+✅ Created Firestore profile for server@cse.com (role: server)
 ✅ Setup complete!
 ```
 
 ### Step 5: Test Login
 
 Now try logging in with:
-- **Email**: `admin@joe.com` | **Password**: `admin123`
-- **Email**: `cashier@joe.com` | **Password**: `cashier123`
-- **Email**: `server@joe.com` | **Password**: `server123`
+- **Email**: `admin@cse.com` | **Password**: `admin123`
+- **Email**: `cashier@cse.com` | **Password**: `cashier123`
+- **Email**: `server@cse.com` | **Password**: `server123`
 
 ## ✅ Done!
 

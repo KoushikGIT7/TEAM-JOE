@@ -15,23 +15,23 @@ interface StaffLoginViewProps {
 export const StaffLoginView: React.FC<StaffLoginViewProps> = ({ onBackToStudentPortal }) => {
   const { setPortalMode, setStaffRole, setIsStaffLoggedIn } = useApp();
 
-  const [email, setEmail] = useState('cashier@joe.com');
+  const [email, setEmail] = useState('cashier@cse.com');
   const [password, setPassword] = useState('123456');
   const [errorMessage, setErrorMessage] = useState('');
 
   // Pre-seed user credentials list for beautiful testing experience in iframe
   const PRESET_CREDS = [
-    { label: '🎫 Cashier (Verifications)', email: 'cashier@joe.com', role: 'CASHIER' as StaffRole },
-    { label: '🍳 Kitchen Cook (Orders Terminal)', email: 'cook@joe.com', role: 'COOK' as StaffRole },
-    { label: '📋 Supervisor (Demand tracking)', email: 'supervisor@joe.com', role: 'SUPERVISOR' as StaffRole },
-    { label: '🤳 Counter Server (Scanner HUD)', email: 'server@joe.com', role: 'SERVER' as StaffRole },
-    { label: '👑 Root Admin (System Controller)', email: 'admin@joe.com', role: 'ADMIN' as StaffRole },
+    { label: '🎫 Cashier (Verifications)', email: 'cashier@cse.com', role: 'CASHIER' as StaffRole },
+    { label: '🍳 Kitchen Cook (Orders Terminal)', email: 'cook@cse.com', role: 'COOK' as StaffRole },
+    { label: '📋 Supervisor (Demand tracking)', email: 'supervisor@cse.com', role: 'SUPERVISOR' as StaffRole },
+    { label: '🤳 Counter Server (Scanner HUD)', email: 'server@cse.com', role: 'SERVER' as StaffRole },
+    { label: '👑 Root Admin (System Controller)', email: 'admin@cse.com', role: 'ADMIN' as StaffRole },
   ];
 
   const handleStaffLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email.includes('@joe.com') && email !== 'admin@joe.com') {
+    if (!email.includes('@cse.com') && email !== 'admin@cse.com') {
       setErrorMessage('Access restricted: Only authorized institutional email addresses are permitted.');
       return;
     }
@@ -105,7 +105,7 @@ export const StaffLoginView: React.FC<StaffLoginViewProps> = ({ onBackToStudentP
                 type="email"
                 required
                 className="w-full h-11 bg-surface-mid/80 border border-white/5 rounded-xl pl-9 pr-4 text-xs text-on-surface font-mono focus:outline-none focus:ring-1 focus:ring-brand-purple"
-                placeholder="cashier@joe.com"
+                placeholder="cashier@cse.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />

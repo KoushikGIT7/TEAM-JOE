@@ -154,7 +154,7 @@ export const CanteenMonitorView: React.FC = () => {
           } else if (randomEv.type === 'TIER_UP') {
             phrase = `${randomName} has just leveled up to a premium canteen tier with increased points!`;
           } else {
-            phrase = `Hype alert! ${randomName} just earned a cool reward in the Joe Canteen Loyalty program!`;
+            phrase = `Hype alert! ${randomName} just earned a cool reward in the Cse Canteen Loyalty program!`;
           }
           const utterance = new SpeechSynthesisUtterance(phrase);
           utterance.rate = 1.0;
@@ -182,7 +182,7 @@ export const CanteenMonitorView: React.FC = () => {
   // Rolling promotional taglines for bottom ticker banner
   const tickerStories = [
     "🔥 DECA-DRIVE SYSTEM: Get 50% OFF automatically on every 10th order you authorize! High loyalty, maximum savings!",
-    "🚀 BYPASS CELL CHAOS: Setup your pre-funded secure JOE-Wallet. Order from your classroom and simply collect your food!",
+    "🚀 BYPASS CELL CHAOS: Setup your pre-funded secure CSE-Wallet. Order from your classroom and simply collect your food!",
     "⭐ THE POINT MULTIPLIER: Gold Gastronomer tier gives you a 1.5x points multiplier + 10% Flat off absolutely everything!",
     "🎁 UNLOCK THE LOOT CHEST: Charge your crystal energy node with 3 order checkouts to earn random custom coupon spins!",
     "🏆 BRAGGING RIGHTS: Earn XP, rise through the Campus Elite Leaderboards, and get praised on the live cafeteria widescreen!"
@@ -208,7 +208,7 @@ export const CanteenMonitorView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="font-display font-black text-xl lg:text-2xl tracking-wider uppercase text-white">
-              JOE'S REWARDS STATION
+              CSE'S REWARDS STATION
             </h1>
             <span className="text-[9px] bg-brand-purple/20 text-brand-purple-light border border-brand-purple/20 px-2.5 py-0.5 rounded-full font-mono uppercase font-black tracking-widest animate-pulse">
               PROMOTIONS Live
@@ -245,7 +245,7 @@ export const CanteenMonitorView: React.FC = () => {
       {/* Main 3-Column Promos Highlight Board */}
       <main className="grid grid-cols-12 gap-6 flex-grow relative z-10 items-stretch">
         
-        {/* COLUMN 1: THE JOE POINTS REWARDS PROGRAM DECK (Span 4) */}
+        {/* COLUMN 1: THE CSE POINTS REWARDS PROGRAM DECK (Span 4) */}
         <section className="col-span-12 lg:col-span-4 bg-[#0a1122]/55 border border-white/5 rounded-3xl p-5 flex flex-col justify-between min-h-[500px]">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-white/5 pb-3">
@@ -263,7 +263,7 @@ export const CanteenMonitorView: React.FC = () => {
             {/* Loyalty tier roadmap card */}
             <div className="space-y-3">
               <p className="font-sans text-[11px] text-zinc-400 leading-relaxed">
-                Why purchase the traditional way when you can climb tiers, rack up <strong className="text-white">Joe Points</strong> automatically, and bypass queues seamlessly?
+                Why purchase the traditional way when you can climb tiers, rack up <strong className="text-white">Cse Points</strong> automatically, and bypass queues seamlessly?
               </p>
 
               {/* Tier Cards Row */}
@@ -273,7 +273,7 @@ export const CanteenMonitorView: React.FC = () => {
                   <div className="space-y-0.5">
                     <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold leading-none">Starting Tier</span>
                     <h4 className="font-display text-xs font-black text-orange-400">Bronze Foodie</h4>
-                    <p className="font-sans text-[10px] text-zinc-400 leading-tight">Every $1 spent earns 10 Joe Points</p>
+                    <p className="font-sans text-[10px] text-zinc-400 leading-tight">Every $1 spent earns 10 Cse Points</p>
                   </div>
                   <div className="text-right shrink-0">
                     <span className="font-mono text-[9px] font-bold text-zinc-400 bg-white/5 px-2 py-1 rounded-lg uppercase">1.0x Rate</span>
@@ -338,7 +338,7 @@ export const CanteenMonitorView: React.FC = () => {
               </div>
               <div className="p-2 rounded-xl bg-black/40 border border-white/5">
                 <span className="block text-white font-extrabold font-mono text-xs">24,500+</span>
-                <span>Total Joe Points issued</span>
+                <span>Total Cse Points issued</span>
               </div>
             </div>
           </div>
@@ -504,7 +504,7 @@ export const CanteenMonitorView: React.FC = () => {
                 CYBER-LOOT CHEST SPAWNING 🎁
               </p>
               <p className="font-sans text-[9px] text-zinc-400 mt-0.5 leading-tight">
-                Unlock safe margins and crazy discounts. Load money into your JOE WALLET, check out daily, and claim rare coupon wins on this screen!
+                Unlock safe margins and crazy discounts. Load money into your CSE WALLET, check out daily, and claim rare coupon wins on this screen!
               </p>
             </div>
           </div>

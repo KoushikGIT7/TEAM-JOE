@@ -36,9 +36,9 @@ async function initializeFirebase() {
   
   // Create users
   const users = [
-    { email: 'admin@joe.com', password: 'admin123', name: 'JOE Admin', role: 'admin' },
-    { email: 'cashier@joe.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
-    { email: 'server@joe.com', password: 'server123', name: 'Server Node', role: 'server' }
+    { email: 'admin@cse.com', password: 'admin123', name: 'CSE Admin', role: 'admin' },
+    { email: 'cashier@cse.com', password: 'cashier123', name: 'Cashier Node', role: 'cashier' },
+    { email: 'server@cse.com', password: 'server123', name: 'Server Node', role: 'server' }
   ];
 
   for (const userData of users) {
@@ -91,12 +91,12 @@ await initializeFirebase();
 #### Create Users in Firebase Authentication:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project: `joecafe-a7fff`
+2. Select your project: `csecafe-a7fff`
 3. Go to **Authentication** → **Users**
 4. Click **Add user** and create:
-   - **Email**: `admin@joe.com` | **Password**: `admin123`
-   - **Email**: `cashier@joe.com` | **Password**: `cashier123`
-   - **Email**: `server@joe.com` | **Password**: `server123`
+   - **Email**: `admin@cse.com` | **Password**: `admin123`
+   - **Email**: `cashier@cse.com` | **Password**: `cashier123`
+   - **Email**: `server@cse.com` | **Password**: `server123`
 
 #### Add User Roles in Firestore:
 
@@ -108,8 +108,8 @@ await initializeFirebase();
      ```json
      {
        "uid": "{uid}",
-       "email": "admin@joe.com",
-       "name": "JOE Admin",
+       "email": "admin@cse.com",
+       "name": "CSE Admin",
        "role": "admin",
        "active": true,
        "createdAt": [timestamp]
@@ -134,9 +134,9 @@ After setup, use these to login:
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | `admin@joe.com` | `admin123` |
-| Cashier | `cashier@joe.com` | `cashier123` |
-| Server | `server@joe.com` | `server123` |
+| Admin | `admin@cse.com` | `admin123` |
+| Cashier | `cashier@cse.com` | `cashier123` |
+| Server | `server@cse.com` | `server123` |
 
 ## Menu Items
 

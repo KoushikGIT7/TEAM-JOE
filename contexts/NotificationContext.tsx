@@ -38,7 +38,7 @@ export function NotificationProvider({ children, onViewOrder }: NotificationProv
         // Tab is minimized, backgrounded, or screen is locked. Show native OS notification!
         try {
           if (Notification.permission === 'granted') {
-            new Notification(notification.title || 'JOE Cafeteria', {
+            new Notification(notification.title || 'CSE Cafeteria', {
               body: notification.body || '',
               icon: '/JeoLogoFinal.png',
               tag: data.orderId || 'order-update'

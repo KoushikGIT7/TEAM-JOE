@@ -1,4 +1,4 @@
-# JOE Cafeteria — Advanced Architecture Improvements
+# CSE Cafeteria — Advanced Architecture Improvements
 
 Incremental improvements for high-traffic (10k+ daily users), concurrency-safe, and fraud-resistant operation. All changes are backward-compatible with the existing codebase.
 

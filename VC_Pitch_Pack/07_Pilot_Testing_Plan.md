@@ -1,11 +1,11 @@
-# JOE — Pilot Testing Plan
+# CSE — Pilot Testing Plan
 ## 90-Day College Cafeteria Rollout Blueprint
 
 ---
 
 ## Pilot Goal
 
-Deploy JOE at **1 engineering college cafeteria** serving 400–800 students and validate:
+Deploy CSE at **1 engineering college cafeteria** serving 400–800 students and validate:
 1. ≥ 70% student adoption within 30 days
 2. ≥ 80% reduction in peak-hour queue depth
 3. Zero QR fraud incidents
@@ -44,7 +44,7 @@ Deploy JOE at **1 engineering college cafeteria** serving 400–800 students and
 - [ ] Brief cashier on cash approval flow (30 min)
 - [ ] Brief cook on kitchen console (30 min)
 - [ ] Brief server on QR scanning + serve flow (30 min)
-- [ ] Print QR posters for counter: "Order on JOE → joecafebrand.netlify.app"
+- [ ] Print QR posters for counter: "Order on CSE → csecafebrand.netlify.app"
 - [ ] Set up feedback WhatsApp group: admin + pilot team
 
 ---
@@ -62,27 +62,27 @@ Deploy JOE at **1 engineering college cafeteria** serving 400–800 students and
 | Day 4–5 | Address top 3 friction points (login issues, menu confusion, payment) |
 | Day 6–7 | First weekly report to cafeteria manager. Baseline metrics captured. |
 
-**Success metric**: 50+ orders placed on JOE by Day 7.
+**Success metric**: 50+ orders placed on CSE by Day 7.
 
 ---
 
 ### Phase 2: Growth Phase (Days 8–45)
-**Goal**: Reach 70% of daily orders through JOE
+**Goal**: Reach 70% of daily orders through CSE
 
 | Week | Focus | Actions |
 |------|-------|---------|
-| Week 2 | UPI adoption push | Partner with Hostel Office to share JOE link via official student portal |
+| Week 2 | UPI adoption push | Partner with Hostel Office to share CSE link via official student portal |
 | Week 3 | Kitchen validation | Cook console stress-tested during Monday lunch rush |
 | Week 4 | Push notifications | Enable FCM/OneSignal; measure "notification → pickup" response time |
-| Week 5 | Cash queue reduction | Cashier begins declining walk-up cash without JOE order ID |
+| Week 5 | Cash queue reduction | Cashier begins declining walk-up cash without CSE order ID |
 | Week 6 | Menu optimization | Admin uses dashboard data to identify top 10 items; adjust prep accordingly |
 
-**Success metric**: ≥ 70% of daily orders through JOE by Day 45.
+**Success metric**: ≥ 70% of daily orders through CSE by Day 45.
 
 ---
 
 ### Phase 3: Full Operations (Days 46–90)
-**Goal**: JOE is the default. Manual system is fully retired.
+**Goal**: CSE is the default. Manual system is fully retired.
 
 | Week | Focus | Actions |
 |------|-------|---------|
@@ -99,7 +99,7 @@ Deploy JOE at **1 engineering college cafeteria** serving 400–800 students and
 
 | KPI | Target | Measurement Method |
 |-----|--------|--------------------|
-| Daily active orders via JOE | ≥ 300/day by Week 4 | Firestore orders count |
+| Daily active orders via CSE | ≥ 300/day by Week 4 | Firestore orders count |
 | Peak queue depth | ≤ 5 people | Direct observation at counter |
 | Student adoption rate | ≥ 70% by Day 30 | Unique userIds in orders / total students |
 | QR fraud attempts | 0 successful | Firestore idempotency_keys + scanLogs |
@@ -143,6 +143,6 @@ Deploy JOE at **1 engineering college cafeteria** serving 400–800 students and
 
 ## Success Story Template (Post-Pilot)
 
-> *"Before JOE, our lunch queue would stretch to 40 people every day. Students were complaining, teachers were frustrated. With JOE, orders come in 15 minutes before the rush. Our cooks know what to make. Students get a notification and just walk up to collect. The queue is gone."*
+> *"Before CSE, our lunch queue would stretch to 40 people every day. Students were complaining, teachers were frustrated. With CSE, orders come in 15 minutes before the rush. Our cooks know what to make. Students get a notification and just walk up to collect. The queue is gone."*
 >
 > — [Cafeteria Manager Name], [College Name]

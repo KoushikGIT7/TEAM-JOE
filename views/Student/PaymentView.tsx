@@ -26,7 +26,9 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
     walletBalance,
     placeOrder,
     isGuest,
-    orders
+    orders,
+    isOrderingWindowOpen,
+    orderingWindowMessage
   } = useApp();
 
   const [selectedMethod] = useState<'WALLET'>('WALLET');
@@ -36,7 +38,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
   const [createdOrderId, setCreatedOrderId] = useState('');
 
   // -------------------------------------------------------------
-  // JOE POINTS & TIER-BASED DISCOUNT SYSTEM LOGIC
+  // CSE POINTS & TIER-BASED DISCOUNT SYSTEM LOGIC
   // Calculates order frequency, active membership tier, and 50% Deca-Drive reward.
   // -------------------------------------------------------------
   const currentFrequency = orders.length;
@@ -109,7 +111,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
 
     // Simulate standard transaction stages
     await new Promise(r => setTimeout(r, 800));
-    setProcessingSubText('Authenticating Joe Points & Loyalty engine...');
+    setProcessingSubText('Authenticating Cse Points & Loyalty engine...');
 
     await new Promise(r => setTimeout(r, 800));
     setProcessingSubText(`Confirming ${selectedMethod || 'WALLET'} authorization (₹${finalTotal.toFixed(2)})...`);
@@ -223,7 +225,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
             ))}
           </div>
 
-          {/* JOE POINTS & LOYALTY PROGRESS WIDGET */}
+          {/* CSE POINTS & LOYALTY PROGRESS WIDGET */}
           <div className="bg-[#171f33]/60 rounded-xl p-3 border border-white/5 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono text-zinc-400 font-bold tracking-wide flex items-center gap-1.5">
@@ -294,7 +296,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
                 <Sparkles className="w-3.5 h-3.5" />
                 Points projection ({pointsMultiplier.toFixed(1)}x):
               </span>
-              <span>+{estimatedPoints} Joe Points</span>
+              <span>+{estimatedPoints} Cse Points</span>
             </div>
 
             <div className="pt-3 border-t border-white/10 flex justify-between items-center">
@@ -326,7 +328,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
                   <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-display font-bold text-xs text-white">JOE Digital Wallet</h4>
+                  <h4 className="font-display font-bold text-xs text-white">CSE Digital Wallet</h4>
                   <p className="font-mono text-[10px] text-zinc-400">
                     Current Balance: <strong className={isInsufficient ? 'text-red-400 font-black' : 'text-brand-green font-black'}>
                       ₹{walletBalance.toFixed(2)}
@@ -349,6 +351,15 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
         </section>
 
         {/* Error indicators */}
+        {!isOrderingWindowOpen && orderingWindowMessage && (
+          <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex gap-2 items-start shrink-0 select-none mb-4">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-1">
+              <span className="font-sans text-xs text-red-200 leading-normal">{orderingWindowMessage}</span>
+            </div>
+          </div>
+        )}
+
         {errorMessage && (
           <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex gap-2 items-start shrink-0 select-none">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -361,7 +372,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ profile, onBack, onSuc
         {/* Main Processing Actions */}
         <button
           onClick={handleCheckoutSubmit}
-          disabled={(isInsufficient && selectedMethod === 'WALLET') || ((processingState as string) === 'PROCESSING')}
+          disabled={(!isOrderingWindowOpen) || (isInsufficient && selectedMethod === 'WALLET') || ((processingState as string) === 'PROCESSING')}
           type="button"
           className="w-full h-14 rounded-full bg-gradient-to-r from-brand-purple to-brand-purple-dark text-white font-mono text-xs tracking-wider font-bold shadow-lg disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
         >

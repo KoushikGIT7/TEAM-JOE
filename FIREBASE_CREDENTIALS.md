@@ -19,7 +19,7 @@ Firebase credentials are typically stored in:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Click **Add project**
-3. Enter project name: `joe-cafeteria-automation`
+3. Enter project name: `cse-cafeteria-automation`
 4. Follow the setup wizard
 5. Enable **Firestore Database** and **Authentication**
 
@@ -107,7 +107,7 @@ If deploying to Netlify with Firebase, add these environment variables:
 |--------------|-------------|---------|
 | `VITE_FIREBASE_API_KEY` | Firebase API Key | `AIzaSy...` |
 | `VITE_FIREBASE_AUTH_DOMAIN` | Auth Domain | `project.firebaseapp.com` |
-| `VITE_FIREBASE_PROJECT_ID` | Project ID | `joe-cafeteria` |
+| `VITE_FIREBASE_PROJECT_ID` | Project ID | `cse-cafeteria` |
 | `VITE_FIREBASE_STORAGE_BUCKET` | Storage Bucket | `project.appspot.com` |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Messaging Sender ID | `123456789` |
 | `VITE_FIREBASE_APP_ID` | App ID | `1:123:web:abc` |

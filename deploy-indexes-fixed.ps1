@@ -38,11 +38,11 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Step 4: Setting Firebase project..." -ForegroundColor Yellow
-firebase use joecafe-a7fff
+firebase use csecafe-a7fff
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "⚠️  Project not set. Adding project..." -ForegroundColor Yellow
-    firebase use joecafe-a7fff --add
+    firebase use csecafe-a7fff --add
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Failed to set project" -ForegroundColor Red
         exit 1
@@ -59,7 +59,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "✅ Indexes deployed successfully!" -ForegroundColor Green
     Write-Host ""
     Write-Host "📊 Index build status:" -ForegroundColor Cyan
-    Write-Host "   - Check Firebase Console: https://console.firebase.google.com/project/joecafe-a7fff/firestore/indexes" -ForegroundColor White
+    Write-Host "   - Check Firebase Console: https://console.firebase.google.com/project/csecafe-a7fff/firestore/indexes" -ForegroundColor White
     Write-Host "   - Build time: 5-15 minutes (typically)" -ForegroundColor White
     Write-Host "   - Indexes will be available automatically once built" -ForegroundColor White
     Write-Host ""

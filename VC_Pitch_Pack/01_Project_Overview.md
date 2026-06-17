@@ -1,13 +1,13 @@
-# JOE — Just-in-time Ordering Engine
+# CSE — Just-in-time Ordering Engine
 ## Project Overview | VC Pitch Pack
 
 ---
 
 ## Executive Summary
 
-**JOE** is a full-stack cafeteria automation system built for Indian engineering college campuses. It eliminates the daily chaos of cafeteria queues by digitising the entire food ordering and serving pipeline — from student order to plate delivery — using a QR-code-driven, real-time mobile-first PWA.
+**CSE** is a full-stack cafeteria automation system built for Indian engineering college campuses. It eliminates the daily chaos of cafeteria queues by digitising the entire food ordering and serving pipeline — from student order to plate delivery — using a QR-code-driven, real-time mobile-first PWA.
 
-> **One line:** JOE replaces the physical queue at college cafeterias with a zero-hardware, mobile-native smart ordering system.
+> **One line:** CSE replaces the physical queue at college cafeterias with a zero-hardware, mobile-native smart ordering system.
 
 ---
 
@@ -25,7 +25,7 @@ Indian engineering college cafeterias face a predictable, recurring crisis every
 
 ---
 
-## What JOE Does
+## What CSE Does
 
 ```
 Student orders on phone
@@ -78,7 +78,7 @@ Server clicks SERVE → order closed, student notified
 ## Current Status
 
 - ✅ **Production-grade codebase** — TypeScript strict, full type coverage
-- ✅ **Live deployment** — joecafebrand.netlify.app
+- ✅ **Live deployment** — csecafebrand.netlify.app
 - ✅ **All 5 user roles** implemented and tested
 - ✅ **QR fraud protection** — HMAC-SHA256 + idempotency guards
 - ✅ **Real-time kitchen pipeline** — FIFO batch queue, station-based routing
@@ -91,12 +91,12 @@ Server clicks SERVE → order closed, student notified
 
 ## The Team
 
-Built by **Koushik** — Full-Stack Engineer, systems designer, and cafeteria problem experiencer firsthand. Every design decision in JOE was driven by direct daily observation of the same chaos it aims to eliminate.
+Built by **Koushik** — Full-Stack Engineer, systems designer, and cafeteria problem experiencer firsthand. Every design decision in CSE was driven by direct daily observation of the same chaos it aims to eliminate.
 
 ---
 
 ## Contact & Links
 
-- **Live Demo**: https://joecafebrand.netlify.app
-- **GitHub**: https://github.com/KoushikGIT7/JOE-ENDGAME
+- **Live Demo**: https://csecafebrand.netlify.app
+- **GitHub**: https://github.com/KoushikGIT7/CSE-ENDGAME
 - **Deck Version**: March 2026

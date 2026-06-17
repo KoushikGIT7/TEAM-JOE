@@ -201,7 +201,7 @@ export const VaultView: React.FC = () => {
               <div className="w-28 h-28 bg-zinc-100 p-2 border border-zinc-200/50 rounded-xl relative flex items-center justify-center">
                 <QrCode className="w-full h-full text-zinc-900" />
                 <div className="absolute w-5 h-5 bg-white border border-zinc-200 rounded flex items-center justify-center">
-                  <span className="font-display font-black italic text-[90%] text-brand-purple scale-75">JOE</span>
+                  <span className="font-display font-black italic text-[90%] text-brand-purple scale-75">CSE</span>
                 </div>
               </div>
 

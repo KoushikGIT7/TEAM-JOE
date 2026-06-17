@@ -17,7 +17,7 @@ import {
   getPushSubscriptionId
 } from '../../services/onesignal';
 import { useAuth } from '../../hooks/useAuth';
-import { joeSounds } from '../../utils/audio';
+import { cseSounds } from '../../utils/audio';
 
 interface ProfileViewProps {
   onLogout?: () => void;
@@ -79,7 +79,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onLogout }) => {
       const res = await purchaseCustomization(type, value, cost);
       if (res.success) {
         if ('vibrate' in navigator) navigator.vibrate([100, 50, 100]);
-        joeSounds.playPaymentConfirmed();
+        cseSounds.playPaymentConfirmed();
         alert('🎉 Customization purchased successfully! It is now active.');
       } else {
         alert(res.error || 'Failed to purchase customization.');
@@ -403,7 +403,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onLogout }) => {
             <h2 className="font-display text-sm font-bold text-white">Avatar Customization Store</h2>
           </div>
           <p className="text-[11px] text-[#cbd5e1] font-sans leading-relaxed">
-            Spend your earned Joe Points to purchase premium profile enhancements. These render in real-time on your card, the leaderboard, and staff terminals!
+            Spend your earned Cse Points to purchase premium profile enhancements. These render in real-time on your card, the leaderboard, and staff terminals!
           </p>
 
           <div className="space-y-4">
@@ -587,7 +587,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onLogout }) => {
                   <h3 className="font-display font-bold text-base text-white">Your Campus Perks</h3>
                 </div>
                 <p className="text-xs text-zinc-300 leading-relaxed font-sans">
-                  As a **Pro Foodie LVL {studentLevel}** tier student, your cyber privileges at Joe's counters are fully active:
+                  As a **Pro Foodie LVL {studentLevel}** tier student, your cyber privileges at Cse's counters are fully active:
                 </p>
                 <div className="space-y-2.5 font-sans">
                   <div className="flex gap-2 text-xs text-zinc-400">

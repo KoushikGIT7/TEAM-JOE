@@ -1,4 +1,4 @@
-# JOE Cafeteria Automation - Complete Development Roadmap
+# CSE Cafeteria Automation - Complete Development Roadmap
 
 **Project Status**: Frontend 95% ✅ | Backend 10% ⚠️ | Ready to Deploy
 
@@ -22,7 +22,7 @@ This project now includes **FOUR critical documents** for complete backend devel
 
 ## 🎯 PROJECT OVERVIEW
 
-### What is JOE Cafeteria Automation?
+### What is CSE Cafeteria Automation?
 
 A **mobile-first, real-time order management system** for institutional cafeterias supporting:
 
@@ -280,10 +280,10 @@ Week 8:
 ### Deployment Steps
 ```bash
 # 1. Build Docker image
-docker build -t joe-backend:v1.0.0 .
+docker build -t cse-backend:v1.0.0 .
 
 # 2. Push to registry
-docker push your-registry/joe-backend:v1.0.0
+docker push your-registry/cse-backend:v1.0.0
 
 # 3. Migrate database
 npm run migration:up
@@ -295,7 +295,7 @@ npm run seed
 kubectl apply -f deployment.yaml  # Or your deployment method
 
 # 6. Verify health checks
-curl https://api.joecafe.com/health
+curl https://api.csecafe.com/health
 
 # 7. Run smoke tests
 npm run test:smoke
@@ -649,7 +649,7 @@ npm install axios socket.io-client
 # Start integrating with API calls
 
 # DevOps Engineer
-docker build -t joe-backend:latest .
+docker build -t cse-backend:latest .
 docker-compose up -d
 npm run migration:up
 npm run seed
@@ -708,7 +708,7 @@ This project is **production-ready** with comprehensive documentation. The estim
 
 ---
 
-**Document Set**: Complete Backend Development Prompt for JOE Cafeteria Automation  
+**Document Set**: Complete Backend Development Prompt for CSE Cafeteria Automation  
 **Version**: 1.0 Production  
 **Status**: Ready for Immediate Implementation  
 **Quality**: Enterprise-Grade Industry Standard

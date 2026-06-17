@@ -103,7 +103,7 @@ export const handler: Handler = async () => {
 
       await sendPush(
         userId,
-        '📍 Pickup Reminder — JOE Cafeteria',
+        '📍 Pickup Reminder — CSE Cafeteria',
         messages[messageIndex]
       );
 

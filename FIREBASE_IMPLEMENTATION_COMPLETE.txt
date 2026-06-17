@@ -1,5 +1,5 @@
 ================================================================================
-  JOE CAFETERIA — COMPLETE FIREBASE IMPLEMENTATION (ENTIRE PROJECT)
+  CSE CAFETERIA — COMPLETE FIREBASE IMPLEMENTATION (ENTIRE PROJECT)
   How Firebase is used across the application
   Generated: 2025-03-14
 ================================================================================
@@ -43,7 +43,7 @@ Firebase Admin in the current code paths.
 
   3.1 App and config
   • Single app: getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
-  • firebaseConfig from import.meta.env.VITE_FIREBASE_* with fallbacks (project joecafe-a7fff)
+  • firebaseConfig from import.meta.env.VITE_FIREBASE_* with fallbacks (project csecafe-a7fff)
 
   3.2 Auth
   • export const auth = getAuth(app)
@@ -83,7 +83,7 @@ Firebase Admin in the current code paths.
   • Collection: users
   • Document: users/{uid}
   • Fields: uid, name, email, role, studentType, active, createdAt, lastActive
-  • Role inferred from email (admin@joe.com, cashier@joe.com, server@joe.com) if missing/wrong
+  • Role inferred from email (admin@cse.com, cashier@cse.com, server@cse.com) if missing/wrong
 
   4.3 useAuth hook (hooks/useAuth.ts)
   • Subscribes to onAuthStateChange

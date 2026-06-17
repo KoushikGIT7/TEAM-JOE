@@ -67,7 +67,7 @@ Kept these composite indexes that are actually needed by queries:
 ## Index Build Time
 
 - **Build Status:** Building (5-15 minutes typical)
-- **Monitor:** https://console.firebase.google.com/project/joecafe-a7fff/firestore/indexes
+- **Monitor:** https://console.firebase.google.com/project/csecafe-a7fff/firestore/indexes
 - **Status:** Indexes will automatically become available once built
 
 ## Note

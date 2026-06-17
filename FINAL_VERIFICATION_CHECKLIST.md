@@ -1,9 +1,9 @@
-# 🎯 JOE Cafeteria Backend — Final Comprehensive Verification Checklist
+# 🎯 CSE Cafeteria Backend — Final Comprehensive Verification Checklist
 
 **Status**: System Ready for Production Integration  
 **Last Verified**: March 10, 2026  
 **Server**: http://localhost:5000  
-**Database**: PostgreSQL (joe_cafeteria_dev)  
+**Database**: PostgreSQL (cse_cafeteria_dev)  
 
 ---
 
@@ -12,7 +12,7 @@
 ### 1.1 Database Connectivity ✅
 ```bash
 # Test PostgreSQL connection
-psql -U postgres -d joe_cafeteria_dev -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"
+psql -U postgres -d cse_cafeteria_dev -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"
 ```
 **Expected Result**: Should list 11 tables (orders, menu_items, users, transactions, etc.)
 
@@ -289,7 +289,7 @@ curl -X GET http://localhost:5000/api/v1/nonexistent
 ### 4.1 Schema Verification
 ```sql
 -- Connect to database
-psql -U postgres -d joe_cafeteria_dev
+psql -U postgres -d cse_cafeteria_dev
 
 -- Verify all tables exist
 \dt
@@ -365,7 +365,7 @@ node test-endpoints.js
 **Expected Output**:
 ```
 ========================================
-  JOE Cafeteria — Endpoint Test Suite
+  CSE Cafeteria — Endpoint Test Suite
 ========================================
 
 📋 Health Checks
@@ -430,7 +430,7 @@ ab -n 500 -c 50 -H "Authorization: Bearer <token>" \
 cat backend/.env.local | grep -E "DATABASE_URL|JWT_SECRET|RAZORPAY|FIREBASE"
 ```
 **Required Variables**:
-- ✅ `DATABASE_URL=postgresql://postgres:...@localhost/joe_cafeteria_dev`
+- ✅ `DATABASE_URL=postgresql://postgres:...@localhost/cse_cafeteria_dev`
 - ✅ `JWT_SECRET` (min 32 chars)
 - ✅ `JWT_REFRESH_SECRET` (min 32 chars)
 - ✅ `RAZORPAY_KEY_ID`
@@ -493,7 +493,7 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 ### 8.4 Database Connection Pool Active
 ```bash
 # Monitor active connections
-SELECT count(*) FROM pg_stat_activity WHERE datname = 'joe_cafeteria_dev';
+SELECT count(*) FROM pg_stat_activity WHERE datname = 'cse_cafeteria_dev';
 ```
 **Expected**: 1-20 active connections (matches pool size)
 

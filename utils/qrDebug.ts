@@ -9,7 +9,7 @@ import { Order } from '../types';
 
 declare global {
   interface Window {
-    joeQRDebug: {
+    cseQRDebug: {
       createTestOrder: () => Promise<{ order: Order; qrCode: string }>;
       validateQR: (qrData: string) => Promise<void>;
       generateQR: (orderId: string) => Promise<string | null>;
@@ -59,9 +59,9 @@ async function createTestOrder(): Promise<{ order: Order; qrCode: string }> {
   const qrCode = await generateQRPayload(order);
 
   // Save to localStorage
-  const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
+  const orders = JSON.parse(localStorage.getItem('cse_mock_orders') || '[]');
   orders.push(order);
-  localStorage.setItem('joe_mock_orders', JSON.stringify(orders));
+  localStorage.setItem('cse_mock_orders', JSON.stringify(orders));
 
   console.log('✅ Test order created:');
   console.log('Order ID:', orderId);
@@ -84,7 +84,7 @@ async function validateQR(qrData: string): Promise<void> {
 
     console.log('📋 QR Payload:', payload);
 
-    const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
+    const orders = JSON.parse(localStorage.getItem('cse_mock_orders') || '[]');
     const order = orders.find((o: Order) => o.id === payload.orderId);
 
     if (!order) {
@@ -130,7 +130,7 @@ async function validateQR(qrData: string): Promise<void> {
  */
 async function generateQR(orderId: string): Promise<string | null> {
   try {
-    const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
+    const orders = JSON.parse(localStorage.getItem('cse_mock_orders') || '[]');
     const order = orders.find((o: Order) => o.id === orderId);
 
     if (!order) {
@@ -161,14 +161,14 @@ async function generateQR(orderId: string): Promise<string | null> {
  * List all orders
  */
 function listOrders(): Order[] {
-  const orders = JSON.parse(localStorage.getItem('joe_mock_orders') || '[]');
+  const orders = JSON.parse(localStorage.getItem('cse_mock_orders') || '[]');
   console.log('📋 All orders:', orders);
   return orders;
 }
 
 // Expose to window for console access
 if (typeof window !== 'undefined') {
-  window.joeQRDebug = {
+  window.cseQRDebug = {
     createTestOrder,
     validateQR,
     generateQR,
@@ -176,8 +176,8 @@ if (typeof window !== 'undefined') {
   };
 
   console.log('🔧 QR Debug utilities loaded. Use:');
-  console.log('  window.joeQRDebug.createTestOrder() - Create test order with QR');
-  console.log('  window.joeQRDebug.validateQR(qrString) - Validate QR code');
-  console.log('  window.joeQRDebug.generateQR(orderId) - Generate QR for order');
-  console.log('  window.joeQRDebug.listOrders() - List all orders');
+  console.log('  window.cseQRDebug.createTestOrder() - Create test order with QR');
+  console.log('  window.cseQRDebug.validateQR(qrString) - Validate QR code');
+  console.log('  window.cseQRDebug.generateQR(orderId) - Generate QR for order');
+  console.log('  window.cseQRDebug.listOrders() - List all orders');
 }

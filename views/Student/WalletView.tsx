@@ -99,7 +99,7 @@ export const WalletView: React.FC<WalletViewProps> = ({
             CAMPUS SECURE WALLET
           </span>
           <h1 className="font-display text-md font-black text-white leading-none mt-1">
-            JOE Pay Manager
+            CSE Pay Manager
           </h1>
         </div>
       </header>
@@ -122,14 +122,14 @@ export const WalletView: React.FC<WalletViewProps> = ({
             <div className="flex justify-between items-start z-10">
               <div className="space-y-0.5">
                 <p className="font-mono text-[8px] font-black tracking-widest text-[#a3b8cc] uppercase">
-                  JOE PLATINUM DEBIT
+                  CSE PLATINUM DEBIT
                 </p>
                 <h2 className="font-display text-sm font-black text-white tracking-tight leading-none mt-1">
                   Wallet Balance
                 </h2>
               </div>
               <span className="font-display font-black text-white italic text-md opacity-35 bg-white/10 px-2.5 py-1 rounded-md">
-                JOE
+                CSE
               </span>
             </div>
 

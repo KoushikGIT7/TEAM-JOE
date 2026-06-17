@@ -325,7 +325,7 @@ export const ProfileView: React.FC = () => {
                   <h3 className="font-display font-bold text-base text-white">Your Campus Perks</h3>
                 </div>
                 <p className="text-xs text-zinc-300 leading-relaxed font-sans">
-                  As a **Pro Foodie LVL {studentLevel}** tier student, your cyber privileges at Joe's counters are fully active:
+                  As a **Pro Foodie LVL {studentLevel}** tier student, your cyber privileges at Cse's counters are fully active:
                 </p>
                 <div className="space-y-2.5 font-sans">
                   <div className="flex gap-2 text-xs text-zinc-400">

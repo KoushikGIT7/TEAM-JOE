@@ -1,6 +1,6 @@
 /**
  * COPY THIS ENTIRE SCRIPT AND PASTE INTO BROWSER CONSOLE
- * Make sure you're on your JOE app page (localhost or deployed)
+ * Make sure you're on your CSE app page (localhost or deployed)
  * 
  * This will create/update all 3 staff users in Firebase Authentication and Firestore
  * Uses UPSERT pattern - safe to run multiple times
@@ -17,9 +17,9 @@
     const { doc, setDoc, getDoc, serverTimestamp } = await import('firebase/firestore');
     
     const users = [
-      { email: 'admin@joecafe.com', password: 'joeadmin2026', name: 'JOE Admin', role: 'ADMIN' },
-      { email: 'cashier@joecafe.com', password: 'joecashier2026', name: 'Cashier Node', role: 'CASHIER' },
-      { email: 'server@joecafe.com', password: 'joeserver2026', name: 'Server Node', role: 'SERVER' }
+      { email: 'admin@csecafe.com', password: 'cseadmin2026', name: 'CSE Admin', role: 'ADMIN' },
+      { email: 'cashier@csecafe.com', password: 'csecashier2026', name: 'Cashier Node', role: 'CASHIER' },
+      { email: 'server@csecafe.com', password: 'cseserver2026', name: 'Server Node', role: 'SERVER' }
     ];
     
     for (const userData of users) {
@@ -102,16 +102,16 @@
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('📧 Demo Credentials:\n');
     console.log('   ADMIN PORTAL:');
-    console.log('   📧 Email: admin@joecafe.com');
-    console.log('   🔑 Password: joeadmin2026');
+    console.log('   📧 Email: admin@csecafe.com');
+    console.log('   🔑 Password: cseadmin2026');
     console.log('   🎯 Portal: Admin Dashboard\n');
     console.log('   CASHIER PORTAL:');
-    console.log('   📧 Email: cashier@joecafe.com');
-    console.log('   🔑 Password: joecashier2026');
+    console.log('   📧 Email: cashier@csecafe.com');
+    console.log('   🔑 Password: csecashier2026');
     console.log('   🎯 Portal: Cashier Dashboard\n');
     console.log('   SERVER PORTAL:');
-    console.log('   📧 Email: server@joecafe.com');
-    console.log('   🔑 Password: joeserver2026');
+    console.log('   📧 Email: server@csecafe.com');
+    console.log('   🔑 Password: cseserver2026');
     console.log('   🎯 Portal: Serving Counter\n');
     console.log('💡 You can now login with these credentials!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

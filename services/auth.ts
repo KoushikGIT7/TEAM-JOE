@@ -33,7 +33,7 @@ import { ROLES } from "../types";
 
 /**
  * Infer role from email address (Core Truth)
- * HARDENED: Supports @joe.com and @joecafe.com
+ * HARDENED: Supports @cse.com and @csecafe.com
  */
 export const inferRoleFromEmail = (email: string): UserRole | null => {
   if (!email) return null;
@@ -43,7 +43,7 @@ export const inferRoleFromEmail = (email: string): UserRole | null => {
   if (emailLower.startsWith('guest@')) return ROLES.GUEST;
 
   // 🛡️ [STAFF-ENFORCEMENT] Only authorized domains can have Staff roles
-  const isAuthorizedStaffDomain = emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
+  const isAuthorizedStaffDomain = emailLower.endsWith('@csecafe.com') || emailLower.endsWith('@cse.com') || emailLower.endsWith('@joecafe.com') || emailLower.endsWith('@joe.com');
 
   if (isAuthorizedStaffDomain) {
     if (emailLower.startsWith('admin@')) return ROLES.ADMIN;
@@ -218,7 +218,7 @@ export const signInAsGuest = async (): Promise<{ user: FirebaseUser | null; prof
       profile = {
         uid: user.uid,
         name: 'Guest User',
-        email: 'guest@joecafe.com',
+        email: 'guest@csecafe.com',
         role: 'GUEST',
         active: true,
         createdAt: now,
@@ -250,7 +250,7 @@ export const signInAsGuest = async (): Promise<{ user: FirebaseUser | null; prof
     const offlineProfile: UserProfile = {
       uid: 'offline_guest_' + Math.random().toString(36).substring(7),
       name: 'Guest User',
-      email: 'guest@joecafe.com',
+      email: 'guest@csecafe.com',
       role: 'GUEST',
       active: true,
       createdAt: Date.now()
@@ -310,11 +310,14 @@ export const onAuthStateChange = (
         if (snapshot.exists()) {
           const data = snapshot.data();
           const email = data.email || firebaseUser.email || '';
-          const currentRole = (data.role || '').toUpperCase() as UserRole;
+          let currentRole = (data.role || '').toUpperCase() as UserRole;
 
-          // 🔒 [STABILITY] Removed aggressive auto-correction.
-          // This fixes the issue where manually set roles were being overwritten 
-          // because the email didn't match a hardcoded prefix.
+          // Auto-recover admin/staff roles if they were accidentally downgraded to STUDENT
+          const inferredRole = inferRoleFromEmail(email);
+          if (inferredRole && inferredRole !== 'STUDENT' && inferredRole !== 'GUEST' && currentRole === 'STUDENT') {
+            currentRole = inferredRole;
+            setDoc(doc(db, "users", firebaseUser.uid), { role: currentRole }, { merge: true }).catch(console.warn);
+          }
 
           if (!data.active) {
             console.warn("🛑 Account deactivated:", email);
@@ -344,7 +347,7 @@ export const onAuthStateChange = (
           const newProfile: UserProfile = {
             uid: firebaseUser.uid,
             name: isAnonymous ? 'Guest User' : (firebaseUser.displayName || email.split('@')[0] || 'User'),
-            email: isAnonymous ? 'guest@joecafe.com' : email,
+            email: isAnonymous ? 'guest@csecafe.com' : email,
             role: inferredRole,
             active: true,
             createdAt: now,

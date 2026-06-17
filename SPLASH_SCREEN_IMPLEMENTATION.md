@@ -2,7 +2,7 @@
 
 ## Overview
 
-Professional animated splash screen for JOE cafeteria app that displays during app initialization with smooth logo and tagline animations.
+Professional animated splash screen for CSE cafeteria app that displays during app initialization with smooth logo and tagline animations.
 
 ## Component Structure
 

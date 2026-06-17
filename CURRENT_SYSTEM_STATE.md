@@ -1,4 +1,4 @@
-# 📊 JOE Cafeteria Automation: Current System State (PROD-READY)
+# 📊 CSE Cafeteria Automation: Current System State (PROD-READY)
 
 This document outlines the current state as of **Session Checkpoint 16**. The system has undergone a massive stability and security overhaul, reaching a **Production-Ready** status for high-traffic cafeteria operations.
 

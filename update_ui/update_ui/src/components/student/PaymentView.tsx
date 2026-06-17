@@ -34,7 +34,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
   const [processingSubText, setProcessingSubText] = useState('');
 
   // -------------------------------------------------------------
-  // JOE POINTS & TIER-BASED DISCOUNT SYSTEM LOGIC
+  // CSE POINTS & TIER-BASED DISCOUNT SYSTEM LOGIC
   // Calculates order frequency, active membership tier, and 50% Deca-Drive reward.
   // -------------------------------------------------------------
   const currentFrequency = orders.length;
@@ -113,7 +113,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
 
     // Simulate standard transaction stages
     setTimeout(() => {
-      setProcessingSubText('Authenticating Joe Points & Loyalty engine...');
+      setProcessingSubText('Authenticating Cse Points & Loyalty engine...');
     }, 1000);
 
     setTimeout(() => {
@@ -228,7 +228,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
             ))}
           </div>
 
-          {/* JOE POINTS & LOYALTY PROGRESS WIDGET */}
+          {/* CSE POINTS & LOYALTY PROGRESS WIDGET */}
           <div className="bg-[#171f33]/60 rounded-xl p-3 border border-white/5 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono text-zinc-400 font-bold tracking-wide flex items-center gap-1.5">
@@ -299,7 +299,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
                 <Sparkles className="w-3.5 h-3.5" />
                 Points projection ({pointsMultiplier.toFixed(1)}x):
               </span>
-              <span>+{estimatedPoints} Joe Points</span>
+              <span>+{estimatedPoints} Cse Points</span>
             </div>
 
             <div className="pt-3 border-t border-white/10 flex justify-between items-center">
@@ -334,7 +334,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({ onBackToMenu, onNaviga
                   <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-display font-bold text-xs text-white">JOE Digital Wallet</h4>
+                  <h4 className="font-display font-bold text-xs text-white">CSE Digital Wallet</h4>
                   <p className="font-mono text-[10px] text-on-surface-variant-sub text-xs">
                     Current Balance: <strong className={isInsufficient ? 'text-red-400 font-black' : 'text-brand-green font-black'}>
                       ${walletBalance.toFixed(2)}

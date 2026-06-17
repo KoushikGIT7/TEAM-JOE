@@ -251,22 +251,15 @@ export const logoutUser = async (): Promise<void> => {
 export const requestOneSignalPermission = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
 
-  // Request native permission synchronously first to preserve user gesture context!
+  await initializeOneSignal();
+  if (!isInitialized) return;
+
   try {
     const currentPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
     if (currentPermission === 'default') {
-      console.log('🔔 Requesting native permission synchronously via user gesture...');
-      await Notification.requestPermission();
-    }
-  } catch (err) {
-    console.error('❌ Native request permission error:', err);
-  }
-
-  await initializeOneSignal();
-  if (!isInitialized) return;
-  try {
-    const currentPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
-    if (currentPermission === 'granted') {
+      console.log('🔔 Prompting OneSignal slidedown for push permissions...');
+      await OneSignal.Slidedown.promptPush();
+    } else if (currentPermission === 'granted') {
       await OneSignal.User.PushSubscription.optIn();
     }
   } catch (error) {
@@ -310,13 +303,15 @@ export const setPushSubscriptionState = async (enable: boolean): Promise<void> =
     return;
   }
 
-  // 2. Request native permission synchronously first to preserve user gesture context!
+  // 2. Use Slidedown prompt instead of raw Notification.requestPermission without gesture
   if (enable) {
     try {
       const currentPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
       if (currentPermission === 'default') {
-        console.log('🔔 Requesting native permission synchronously via user gesture...');
-        await Notification.requestPermission();
+        console.log('🔔 Prompting OneSignal slidedown for push permissions...');
+        await initializeOneSignal();
+        if (!isInitialized) return;
+        await OneSignal.Slidedown.promptPush();
       }
     } catch (err) {
       console.error('❌ Native permission request error:', err);

@@ -8,32 +8,32 @@ interface NotificationCopy {
 
 const copyMap: Record<number, NotificationCopy> = {
   0: { // Sunday
-    title: "🎒 Monday Ready? Recharge your JOE Wallet!",
-    body: "Start your college week strong. Top up your JOE balance tonight for smooth, instant coffee & breakfast tomorrow!"
+    title: "🎒 Monday Ready? Recharge your CSE Wallet!",
+    body: "Start your college week strong. Top up your CSE balance tonight for smooth, instant coffee & breakfast tomorrow!"
   },
   1: { // Monday
     title: "⚡ Beat the Tuesday Rush!",
-    body: "Don't let cashier queues slow you down. Recharge your JOE wallet tonight for lightning-fast orders tomorrow."
+    body: "Don't let cashier queues slow you down. Recharge your CSE wallet tonight for lightning-fast orders tomorrow."
   },
   2: { // Tuesday
-    title: "🪙 JOE Wallet running low?",
+    title: "🪙 CSE Wallet running low?",
     body: "Keep your balance topped up for quick morning snacks. A quick recharge tonight means zero wait tomorrow!"
   },
   3: { // Wednesday
     title: "📚 Mid-week focus, zero wait!",
-    body: "Stay focused on classes, not lines. Recharge your JOE wallet now for instant payments tomorrow."
+    body: "Stay focused on classes, not lines. Recharge your CSE wallet now for instant payments tomorrow."
   },
   4: { // Thursday
     title: "🎉 Friday is almost here!",
-    body: "Finish the week smoothly. Ensure your JOE Wallet has enough balance for a hassle-free Friday morning breakfast."
+    body: "Finish the week smoothly. Ensure your CSE Wallet has enough balance for a hassle-free Friday morning breakfast."
   },
   5: { // Friday
     title: "💰 Skip the Cashier Queue tomorrow!",
-    body: "Recharge your JOE Wallet tonight using UPI. Zero hassle, zero wait, and smooth transactions all day tomorrow."
+    body: "Recharge your CSE Wallet tonight using UPI. Zero hassle, zero wait, and smooth transactions all day tomorrow."
   },
   6: { // Saturday
     title: "💰 Skip the Cashier Queue tomorrow!",
-    body: "Recharge your JOE Wallet tonight using UPI. Zero hassle, zero wait, and smooth transactions all day tomorrow."
+    body: "Recharge your CSE Wallet tonight using UPI. Zero hassle, zero wait, and smooth transactions all day tomorrow."
   }
 };
 

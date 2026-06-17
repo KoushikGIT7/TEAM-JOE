@@ -484,16 +484,16 @@ export const deleteMenuItem = async (id: string): Promise<void> => {
 };
 
 // ⚡ [MENU-CACHE] Versioned localStorage strategy — 0 Firestore reads on repeat visits
-const MENU_LS_KEY = 'joe_menu_data';
-const MENU_VER_KEY = 'joe_menu_ver';
+const MENU_LS_KEY = 'cse_menu_data';
+const MENU_VER_KEY = 'cse_menu_ver';
 
 export const getMenuOnce = async (): Promise<MenuItem[]> => {
   try {
     // 1. Check if cached version matches current settings version (settings already has 5-min memory cache)
     const settings = await getSettings();
     const serverVersion = String(settings.menuVersion ?? 1);
-    const cachedVersion = localStorage.getItem(MENU_VER_KEY);
-    const cachedData = localStorage.getItem(MENU_LS_KEY);
+    const cachedVersion = localStorage.getItem(MENU_VER_KEY) || localStorage.getItem('joe_menu_ver');
+    const cachedData = localStorage.getItem(MENU_LS_KEY) || localStorage.getItem('joe_menu_data');
 
     if (cachedVersion === serverVersion && cachedData) {
       // ✅ Cache HIT — zero Firestore reads for menu
@@ -523,8 +523,11 @@ export const getMenuOnce = async (): Promise<MenuItem[]> => {
     console.error("Error fetching menu:", error);
     // Fallback: try stale cache rather than empty menu
     try {
-      const stale = localStorage.getItem(MENU_LS_KEY);
-      if (stale) return JSON.parse(stale);
+      const stale = localStorage.getItem(MENU_LS_KEY) || localStorage.getItem('joe_menu_data');
+      if (stale) {
+        localStorage.setItem(MENU_LS_KEY, stale); // migrate the old cache to the new key
+        return JSON.parse(stale);
+      }
     } catch (_) {}
     return [];
   }
@@ -615,7 +618,7 @@ export const initializeMenu = async (): Promise<void> => {
 
 /**
  * 🧹 [CLEAN-SWEEP] Global maintenance tool to wipe test data
- * Trigger this via browser console: window.cleanJOE()
+ * Trigger this via browser console: window.cleanCSE()
  */
 export const resetCafeteriaData = async (): Promise<void> => {
   if (!confirm("⚠️ DANGER: This will delete ALL orders, items, and batches. Continue?")) return;
@@ -653,7 +656,7 @@ export const resetCafeteriaData = async (): Promise<void> => {
 
 // Expose to window for easy access during development
 if (typeof window !== 'undefined') {
-  (window as any).cleanJOE = resetCafeteriaData;
+  (window as any).cleanCSE = resetCafeteriaData;
 }
 
 /**
@@ -902,7 +905,7 @@ export const getSettings = async (): Promise<SystemSettings> => {
       acceptingOrders: true,
       orderingEnabled: true,
       servingRatePerMin: 10,
-      announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
+      announcement: "CSE: New Indian Breakfast Catalog is now LIVE!",
       taxRate: 5,
       minOrderValue: 20,
       peakHourThreshold: 50,
@@ -916,7 +919,7 @@ export const getSettings = async (): Promise<SystemSettings> => {
       acceptingOrders: true,
       orderingEnabled: true,
       servingRatePerMin: 10,
-      announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
+      announcement: "CSE: New Indian Breakfast Catalog is now LIVE!",
       taxRate: 5,
       minOrderValue: 20,
       peakHourThreshold: 50,
@@ -961,7 +964,7 @@ export const listenToSettings = (callback: (settings: SystemSettings) => void): 
           acceptingOrders: true,
           orderingEnabled: DEFAULT_ORDERING_ENABLED,
           servingRatePerMin: DEFAULT_SERVING_RATE_PER_MIN,
-          announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
+          announcement: "CSE: New Indian Breakfast Catalog is now LIVE!",
           taxRate: 5,
           minOrderValue: 20,
           peakHourThreshold: 50,
@@ -976,7 +979,7 @@ export const listenToSettings = (callback: (settings: SystemSettings) => void): 
         acceptingOrders: true,
         orderingEnabled: DEFAULT_ORDERING_ENABLED,
         servingRatePerMin: DEFAULT_SERVING_RATE_PER_MIN,
-        announcement: "JOE: New Indian Breakfast Catalog is now LIVE!",
+        announcement: "CSE: New Indian Breakfast Catalog is now LIVE!",
         taxRate: 5,
         minOrderValue: 20,
         peakHourThreshold: 50,
@@ -2362,7 +2365,7 @@ export const processAtomicIntake = async (qrPayload: string, staffId: string, au
 
                 // Use the exact same normalization as qr.ts to prevent SECURITY_BREACH
                 const normUserId = String(orderDoc.userId || "");
-                const normCafeteriaId = String(orderDoc.cafeteriaId || "JOE_CAFETERIA_01");
+                const normCafeteriaId = String(orderDoc.cafeteriaId || "CSE_CAFETERIA_01");
 
                 const isValid = await verifySecureHash(orderDoc.id, normUserId, normCafeteriaId, createdAtNum, exp, secureHash);
                 
