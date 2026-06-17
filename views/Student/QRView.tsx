@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { QRCodeSVG } from 'qrcode.react';
+const MemoizedQRCode = React.memo(QRCodeSVG);
 import { listenToOrder } from '../../services/firestore-db';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -360,8 +361,8 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
                 ) : (
                   // Full QR Code Display
                   <div className="relative w-full h-full p-2 bg-white flex items-center justify-center rounded-xl overflow-hidden">
-                    <QRCodeSVG 
-                      value={generateQRPayloadSync(order, activeItem.id)} 
+                    <MemoizedQRCode 
+                      value={useMemo(() => generateQRPayloadSync(order, activeItem.id), [order?.id, order?.orderStatus, activeItem?.id])} 
                       size={200} 
                       level="M" 
                       fgColor="#000000" 
@@ -433,3 +434,5 @@ export const QRView: React.FC<QRViewProps> = ({ orderId, onBack, onViewOrders })
 };
 
 export default QRView;
+
+

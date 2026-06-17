@@ -145,8 +145,7 @@ const SmartImage: React.FC<SmartImageProps> = ({
 
       {/* 🖼️ ACTUAL IMAGE */}
       {(status === 'loading' || status === 'loaded' || status === 'error') && currentSrc && (
-        <img
-          ref={imgRef}
+        <img ref={imgRef} loading="lazy" decoding="async"
           src={currentSrc}
           alt={alt}
           onError={handleImageError}
@@ -196,3 +195,4 @@ const SmartImage: React.FC<SmartImageProps> = ({
 };
 
 export default React.memo(SmartImage);
+

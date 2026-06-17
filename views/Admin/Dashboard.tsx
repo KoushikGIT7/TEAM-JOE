@@ -478,24 +478,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile, onLogout, onOp
          />
       </div>
 
-      {/* MASSIVE HERO KPI SECTION */}
+      {/* KPI SECTION */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-brand-purple to-brand-purple-dark p-6 sm:p-8 rounded-[2rem] shadow-xl border border-white/10 text-white relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:scale-110 transition-transform"><DollarSign className="w-24 h-24 sm:w-32 sm:h-32" /></div>
-           <p className="text-xs font-black uppercase tracking-widest text-brand-purple-light mb-2 relative z-10">Today's Total Sales</p>
-           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter relative z-10">₹{stats.periodRevenue.toLocaleString()}</h2>
+        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-10 text-brand-purple group-hover:scale-110 transition-transform"><DollarSign className="w-24 h-24 sm:w-32 sm:h-32" /></div>
+           <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2 relative z-10">Today's Total Sales</p>
+           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter text-gray-900 relative z-10">₹{stats.periodRevenue.toLocaleString()}</h2>
         </div>
 
-        <div className="bg-gradient-to-br from-brand-green to-emerald-700 p-6 sm:p-8 rounded-[2rem] shadow-xl border border-white/10 text-white relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:scale-110 transition-transform"><Package className="w-24 h-24 sm:w-32 sm:h-32" /></div>
-           <p className="text-xs font-black uppercase tracking-widest text-emerald-200 mb-2 relative z-10">Total Orders Processed</p>
-           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter relative z-10">{stats.periodOrders}</h2>
+        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-10 text-brand-green group-hover:scale-110 transition-transform"><Package className="w-24 h-24 sm:w-32 sm:h-32" /></div>
+           <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2 relative z-10">Total Orders Processed</p>
+           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter text-gray-900 relative z-10">{stats.periodOrders}</h2>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 p-6 sm:p-8 rounded-[2rem] shadow-xl border border-white/10 text-white relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:scale-110 transition-transform"><Activity className="w-24 h-24 sm:w-32 sm:h-32" /></div>
-           <p className="text-xs font-black uppercase tracking-widest text-amber-200 mb-2 relative z-10">Active Peak Hour Orders</p>
-           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter relative z-10">{stats.peakHours.length > 0 ? stats.peakHours.sort((a,b)=>b.orders-a.orders)[0]?.orders||0 : 0}</h2>
+        <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-black/5 shadow-sm relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-10 text-amber-500 group-hover:scale-110 transition-transform"><Activity className="w-24 h-24 sm:w-32 sm:h-32" /></div>
+           <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2 relative z-10">Active Peak Hour Orders</p>
+           <h2 className="text-5xl sm:text-6xl font-black tracking-tighter text-gray-900 relative z-10">{stats.peakHours.length > 0 ? [...stats.peakHours].sort((a,b)=>b.orders-a.orders)[0]?.orders||0 : 0}</h2>
         </div>
       </div>
 

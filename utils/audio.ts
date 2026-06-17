@@ -122,20 +122,7 @@ class SoundService {
   // 1. CSE HALLMARK — Played on app entry / marketing pulse
   //    Sound: Warm "CSE" voice + rising C-E-G crystal chime
   // ═══════════════════════════════════════════════════════
-  public async playAlert() {
-    if (this.isMuted) return;
-    try {
-      await this.init();
-      if (!this.ctx || this.isMuted) return;
-      const now = this.ctx.currentTime;
-      // Rising crystal chime (C5 → E5 → G5)
-      setTimeout(() => {
-        if (!this.ctx || this.isMuted) return;
-        const t = this.ctx.currentTime;
-        this.tone(523.25, t,        0.18, 0.15, 'sine'); // C5
-        this.tone(659.25, t + 0.16, 0.22, 0.15, 'sine'); // E5
-        this.tone(783.99, t + 0.35, 0.55, 0.12, 'sine'); // G5
-      }, 400);
+  public async playAlert() { return; }, 400);
       this.say('CSE', 0.5, 0.95, 1.0);
     } catch (e) {
       console.warn('[CSE Audio] Hallmark blocked:', e);
@@ -146,19 +133,7 @@ class SoundService {
   // 2. ORDER PLACED — Student just submitted their order
   //    Sound: Soft double-tap + warm ascending phrase
   // ═══════════════════════════════════════════════════════
-  public async playOrderPlaced() {
-    if (this.isMuted) return;
-    try {
-      await this.init();
-      if (!this.ctx || this.isMuted) return;
-      const now = this.ctx.currentTime;
-      // Soft double tap feel
-      this.tone(440.00, now,        0.08, 0.12, 'sine');  // A4
-      this.tone(523.25, now + 0.1,  0.08, 0.14, 'sine');  // C5
-      // Warm ascending finish
-      this.tone(659.25, now + 0.25, 0.3,  0.12, 'sine');  // E5
-      this.tone(783.99, now + 0.45, 0.45, 0.10, 'sine');  // G5
-    } catch (e) {
+  public async playOrderPlaced() { return; } catch (e) {
       console.warn('[CSE Audio] Order placed sound blocked:', e);
     }
   }
@@ -207,15 +182,7 @@ class SoundService {
   // 4.5. INCOMING ALERT — Played on supervisor dashboard when a new order is received
   //    Sound: Double bright alert chime (G5 -> E5)
   // ═══════════════════════════════════════════════════════
-  public async playIncomingAlert() {
-    if (this.isMuted) return;
-    try {
-      await this.init();
-      if (!this.ctx || this.isMuted) return;
-      const now = this.ctx.currentTime;
-      this.tone(783.99, now,        0.12, 0.15, 'sine'); // G5
-      this.tone(659.25, now + 0.12, 0.35, 0.15, 'sine'); // E5
-    } catch (e) {
+  public async playIncomingAlert() { return; } catch (e) {
       console.warn('[CSE Audio] Incoming alert sound blocked:', e);
     }
   }
@@ -224,17 +191,7 @@ class SoundService {
   // 5. ORDER REJECTED — Gentle, non-harsh descending tone
   //    Sound: Soft descend — professional, not alarming
   // ═══════════════════════════════════════════════════════
-  public async playRejected() {
-    if (this.isMuted) return;
-    try {
-      await this.init();
-      if (!this.ctx || this.isMuted) return;
-      const now = this.ctx.currentTime;
-      // Gentle descending — not a harsh buzzer
-      this.tone(440.00, now,        0.25, 0.12, 'sine');  // A4
-      this.tone(349.23, now + 0.22, 0.35, 0.10, 'sine');  // F4
-      this.tone(293.66, now + 0.50, 0.55, 0.08, 'sine');  // D4 — fade out low
-    } catch (e) {
+  public async playRejected() { return; } catch (e) {
       console.warn('[CSE Audio] Rejected sound blocked:', e);
     }
   }
@@ -243,17 +200,7 @@ class SoundService {
   // 5.5. ERROR BUZZER — Loud, clear, distinct failure tone
   //    Sound: Double low buzz — impossible to ignore
   // ═══════════════════════════════════════════════════════
-  public async playErrorBuzzer() {
-    if (this.isMuted) return;
-    try {
-      await this.init();
-      if (!this.ctx || this.isMuted) return;
-      const now = this.ctx.currentTime;
-      // Harsh low double-buzz
-      this.tone(150, now,        0.2, 0.3, 'square');
-      this.tone(150, now + 0.3,  0.4, 0.3, 'square');
-      setTimeout(() => this.say('Error', 1.0, 0.8, 1.0), 100);
-    } catch (e) {
+  public async playErrorBuzzer() { return; } catch (e) {
       console.warn('[CSE Audio] Error buzzer blocked:', e);
     }
   }
@@ -261,13 +208,7 @@ class SoundService {
   // ═══════════════════════════════════════════════════════
   // 6. SUCCESS — Generic positive confirmation
   // ═══════════════════════════════════════════════════════
-  public async playSuccess() {
-    if (this.isMuted) return;
-    try {
-      await this.init();
-      if (!this.ctx || this.isMuted) return;
-      const now = this.ctx.currentTime;
-    } catch (e) {
+  public async playSuccess() { return; } catch (e) {
       console.warn('[CSE Audio] Success sound blocked:', e);
     }
   }
@@ -355,3 +296,4 @@ class SoundService {
 }
 
 export const cseSounds = new SoundService();
+

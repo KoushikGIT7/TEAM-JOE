@@ -19,10 +19,10 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import WelcomeView from './views/Student/WelcomeView';
 import CashierView from './views/Staff/CashierView';
 import ServingCounterView from './views/Staff/ServingCounterView';
-import AdminDashboard from './views/Admin/Dashboard';
+const AdminDashboard = React.lazy(() => import('./views/Admin/Dashboard'));
 import CookView from './views/Staff/CookView';
 import LoginView from './views/Auth/LoginView';
-import AssistantSupervisorView from './views/Staff/AssistantSupervisorView';
+const AssistantSupervisorView = React.lazy(() => import('./views/Staff/AssistantSupervisorView'));
 
 import FoodLoader from './components/Common/FoodLoader';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
@@ -33,13 +33,17 @@ import OrdersView from './views/Student/OrdersView';
 import QRView from './views/Student/QRView';
 import WalletView from './views/Student/WalletView';
 import AddMoneyView from './views/Student/AddMoneyView';
-import { QuestsView } from './views/Student/QuestsView';
-import { RankView } from './views/Student/RankView';
-import { StoreView } from './views/Student/StoreView';
-import { VaultView } from './views/Student/VaultView';
-import { ProfileView } from './views/Student/ProfileView';
+const QuestsView = React.lazy(() => import('./views/Student/QuestsView').then(m => ({ default: m.QuestsView })));
+const RankView = React.lazy(() => import('./views/Student/RankView').then(m => ({ default: m.RankView })));
+const StoreView = React.lazy(() => import('./views/Student/StoreView').then(m => ({ default: m.StoreView })));
+const VaultView = React.lazy(() => import('./views/Student/VaultView').then(m => ({ default: m.VaultView })));
+const ProfileView = React.lazy(() => import('./views/Student/ProfileView').then(m => ({ default: m.ProfileView })));
 
-import { PrivacyPolicy, RefundPolicy, TermsAndConditions, ContactUs, ComplianceView } from './views/Student/ComplianceView';
+const PrivacyPolicy = React.lazy(() => import('./views/Student/ComplianceView').then(m => ({ default: m.PrivacyPolicy })));
+const RefundPolicy = React.lazy(() => import('./views/Student/ComplianceView').then(m => ({ default: m.RefundPolicy })));
+const TermsAndConditions = React.lazy(() => import('./views/Student/ComplianceView').then(m => ({ default: m.TermsAndConditions })));
+const ContactUs = React.lazy(() => import('./views/Student/ComplianceView').then(m => ({ default: m.ContactUs })));
+const ComplianceView = React.lazy(() => import('./views/Student/ComplianceView').then(m => ({ default: m.ComplianceView })));
 
 type ViewState =
   | 'WELCOME'
@@ -87,7 +91,7 @@ const AppContent: React.FC = () => {
 
   // 🔔 OneSignal Web Push SDK Setup
   useEffect(() => {
-    initializeOneSignal();
+    setTimeout(() => { initializeOneSignal(); }, 3000); // Deferred to prevent blocking startup
   }, []);
 
   // Sync user identification & tags to OneSignal dynamically
@@ -518,15 +522,17 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <GlobalErrorBoundary>
-        {renderView()}
-        
-        {/* Compliance Overlays */}
-        {showCompliance === 'privacy' && <PrivacyPolicy onBack={() => setShowCompliance(null)} />}
-        {showCompliance === 'refund' && <RefundPolicy onBack={() => setShowCompliance(null)} />}
-        {showCompliance === 'terms' && <TermsAndConditions onBack={() => setShowCompliance(null)} />}
-        {showCompliance === 'contact' && <ContactUs onBack={() => setShowCompliance(null)} />}
-      </GlobalErrorBoundary>
+        <GlobalErrorBoundary>
+          <React.Suspense fallback={<FoodLoader />}>
+            {renderView()}
+            
+            {/* Compliance Overlays */}
+            {showCompliance === 'privacy' && <PrivacyPolicy onBack={() => setShowCompliance(null)} />}
+            {showCompliance === 'refund' && <RefundPolicy onBack={() => setShowCompliance(null)} />}
+            {showCompliance === 'terms' && <TermsAndConditions onBack={() => setShowCompliance(null)} />}
+            {showCompliance === 'contact' && <ContactUs onBack={() => setShowCompliance(null)} />}
+          </React.Suspense>
+        </GlobalErrorBoundary>
     </div>
   );
 };
@@ -538,3 +544,4 @@ export default function App() {
     </AppProvider>
   );
 }
+
